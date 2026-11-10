@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<!--
+  PÁGINA TEMPORAL DE COMPROBACIÓN DEL INCREMENTO 1.
+  Muestra el subgrafo en tablas para comprobar que se construye bien.
+  En el incremento 2 se sustituirá por la escena 3D.
+
+  Se abre con doble clic (sin servidor). Por eso no se usan módulos:
+  cada clase se carga con un <script> normal, y cada una va DESPUÉS de las
+  clases que necesita.
+-->
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Visor de patrimonio · Incremento 1</title>
+  <link rel="stylesheet" href="src/estilos.css">
+</head>
+<body>
+  <header>
+    <h1>Visor de patrimonio 3D</h1>
+    <p class="subtitulo">Incremento 1 · Modelo y subgrafo (página temporal de comprobación, sin 3D)</p>
+  </header>
+
+  <main>
+    <section class="controles">
+      <div class="control">
+        <label for="selectorEntidad">Entidad central</label>
+        <select id="selectorEntidad"></select>
+      </div>
+      <div class="control">
+        <label for="deslizadorUmbral">Umbral de relevancia: <span id="valorUmbral"></span></label>
+        <input type="range" id="deslizadorUmbral" min="0" max="1" step="0.05">
+      </div>
+    </section>
+
+    <div id="avisoError" class="aviso-error" role="alert" hidden></div>
+    <p id="resumen" class="resumen"></p>
+
+    <h2>Nodos</h2>
+    <div class="contenedor-tabla">
+      <table>
+        <thead>
+          <tr>
+            <th>Nombre</th>
+            <th>Tipo</th>
+            <th>Nivel</th>
+            <th>Relevancia</th>
+            <th>Centralidad</th>
+          </tr>
+        </thead>
+        <tbody id="cuerpoTablaNodos"></tbody>
+      </table>
+    </div>
+
+    <h2>Relaciones</h2>
+    <div class="contenedor-tabla">
+      <table>
+        <thead>
+          <tr>
+            <th>Origen</th>
+            <th>Tipo</th>
+            <th>Destino</th>
+            <th>Relevancia</th>
+          </tr>
+        </thead>
+        <tbody id="cuerpoTablaRelaciones"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <!-- 1. Configuración -->
+  <script src="config.js"></script>
+
+  <!-- 2. Modelo: primero la enumeración y la clase base, luego las subclases -->
+  <script src="src/modelo/TipoEntidad.js"></script>
+  <script src="src/modelo/Entidad.js"></script>
+  <script src="src/modelo/Persona.js"></script>
+  <script src="src/modelo/Organizacion.js"></script>
+  <script src="src/modelo/ObraDeArte.js"></script>
+  <script src="src/modelo/TipoRelacion.js"></script>
+  <script src="src/modelo/Relacion.js"></script>
+  <script src="src/modelo/NodoRelevante.js"></script>
+  <script src="src/modelo/Subgrafo.js"></script>
+
+  <!-- 3. Lógica que no depende de los datos (PaletaColores la usa el repositorio) -->
+  <script src="src/logica/PaletaColores.js"></script>
+  <script src="src/logica/Configuracion.js"></script>
+  <script src="src/logica/EstrategiaRelevancia.js"></script>
+  <script src="src/logica/RelevanciaDesdeBD.js"></script>
+  <script src="src/logica/CalculadorCentralidad.js"></script>
+
+  <!-- 4. Datos: primero la interfaz, luego la fábrica y la implementación -->
+  <script src="src/datos/RepositorioDatos.js"></script>
+  <script src="src/datos/FabricaEntidades.js"></script>
+  <script src="src/datos/RepositorioSimulado.js"></script>
+  <script src="src/datos/datosEjemplo.js"></script>
+
+  <!-- 5. El constructor usa repositorio, estrategia y centralidad -->
+  <script src="src/logica/ConstructorSubgrafo.js"></script>
+
+  <!-- 6. La página -->
+  <script src="src/main.js"></script>
+</body>
+</html>

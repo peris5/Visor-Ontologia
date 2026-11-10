@@ -1,0 +1,190 @@
+/* Estilos de la página temporal de comprobación y de pruebas.html (incremento 1). */
+
+:root {
+  --fondo: #f6f7f9;
+  --superficie: #ffffff;
+  --texto: #1d2330;
+  --texto-suave: #5b6475;
+  --borde: #dde1e8;
+  --acento: #2f5fa7;
+  --error-fondo: #fdecec;
+  --error-texto: #a61b1b;
+  --correcto-fondo: #e8f6ec;
+  --correcto-texto: #1b6b34;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 24px 16px 48px;
+  background: var(--fondo);
+  color: var(--texto);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.45;
+}
+
+header,
+main {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+h1 {
+  margin: 0 0 4px;
+  font-size: 1.5rem;
+}
+
+h2 {
+  margin: 28px 0 8px;
+  font-size: 1.1rem;
+}
+
+.subtitulo {
+  margin: 0 0 20px;
+  color: var(--texto-suave);
+}
+
+.controles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 32px;
+  padding: 16px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+}
+
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 240px;
+  flex: 1;
+}
+
+.control label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+select,
+input[type="range"] {
+  width: 100%;
+  font: inherit;
+}
+
+select {
+  padding: 6px 8px;
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  background: var(--superficie);
+  color: var(--texto);
+}
+
+#valorUmbral {
+  font-variant-numeric: tabular-nums;
+  color: var(--acento);
+}
+
+.resumen {
+  margin: 16px 0 0;
+  color: var(--texto-suave);
+}
+
+.aviso-error {
+  margin: 16px 0 0;
+  padding: 12px 16px;
+  background: var(--error-fondo);
+  color: var(--error-texto);
+  border: 1px solid var(--error-texto);
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.contenedor-tabla {
+  overflow-x: auto;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+th,
+td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--borde);
+}
+
+th {
+  background: var(--fondo);
+  font-weight: 600;
+}
+
+td.numero,
+th.numero {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.muestra-color {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 8px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+
+/* pruebas.html */
+
+.resumen-pruebas {
+  padding: 12px 16px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.todas-correctas {
+  background: var(--correcto-fondo);
+  color: var(--correcto-texto);
+}
+
+.hay-fallos {
+  background: var(--error-fondo);
+  color: var(--error-texto);
+}
+
+#listaPruebas {
+  list-style: none;
+  padding: 0;
+}
+
+#listaPruebas li {
+  margin: 4px 0;
+  padding: 6px 12px;
+  border-radius: 4px;
+}
+
+.prueba-correcta {
+  background: var(--correcto-fondo);
+  color: var(--correcto-texto);
+}
+
+.prueba-fallida {
+  background: var(--error-fondo);
+  color: var(--error-texto);
+  font-weight: 600;
+}
