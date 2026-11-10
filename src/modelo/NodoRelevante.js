@@ -1,3 +1,5 @@
+import { Entidad } from './Entidad.js';
+
 /**
  * NodoRelevante
  *
@@ -9,7 +11,7 @@
  *
  * Requisitos: RF-08 a RF-12 (relevancia y nivel) y RF-37 (centralidad).
  */
-class NodoRelevante {
+export class NodoRelevante {
   #entidad;
   #relevancia;
   #nivel;

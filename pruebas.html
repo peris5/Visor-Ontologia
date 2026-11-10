@@ -1,19 +1,18 @@
 <!DOCTYPE html>
 <!--
-  Pruebas del incremento 1. Se abre con doble clic.
-  Carga las mismas clases que index.html (en el mismo orden), después el
-  mini sistema de pruebas y los archivos de tests/, y al final las ejecuta.
+  Pruebas del navegador. Con "npm run dev" se abren en http://localhost:5173/pruebas.html.
+  tests/ejecutarPruebas.js importa todos los archivos de pruebas y los ejecuta.
 -->
 <html lang="es">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pruebas · Incremento 1</title>
-  <link rel="stylesheet" href="src/estilos.css">
+  <title>Pruebas · Visor de patrimonio</title>
+  <link rel="stylesheet" href="/src/estilos.css">
 </head>
-<body>
+<body class="pagina-pruebas">
   <header>
-    <h1>Pruebas del incremento 1</h1>
+    <h1>Pruebas del navegador</h1>
     <p class="subtitulo">Verde: correcta · Rojo: fallida (con el motivo)</p>
   </header>
 
@@ -22,41 +21,6 @@
     <ul id="listaPruebas"></ul>
   </main>
 
-  <!-- Clases de la aplicación (mismo orden que index.html, sin main.js) -->
-  <script src="config.js"></script>
-  <script src="src/modelo/TipoEntidad.js"></script>
-  <script src="src/modelo/Entidad.js"></script>
-  <script src="src/modelo/Persona.js"></script>
-  <script src="src/modelo/Organizacion.js"></script>
-  <script src="src/modelo/ObraDeArte.js"></script>
-  <script src="src/modelo/TipoRelacion.js"></script>
-  <script src="src/modelo/Relacion.js"></script>
-  <script src="src/modelo/NodoRelevante.js"></script>
-  <script src="src/modelo/Subgrafo.js"></script>
-  <script src="src/logica/PaletaColores.js"></script>
-  <script src="src/logica/Configuracion.js"></script>
-  <script src="src/logica/EstrategiaRelevancia.js"></script>
-  <script src="src/logica/RelevanciaDesdeBD.js"></script>
-  <script src="src/logica/CalculadorCentralidad.js"></script>
-  <script src="src/datos/RepositorioDatos.js"></script>
-  <script src="src/datos/FabricaEntidades.js"></script>
-  <script src="src/datos/RepositorioSimulado.js"></script>
-  <script src="src/datos/datosEjemplo.js"></script>
-  <script src="src/logica/ConstructorSubgrafo.js"></script>
-
-  <!-- Mini sistema de pruebas y pruebas -->
-  <script src="tests/miniPruebas.js"></script>
-  <script src="tests/pruebasModelo.js"></script>
-  <script src="tests/pruebasRepositorio.js"></script>
-  <script src="tests/pruebasRelevancia.js"></script>
-  <script src="tests/pruebasConstructorSubgrafo.js"></script>
-  <script src="tests/pruebasCentralidad.js"></script>
-  <script src="tests/pruebasPaletaColores.js"></script>
-  <script src="tests/pruebasConfiguracion.js"></script>
-
-  <!-- Todo cargado: ejecutamos las pruebas -->
-  <script>
-    ejecutarPruebas();
-  </script>
+  <script type="module" src="/tests/ejecutarPruebas.js"></script>
 </body>
 </html>

@@ -1,65 +1,189 @@
-# Visor de patrimonio 3D · Incremento 1: modelo y subgrafo
+# Visor de patrimonio 3D · Incremento 2: servidor Python y visualización 3D
 
 Trabajo de Fin de Grado. Aplicación web para explorar en 3D una base de datos de conocimiento sobre patrimonio cultural (grupo IRTIC, Universitat de València).
 
 El desarrollo se divide en cuatro incrementos:
 
-1. Modelo y subgrafo (O1): datos simulados, cálculo de la relevancia y construcción del subgrafo. Es el que contiene este repositorio.
-2. Visualización 3D (O2): Three.js y disposición con un grafo dirigido por fuerzas.
+1. Modelo y subgrafo (O1): datos simulados, cálculo de la relevancia y construcción del subgrafo. ✔
+2. Visualización 3D (O2): servidor Python, Three.js y disposición con un grafo dirigido por fuerzas. ✔ (este)
 3. Exploración (O3): buscador, información de nodos, navegación y filtros.
 4. Datos reales y validación (O4): conexión con la base de datos y pruebas de rendimiento y usabilidad.
 
-## Qué hace este incremento
+## Arquitectura
 
-Dada una entidad central, construye su subgrafo relevante:
+```
+┌──────────────── NAVEGADOR (JavaScript + Three.js) ────────────────┐
+│  main.js ─► EscenaGrafo (3D, fuerzas)   Leyenda   barra de estado │
+│                 ▲                                                 │
+│           ClienteServicio  (convierte el JSON en objetos)         │
+└─────────────────┼─────────────────────────────────────────────────┘
+                  │  HTTP + JSON: UNA petición por subgrafo
+                  │  GET /api/subgrafo/p01?umbral=0.3
+┌─────────────────▼──────────── SERVIDOR (Python + FastAPI) ────────┐
+│  app.py (rutas) ─► ConversorJson                                  │
+│        │                                                          │
+│        ▼                                                          │
+│  ConstructorSubgrafo ─► RelevanciaDesdeBD, CalculadorCentralidad  │
+│        │                                                          │
+│        ▼                                                          │
+│  RepositorioDatos ◄── RepositorioSimulado (datos_ejemplo.json)    │
+│                   ◄── (incremento 4: base de datos real)          │
+└───────────────────────────────────────────────────────────────────┘
+```
 
-- Cada relación trae de la BD un valor de relevancia entre 0 y 1.
-- La relevancia de un nodo es el producto de las relevancias del camino desde la central (la central vale 1).
-- Solo entran nodos y relaciones cuya relevancia supera el umbral (0,3 por defecto), con un máximo de 150 nodos.
-- La búsqueda es «primero el mejor»: un nodo entra en el subgrafo cuando sale de la lista de pendientes como el más relevante. Por eso cada nodo entra con la mejor relevancia que puede tener, y si se llega al máximo, los que quedan fuera son los menos relevantes. La explicación completa está en `src/logica/ConstructorSubgrafo.js`.
-- Entre dos entidades se guardan todas las relaciones que superan el umbral, y la más relevante decide si el vecino entra.
-- Al final se calcula la centralidad de cada nodo.
+- **Python** hace todo el trabajo con los datos: acceso al repositorio, relevancia, construcción del subgrafo, centralidad y colores.
+- **JavaScript** solo dibuja: modelo para dibujar, disposición por fuerzas, escena 3D y leyenda.
 
-## Cómo abrirlo
+### Por qué la lógica está en Python
 
-No hace falta instalar nada (ni Node, ni npm, ni servidor).
+- Cuando se conecte la base de datos real, las consultas y la contraseña tienen que estar en el servidor, no en el navegador (cualquiera puede leer el código del navegador).
+- Construir el subgrafo en el navegador obligaría a hacer una petición por cada nodo expandido (hasta 150). En el servidor, el navegador hace una sola petición por subgrafo.
 
-- Para la aplicación, abre `index.html` con doble clic. Elige una entidad y mueve el deslizador del umbral; las tablas de nodos y relaciones se recalculan. Es una página provisional que en el incremento 2 se sustituye por la escena 3D.
-- Para las pruebas, abre `pruebas.html` con doble clic. Arriba aparece el resumen («X de Y pruebas correctas») y debajo cada prueba, en verde si es correcta o en rojo si falla, con el motivo.
+### Por qué Vite
 
-Las clases no usan módulos (`import`/`export`) porque el navegador los bloquea al abrir un archivo con doble clic (`file://`). Cada clase se carga con un `<script>` normal, después de las que necesita.
+Con módulos (`import`/`export`) cada clase declara lo que necesita y no hacen falta variables globales ni un `<script>` por clase en un orden concreto. Vite sirve los módulos durante el desarrollo, instala Three.js con npm (versión fija) y, al publicar, junta todo en pocos archivos. Además, su proxy reenvía `/api` al servidor Python, así la página y la API parecen estar en el mismo sitio y el navegador no da errores de CORS.
+
+## Requisitos
+
+- **Node.js** LTS (para Vite y Three.js).
+- **Python 3.12** (para el servidor).
+
+## Instalación (una vez)
+
+```
+npm install
+py -m venv .venv
+.venv\Scripts\activate
+pip install -r servidor/requirements.txt
+```
+
+## Desarrollo: dos servidores
+
+Hacen falta dos terminales:
+
+- **Terminal 1, servidor Python** (puerto 8000):
+  ```
+  .venv\Scripts\activate
+  python -m uvicorn servidor.app:app --reload --port 8000
+  ```
+  `http://localhost:8000/api/salud` debe responder `{"estado": "ok"}`. La documentación de la API se genera sola en `http://localhost:8000/docs`.
+- **Terminal 2, la página** (puerto 5173):
+  ```
+  npm run dev
+  ```
+  Abre `http://localhost:5173/`.
+
+Para parar cada uno: `Ctrl + C` en su terminal.
+
+## Pruebas
+
+- **Python** (lógica del subgrafo y API): `python -m pytest` (con el entorno virtual activado). Están en `servidor/tests/`.
+- **Navegador** (modelo, cliente, simulación, disposición, nodos, enlaces y leyenda): con `npm run dev` en marcha, abre `http://localhost:5173/pruebas.html`. Arriba aparece «X de Y pruebas correctas» y debajo cada prueba en verde o en rojo con el motivo. Estas pruebas no necesitan el servidor Python.
+
+`EscenaGrafo` necesita WebGL y se comprueba a mano con la lista de abajo.
+
+## Publicar
+
+```
+npm run build
+python -m uvicorn servidor.app:app --port 8000
+```
+
+`npm run build` deja la página en `dist/`. Si existe esa carpeta, el servidor Python la sirve en `/` además de la API, así que en el servidor real basta con un solo programa: hace falta Python, pero no Node. La aplicación queda en `http://localhost:8000/`.
+
+## Datos de ejemplo
+
+`servidor/datos/datos_ejemplo.json` tiene 378 entidades (131 personas, 22 organizaciones y 225 obras) y 1036 relaciones de 14 tipos, todas inventadas. Las 16 entidades y 27 relaciones del incremento 1 siguen al principio del archivo, con los mismos ids, porque las pruebas dependen de ellas.
+
+El resto lo genera `servidor/herramientas/generador_datos_ejemplo.py`, una herramienta de desarrollo que no usa la aplicación:
+
+```
+.venv\Scripts\python.exe -m servidor.herramientas.generador_datos_ejemplo
+```
+
+Usa una semilla fija, así que siempre genera exactamente los mismos datos (la prueba `test_generador_datos_ejemplo.py` lo comprueba). Crea 12 grupos (talleres, academias, círculos y sociedades), cada uno con su maestro, entre 6 y 10 miembros y sus obras, con relaciones fuertes dentro del grupo, para que se vean cúmulos (RF-40), y a veces dos relaciones en el mismo par (RF-38). Añade además 6 museos, 10 mecenas, 8 restauradoras, retratos y parejas, y relaciones débiles entre grupos para que todo quede conectado.
+
+Tamaño del subgrafo de `p01` según el umbral:
+
+| Umbral | Nodos |
+|---|---|
+| 0,3 (por defecto) | 150, el máximo: sirve para la prueba de rendimiento |
+| 0,5 | 86 |
+| 0,7 | 20 |
+
+## Configuración
+
+- `servidor/configuracion.json` (la de verdad): `origenDatos`, `umbralPorDefecto`, `maxNodos` y `entidadInicial`. Si falta o tiene valores no válidos, se usan los valores por defecto (RNF-16). Las credenciales de la base de datos real **no** irán aquí, sino en variables de entorno (archivo `.env`, que Git ignora).
+- `public/config.json`: solo `urlServicio` (`"/api"`), para que la página sepa dónde está la API. El umbral por defecto y la entidad inicial los pide la página a `/api/configuracion`.
+
+## Cómo añadir otra fuente de datos
+
+Crear en `servidor/datos/` una clase nueva que herede de `RepositorioDatos` e implemente sus cuatro métodos asíncronos (`buscar_entidades`, `obtener_entidad`, `obtener_relaciones`, `obtener_tipos_relacion`) y, si abre conexiones, `cerrar`. Después, en `crear_repositorio` de `servidor/app.py`, crearla cuando `origenDatos` tenga su nombre. El resto del servidor y todo el navegador siguen igual (RNF-17).
+
+## API
+
+| Petición | Respuesta |
+|---|---|
+| `GET /api/salud` | `{"estado": "ok"}` |
+| `GET /api/configuracion` | `{"umbralPorDefecto": 0.3, "entidadInicial": "p01"}` |
+| `GET /api/entidades?texto=&tipo=&limite=50` | lista de entidades (`id`, `nombre`, `tipo`) |
+| `GET /api/subgrafo/{id}?umbral=0.3` | el subgrafo completo: `idCentral`, `umbral`, `nodos` y `relaciones` |
+
+- `umbral` entre 0 y 1; si no, **422**. Si no se indica, se usa el de la configuración.
+- El máximo de nodos lo pone el servidor y no se puede cambiar desde la petición.
+- Entidad inexistente: **404** con `{"detail": "No existe la entidad P99"}`. Cualquier otro error: **500** con un mensaje genérico (el detalle queda en el registro del servidor).
 
 ## Carpetas y clases
 
+### Servidor (`servidor/`)
+
 | Ruta | Qué es |
 |---|---|
-| `index.html` | Página provisional de comprobación (tablas, sin 3D). |
-| `pruebas.html` | Ejecuta las pruebas en el navegador. |
-| `config.js` | Configuración (variable global `CONFIGURACION`). |
-| `src/main.js` | Lógica de la página de comprobación. |
-| `src/estilos.css` | Estilos de las dos páginas. |
-| **`src/modelo/`** | **Modelo de dominio** |
-| `TipoEntidad.js` | Enumeración: PERSONA, ORGANIZACION, OBRA_DE_ARTE. |
-| `Entidad.js` | Clase abstracta con lo común a todas las entidades. |
-| `Persona.js` | Persona (nacimiento, defunción, nacionalidad). |
-| `Organizacion.js` | Organización (fundación, sede). |
-| `ObraDeArte.js` | Obra de arte (creación, técnica). |
-| `TipoRelacion.js` | Tipo de relación que se saca de los datos, con nombre y color. |
-| `Relacion.js` | Relación entre dos entidades, con su valor y su relevancia. |
-| `NodoRelevante.js` | Entidad dentro de un subgrafo: relevancia, nivel y centralidad. |
-| `Subgrafo.js` | Entorno relevante de una entidad: nodos y relaciones. |
-| **`src/datos/`** | **Acceso a los datos** |
-| `RepositorioDatos.js` | Interfaz de acceso a datos (RNF-17). |
-| `RepositorioSimulado.js` | Implementación con datos de ejemplo en memoria y retardo simulado. |
-| `FabricaEntidades.js` | Crea la subclase de `Entidad` que corresponde a cada tipo. |
-| `datosEjemplo.js` | Datos inventados (variable global `DATOS_EJEMPLO`). |
-| **`src/logica/`** | **Lógica de la aplicación** |
-| `Configuracion.js` | Lee la configuración y pone valores por defecto (RNF-16). |
-| `EstrategiaRelevancia.js` | Interfaz del cálculo de relevancia (RNF-30). |
-| `RelevanciaDesdeBD.js` | Relación = valor de la BD acotado; nodo = producto. |
-| `CalculadorCentralidad.js` | Centralidad de grado ponderada y normalizada (RF-37). |
-| `PaletaColores.js` | Colores distintos y deterministas para los tipos (RF-20, RF-39). |
-| `ConstructorSubgrafo.js` | Construye el subgrafo con «primero el mejor» (RF-08 a RF-12). |
-| **`tests/`** | **Pruebas** |
-| `miniPruebas.js` | Mini sistema de pruebas: `prueba`, `comprobar`, `comprobarIgual`. |
-| `pruebas*.js` | Un archivo de pruebas por tema. |
+| `app.py` | Rutas de la API, creación del repositorio al arrancar y página publicada. |
+| `api/conversor_json.py` | **ConversorJson**: convierte entidades, relaciones y subgrafos en diccionarios (la forma del JSON está solo aquí). |
+| `modelo/` | Traducción del modelo del incremento 1 (`TipoEntidad`, `Entidad`, `Persona`, `Organizacion`, `ObraDeArte`, `TipoRelacion`, `Relacion`, `NodoRelevante`, `Subgrafo`). |
+| `datos/` | `RepositorioDatos` (interfaz), `RepositorioSimulado`, `FabricaEntidades` y `datos_ejemplo.json`. |
+| `logica/` | `Configuracion`, `EstrategiaRelevancia`, `RelevanciaDesdeBD`, `CalculadorCentralidad`, `PaletaColores` y `ConstructorSubgrafo` (con la explicación de la búsqueda «primero el mejor»). |
+| `tests/` | Pruebas de pytest. |
+
+### Navegador (`src/`)
+
+| Ruta | Qué es |
+|---|---|
+| `main.js` | Punto de entrada: crea y conecta las piezas (en el incremento 3 lo hará `Aplicacion`). |
+| `modelo/` | Las clases del modelo, para dibujar. |
+| `datos/FabricaEntidades.js` | Crea la subclase de `Entidad` según el tipo. |
+| `datos/ClienteServicio.js` | **Nuevo.** Pide los datos a la API y convierte el JSON en objetos del modelo (RNF-17). |
+| `vista3d/SimulacionFuerzas.js` | **Nuevo.** Grafo dirigido por fuerzas hecho a mano: repulsión, muelles y restricción radial (RNF-28, RF-17, RF-40). |
+| `vista3d/CalculadorDisposicion.js` | **Nuevo.** Posiciones iniciales deterministas para la simulación. |
+| `vista3d/NodoVisual.js` | **Nuevo.** Clase abstracta: malla 3D y etiqueta de un nodo (RF-18, RF-22). |
+| `vista3d/NodoPersona.js` | **Nuevo.** Esfera azul. |
+| `vista3d/NodoOrganizacion.js` | **Nuevo.** Cubo naranja. |
+| `vista3d/NodoObra.js` | **Nuevo.** Octaedro verde. |
+| `vista3d/FabricaNodosVisuales.js` | **Nuevo.** Crea el `NodoVisual` de cada nodo, con tamaño según la centralidad. |
+| `vista3d/EnlaceVisual.js` | **Nuevo.** Línea o curva de una relación, con color por tipo y opacidad por relevancia (RF-20, RF-21, RF-38). |
+| `vista3d/EscenaGrafo.js` | **Nuevo.** Escena, cámara, luces, renderizadores, controles y bucle de animación (RF-16 a RF-22, RNF-18). |
+| `interfaz/ComponenteUI.js` | **Nuevo.** Clase abstracta de los componentes 2D, con la función auxiliar `crear`. |
+| `interfaz/Leyenda.js` | **Nuevo.** Leyenda de los tipos presentes, del tamaño y de la distancia (RF-23, RF-24). |
+| `estilos.css` | Estilos de las dos páginas. |
+
+### Pruebas del navegador (`tests/`)
+
+`miniPruebas.js` (mini sistema de pruebas), `ejecutarPruebas.js` (importa y ejecuta todas) y un archivo `pruebas*.js` por tema.
+
+## Lista de comprobación visual (a mano)
+
+Con los dos servidores en marcha y `http://localhost:5173/` abierto:
+
+- [ ] El grafo se mueve unos segundos y se queda quieto, y la barra de abajo muestra «Estabilizado en X,X s».
+- [ ] La entidad central está en el centro y los nodos más relevantes, más cerca de ella.
+- [ ] Personas = esferas azules, organizaciones = cubos naranjas, obras = octaedros verdes.
+- [ ] Los nodos más conectados son más grandes.
+- [ ] Las relaciones tienen colores por tipo y las más relevantes se ven más intensas.
+- [ ] Entre dos entidades con varias relaciones se ven varias curvas separadas (por ejemplo, Elena Montsalvat y Joaquín Albereda: «Maestro de» y «Colaborador de»).
+- [ ] Se forman grupos de entidades muy relacionadas.
+- [ ] La leyenda solo muestra los tipos presentes, con sus cantidades.
+- [ ] Se puede girar (arrastrando) y hacer zoom (rueda), y «Vista inicial» recoloca la cámara.
+- [ ] Al subir el umbral hay menos nodos.
+- [ ] Los fps de la barra de estado se mantienen por encima de 30.
+- [ ] Si se para el servidor Python (`Ctrl + C`), al cambiar de entidad aparece el aviso rojo «No se puede conectar con el servidor» y la página no se rompe.

@@ -1,3 +1,6 @@
+import { Entidad } from './Entidad.js';
+import { NodoRelevante } from './NodoRelevante.js';
+
 /**
  * Subgrafo
  *
@@ -11,7 +14,7 @@
  *
  * Requisitos: RF-08 a RF-12.
  */
-class Subgrafo {
+export class Subgrafo {
   #entidadCentral;
   #umbral;
   #nodos;
@@ -124,24 +127,6 @@ class Subgrafo {
   }
 
   /**
-   * Quita un nodo y todas las relaciones en las que participa
-   * (una relación con un extremo fuera del subgrafo no tendría sentido).
-   * La entidad central no se puede quitar: el subgrafo tiene como mínimo un nodo.
-   *
-   * @param {string} id - id de la entidad a quitar.
-   */
-  eliminarNodo(id) {
-    if (id === this.#entidadCentral.getId()) {
-      throw new Error("No se puede eliminar la entidad central del subgrafo.");
-    }
-    if (!this.#nodos.has(id)) {
-      return;
-    }
-    this.#nodos.delete(id);
-    this.#eliminarRelacionesDe(id);
-  }
-
-  /**
    * @param {string} id - id de la entidad.
    * @returns {boolean} true si la entidad tiene un nodo en el subgrafo.
    */
@@ -162,22 +147,5 @@ class Subgrafo {
       }
     }
     return false;
-  }
-
-  /**
-   * (Privado) Se queda solo con las relaciones que no tocan a la entidad indicada.
-   *
-   * @param {string} idEntidad
-   */
-  #eliminarRelacionesDe(idEntidad) {
-    const relacionesQueSeQuedan = [];
-    for (let i = 0; i < this.#relaciones.length; i++) {
-      const relacion = this.#relaciones[i];
-      const tocaLaEntidad = relacion.getOrigen().getId() === idEntidad || relacion.getDestino().getId() === idEntidad;
-      if (!tocaLaEntidad) {
-        relacionesQueSeQuedan.push(relacion);
-      }
-    }
-    this.#relaciones = relacionesQueSeQuedan;
   }
 }

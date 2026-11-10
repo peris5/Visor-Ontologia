@@ -1,4 +1,8 @@
-/* Estilos de la página temporal de comprobación y de pruebas.html (incremento 1). */
+/*
+ * Estilos de las dos páginas:
+ *  - index.html (body.pagina-visor): vista 3D a pantalla completa, fondo oscuro.
+ *  - pruebas.html (body.pagina-pruebas): lista de pruebas, fondo claro.
+ */
 
 :root {
   --fondo: #f6f7f9;
@@ -11,6 +15,20 @@
   --error-texto: #a61b1b;
   --correcto-fondo: #e8f6ec;
   --correcto-texto: #1b6b34;
+
+  /* Página del visor (oscura) */
+  --visor-fondo: #10141f;
+  --visor-panel: rgba(22, 28, 42, 0.88);
+  --visor-borde: rgba(255, 255, 255, 0.12);
+  --visor-texto: #e6e9f0;
+  --visor-texto-suave: #9aa3b5;
+  --visor-acento: #7fb0ff;
+  --visor-error: #d93a3a;
+
+  /* Colores de los tipos de nodo (los mismos que en NodoPersona, NodoOrganizacion y NodoObra) */
+  --color-persona: #4c8bf5;
+  --color-organizacion: #f5a623;
+  --color-obra: #2bb673;
 }
 
 * {
@@ -19,136 +37,33 @@
 
 body {
   margin: 0;
-  padding: 24px 16px 48px;
-  background: var(--fondo);
-  color: var(--texto);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   line-height: 1.45;
 }
 
-header,
-main {
+/* ───────────────────────── Página de pruebas ───────────────────────── */
+
+.pagina-pruebas {
+  padding: 24px 16px 48px;
+  background: var(--fondo);
+  color: var(--texto);
+}
+
+.pagina-pruebas header,
+.pagina-pruebas main {
   max-width: 960px;
   margin: 0 auto;
 }
 
-h1 {
+.pagina-pruebas h1 {
   margin: 0 0 4px;
   font-size: 1.5rem;
-}
-
-h2 {
-  margin: 28px 0 8px;
-  font-size: 1.1rem;
 }
 
 .subtitulo {
   margin: 0 0 20px;
   color: var(--texto-suave);
 }
-
-.controles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px 32px;
-  padding: 16px;
-  background: var(--superficie);
-  border: 1px solid var(--borde);
-  border-radius: 8px;
-}
-
-.control {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 240px;
-  flex: 1;
-}
-
-.control label {
-  font-weight: 600;
-  font-size: 0.9rem;
-}
-
-select,
-input[type="range"] {
-  width: 100%;
-  font: inherit;
-}
-
-select {
-  padding: 6px 8px;
-  border: 1px solid var(--borde);
-  border-radius: 6px;
-  background: var(--superficie);
-  color: var(--texto);
-}
-
-#valorUmbral {
-  font-variant-numeric: tabular-nums;
-  color: var(--acento);
-}
-
-.resumen {
-  margin: 16px 0 0;
-  color: var(--texto-suave);
-}
-
-.aviso-error {
-  margin: 16px 0 0;
-  padding: 12px 16px;
-  background: var(--error-fondo);
-  color: var(--error-texto);
-  border: 1px solid var(--error-texto);
-  border-radius: 6px;
-  font-weight: 600;
-}
-
-.contenedor-tabla {
-  overflow-x: auto;
-  background: var(--superficie);
-  border: 1px solid var(--borde);
-  border-radius: 8px;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.92rem;
-}
-
-th,
-td {
-  padding: 8px 12px;
-  text-align: left;
-  border-bottom: 1px solid var(--borde);
-}
-
-th {
-  background: var(--fondo);
-  font-weight: 600;
-}
-
-td.numero,
-th.numero {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-tbody tr:last-child td {
-  border-bottom: none;
-}
-
-.muestra-color {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  margin-right: 8px;
-  border-radius: 2px;
-  vertical-align: -1px;
-}
-
-/* pruebas.html */
 
 .resumen-pruebas {
   padding: 12px 16px;
@@ -187,4 +102,297 @@ tbody tr:last-child td {
   background: var(--error-fondo);
   color: var(--error-texto);
   font-weight: 600;
+}
+
+/* ───────────────────────── Página del visor ───────────────────────── */
+
+.pagina-visor {
+  overflow: hidden;
+  background: var(--visor-fondo);
+  color: var(--visor-texto);
+  font-size: 14px;
+}
+
+/*
+ * La escena ocupa toda la ventana. position + z-index crean un "contexto de
+ * apilamiento": todo lo de dentro (también las etiquetas 3D) queda en la
+ * capa 0, y los paneles, con z-index mayor, siempre quedan por encima.
+ */
+.contenedor-3d {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+
+.contenedor-3d canvas {
+  display: block;
+}
+
+/* Capa de etiquetas (CSS2DRenderer): encima del lienzo y sin capturar el
+   ratón, para que se pueda girar la cámara aunque el puntero esté sobre un nombre. */
+.capa-etiquetas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.etiqueta-nodo {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(16, 20, 31, 0.72);
+  color: var(--visor-texto);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.etiqueta-central {
+  padding: 3px 8px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #10141f;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* Barra superior con los controles temporales */
+.barra-superior {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 24px;
+  padding: 10px 16px;
+  background: var(--visor-panel);
+  border: 1px solid var(--visor-borde);
+  border-radius: 8px;
+}
+
+.barra-superior h1 {
+  margin: 0 auto 0 0;
+  font-size: 1.1rem;
+  align-self: center;
+}
+
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 200px;
+}
+
+.control label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--visor-texto-suave);
+}
+
+#valorUmbral {
+  font-variant-numeric: tabular-nums;
+  color: var(--visor-acento);
+}
+
+.pagina-visor select,
+.pagina-visor button {
+  font: inherit;
+  padding: 5px 10px;
+  border: 1px solid var(--visor-borde);
+  border-radius: 6px;
+  background: #1c2335;
+  color: var(--visor-texto);
+}
+
+.pagina-visor button {
+  cursor: pointer;
+}
+
+.pagina-visor button:hover {
+  border-color: var(--visor-acento);
+}
+
+.pagina-visor input[type="range"] {
+  width: 100%;
+}
+
+/* Panel izquierdo con la leyenda */
+.panel-izquierdo {
+  position: fixed;
+  top: 96px;
+  left: 12px;
+  z-index: 1;
+  width: 240px;
+  max-height: calc(100vh - 150px);
+  overflow-y: auto;
+}
+
+.leyenda {
+  padding: 12px 14px;
+  background: var(--visor-panel);
+  border: 1px solid var(--visor-borde);
+  border-radius: 8px;
+}
+
+.leyenda h2 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.leyenda h3 {
+  margin: 12px 0 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--visor-texto-suave);
+}
+
+.leyenda-lista {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.leyenda-lista li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.leyenda-nombre {
+  flex: 1;
+}
+
+.leyenda-cantidad {
+  font-variant-numeric: tabular-nums;
+  color: var(--visor-texto-suave);
+}
+
+.leyenda-vacia {
+  color: var(--visor-texto-suave);
+  font-style: italic;
+}
+
+.leyenda-nota {
+  margin: 12px 0 0;
+  font-size: 0.8rem;
+  color: var(--visor-texto-suave);
+}
+
+/* Símbolos de la leyenda: misma forma y color que en la escena */
+.simbolo-nodo {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+
+.simbolo-persona {
+  border-radius: 50%;
+  background: var(--color-persona);
+}
+
+.simbolo-organizacion {
+  background: var(--color-organizacion);
+}
+
+.simbolo-obra {
+  width: 10px;
+  height: 10px;
+  margin: 0 1px;
+  background: var(--color-obra);
+  transform: rotate(45deg);
+}
+
+.simbolo-relacion {
+  display: inline-block;
+  width: 18px;
+  height: 3px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.simbolo-tamano {
+  display: inline-block;
+  border-radius: 50%;
+  background: var(--visor-texto-suave);
+  flex: none;
+}
+
+.simbolo-pequeno {
+  width: 6px;
+  height: 6px;
+  margin: 0 5px;
+}
+
+.simbolo-grande {
+  width: 16px;
+  height: 16px;
+}
+
+/* Indicador de carga y aviso de error, centrados arriba */
+.indicador-carga,
+.aviso-error {
+  position: fixed;
+  top: 100px;
+  left: 50%;
+  z-index: 3;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.indicador-carga {
+  background: var(--visor-panel);
+  border: 1px solid var(--visor-borde);
+}
+
+.aviso-error {
+  top: 140px;
+  max-width: calc(100vw - 32px);
+  background: var(--visor-error);
+  color: #ffffff;
+}
+
+/* El atributo hidden debe ganar a los display de arriba */
+[hidden] {
+  display: none !important;
+}
+
+/* Barra de estado abajo */
+.barra-estado {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+  padding: 6px 14px;
+  background: var(--visor-panel);
+  border: 1px solid var(--visor-borde);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--visor-texto-suave);
+}
+
+/* Pantallas estrechas: la leyenda va abajo y más pequeña */
+@media (max-width: 700px) {
+  .panel-izquierdo {
+    top: auto;
+    bottom: 60px;
+    width: calc(100vw - 24px);
+    max-height: 35vh;
+  }
+
+  .control {
+    min-width: 0;
+    flex: 1;
+  }
 }

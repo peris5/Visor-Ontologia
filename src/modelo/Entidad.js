@@ -10,7 +10,7 @@
  *
  * Requisitos: modelo de dominio usado en RF-08 a RF-12.
  */
-class Entidad {
+export class Entidad {
   #id;
   #nombre;
   #descripcion;

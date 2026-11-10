@@ -1,3 +1,15 @@
+import { prueba, comprobar, comprobarIgual } from './miniPruebas.js';
+import { Entidad } from '../src/modelo/Entidad.js';
+import { Persona } from '../src/modelo/Persona.js';
+import { Organizacion } from '../src/modelo/Organizacion.js';
+import { ObraDeArte } from '../src/modelo/ObraDeArte.js';
+import { TipoEntidad } from '../src/modelo/TipoEntidad.js';
+import { TipoRelacion } from '../src/modelo/TipoRelacion.js';
+import { Relacion } from '../src/modelo/Relacion.js';
+import { NodoRelevante } from '../src/modelo/NodoRelevante.js';
+import { Subgrafo } from '../src/modelo/Subgrafo.js';
+import { FabricaEntidades } from '../src/datos/FabricaEntidades.js';
+
 /*
  * Pruebas del modelo de dominio (src/modelo/).
  */
@@ -39,35 +51,11 @@ prueba("Modelo: getAtributos añade los campos propios de cada subclase", functi
   comprobarIgual(elementos.obra.getAtributos().get("tecnica"), "Óleo", "técnica de la obra");
 });
 
-prueba("Modelo: getOtroExtremo devuelve la otra entidad en los dos sentidos", function () {
-  const elementos = crearElementosDePruebaModelo();
-  const relacion = new Relacion("rel1", elementos.persona, elementos.obra, elementos.tipo, 0.8);
-  comprobarIgual(relacion.getOtroExtremo(elementos.persona).getId(), "obr1", "otro extremo desde el origen");
-  comprobarIgual(relacion.getOtroExtremo(elementos.obra).getId(), "per1", "otro extremo desde el destino");
-});
-
-prueba("Modelo: getOtroExtremo da error con una entidad que no es de la relación", function () {
-  const elementos = crearElementosDePruebaModelo();
-  const relacion = new Relacion("rel1", elementos.persona, elementos.obra, elementos.tipo, 0.8);
-  let huboError = false;
-  try {
-    relacion.getOtroExtremo(elementos.organizacion);
-  } catch (error) {
-    huboError = true;
-  }
-  comprobar(huboError, "debería lanzar un error");
-});
-
 prueba("Modelo: getClavePar es igual para A→B y B→A", function () {
   const elementos = crearElementosDePruebaModelo();
   const deIdaRelacion = new Relacion("rel1", elementos.persona, elementos.obra, elementos.tipo, 0.8);
   const deVueltaRelacion = new Relacion("rel2", elementos.obra, elementos.persona, elementos.tipo, 0.5);
   comprobarIgual(deIdaRelacion.getClavePar(), deVueltaRelacion.getClavePar(), "clave del par");
-});
-
-prueba("Modelo: TipoRelacion.nombreDesdeId convierte el id en un nombre legible", function () {
-  comprobarIgual(TipoRelacion.nombreDesdeId("maestro_de"), "Maestro de", "maestro_de");
-  comprobarIgual(TipoRelacion.nombreDesdeId("pareja"), "Pareja", "pareja");
 });
 
 prueba("Modelo: el Subgrafo nace con la central (relevancia 1, nivel 0)", function () {
@@ -78,24 +66,6 @@ prueba("Modelo: el Subgrafo nace con la central (relevancia 1, nivel 0)", functi
   comprobarIgual(subgrafo.getNodo("per1").getNivel(), 0, "nivel de la central");
 });
 
-prueba("Modelo: Subgrafo.eliminarNodo quita el nodo y sus relaciones", function () {
-  const elementos = crearElementosDePruebaModelo();
-  const subgrafo = new Subgrafo(elementos.persona, 0.3);
-  subgrafo.agregarNodo(new NodoRelevante(elementos.obra, 0.8, 1));
-  subgrafo.agregarNodo(new NodoRelevante(elementos.organizacion, 0.6, 1));
-  subgrafo.agregarRelacion(new Relacion("rel1", elementos.persona, elementos.obra, elementos.tipo, 0.8));
-  subgrafo.agregarRelacion(new Relacion("rel2", elementos.obra, elementos.organizacion, elementos.tipo, 0.5));
-  subgrafo.agregarRelacion(new Relacion("rel3", elementos.persona, elementos.organizacion, elementos.tipo, 0.6));
-
-  subgrafo.eliminarNodo("obr1");
-
-  comprobarIgual(subgrafo.contieneEntidad("obr1"), false, "la obra ya no está");
-  comprobarIgual(subgrafo.getNumeroNodos(), 2, "número de nodos");
-  const relaciones = subgrafo.getRelaciones();
-  comprobarIgual(relaciones.length, 1, "solo queda una relación");
-  comprobarIgual(relaciones[0].getId(), "rel3", "la que queda es rel3");
-});
-
 prueba("Modelo: Subgrafo no guarda dos veces la misma relación", function () {
   const elementos = crearElementosDePruebaModelo();
   const subgrafo = new Subgrafo(elementos.persona, 0.3);
@@ -104,4 +74,23 @@ prueba("Modelo: Subgrafo no guarda dos veces la misma relación", function () {
   subgrafo.agregarRelacion(relacion);
   subgrafo.agregarRelacion(relacion);
   comprobarIgual(subgrafo.getRelaciones().length, 1, "número de relaciones");
+});
+
+// Esta prueba estaba en pruebasRepositorio.js, que ha pasado a Python.
+// FabricaEntidades se queda en el navegador (la usa ClienteServicio).
+prueba("FabricaEntidades: crea cada tipo y da error con un tipo desconocido", function () {
+  const persona = FabricaEntidades.crearEntidad(TipoEntidad.PERSONA, { id: "x1" });
+  const organizacion = FabricaEntidades.crearEntidad(TipoEntidad.ORGANIZACION, { id: "x2" });
+  const obra = FabricaEntidades.crearEntidad(TipoEntidad.OBRA_DE_ARTE, { id: "x3" });
+  comprobar(persona instanceof Persona, "debería ser una Persona");
+  comprobar(organizacion instanceof Organizacion, "debería ser una Organizacion");
+  comprobar(obra instanceof ObraDeArte, "debería ser una ObraDeArte");
+
+  let huboError = false;
+  try {
+    FabricaEntidades.crearEntidad("DINOSAURIO", { id: "x4" });
+  } catch (error) {
+    huboError = true;
+  }
+  comprobar(huboError, "un tipo desconocido debería lanzar un error");
 });

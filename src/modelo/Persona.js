@@ -1,3 +1,6 @@
+import { Entidad } from './Entidad.js';
+import { TipoEntidad } from './TipoEntidad.js';
+
 /**
  * Persona extends Entidad
  *
@@ -5,7 +8,7 @@
  *
  * Requisitos: modelo de dominio usado en RF-08 a RF-12.
  */
-class Persona extends Entidad {
+export class Persona extends Entidad {
   #fechaNacimiento;
   #fechaDefuncion;
   #nacionalidad;

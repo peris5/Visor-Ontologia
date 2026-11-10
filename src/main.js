@@ -1,83 +1,97 @@
 /*
- * PÁGINA TEMPORAL DE COMPROBACIÓN DEL INCREMENTO 1.
+ * PUNTO DE ENTRADA DE LA PÁGINA (incremento 2).
  *
- * Sirve para ver con los ojos que el subgrafo se construye bien: muestra los
- * nodos y las relaciones en dos tablas. En el incremento 2 esta página se
- * sustituirá por la escena 3D.
- *
- * Pasos al abrir la página:
- *   1. Leer la configuración (config.js).
- *   2. Crear el repositorio simulado y el constructor de subgrafos.
- *   3. Rellenar el desplegable de entidades y preparar el deslizador del umbral.
- *   4. Construir y mostrar el subgrafo; repetirlo cada vez que cambie algo.
+ * En el incremento 3 este papel lo hará la clase Aplicacion. De momento,
+ * este archivo crea y conecta las piezas:
+ *   1. Lee public/config.json para saber dónde está la API.
+ *   2. Pide al servidor la configuración (umbral por defecto y entidad
+ *      inicial) y la lista de entidades para el desplegable.
+ *   3. Crea la escena 3D y la leyenda.
+ *   4. Pide el subgrafo y lo dibuja; lo repite cada vez que cambia la
+ *      entidad o el umbral.
+ *   5. Actualiza la barra de estado: nodos, relaciones, fps y tiempo de
+ *      estabilización (para las pruebas de rendimiento, RNF-01 y RNF-29).
  */
+import { ClienteServicio } from './datos/ClienteServicio.js';
+import { EscenaGrafo } from './vista3d/EscenaGrafo.js';
+import { Leyenda } from './interfaz/Leyenda.js';
+import { TipoEntidad } from './modelo/TipoEntidad.js';
+
+// Máximo de entidades del desplegable temporal (en el incremento 3 se
+// sustituye por el buscador).
+const LIMITE_DEL_DESPLEGABLE = 500;
 
 // Objetos que se crean una vez al abrir la página y se reutilizan.
-let constructorDeSubgrafos = null;
+let cliente = null;
+let escena = null;
+let leyenda = null;
 
-// Cada vez que se pide un subgrafo se suma 1. Si el usuario mueve el
-// deslizador muy deprisa, pueden llegar respuestas viejas después de las
+// Cada vez que se pide un subgrafo se suma 1. Si el usuario cambia de
+// entidad muy deprisa, pueden llegar respuestas viejas después de las
 // nuevas; con este número sabemos cuál es la última y las demás se ignoran.
-let numeroDeLaUltimaPeticion = 0;
+let numeroDeLaUltimaCarga = 0;
+
+// Momento (en milisegundos) en que se empezó a dibujar el subgrafo actual,
+// para medir cuánto tarda en estabilizarse. null si ya se ha medido.
+let inicioDeLaSimulacion = null;
+
+// Para medir los fps: fotogramas contados y momento de la última medida.
+let fotogramasContados = 0;
+let ultimaMedidaFps = 0;
 
 /**
- * Punto de entrada: se ejecuta cuando el HTML ya está cargado.
+ * Se ejecuta cuando el HTML ya está cargado.
  */
 async function iniciarPagina() {
-  try {
-    const configuracion = crearConfiguracion();
-    const repositorio = crearRepositorio(configuracion);
-    const estrategia = new RelevanciaDesdeBD();
-    constructorDeSubgrafos = new ConstructorSubgrafo(repositorio, estrategia, configuracion.getUmbralPorDefecto(), configuracion.getMaxNodos());
+  escena = new EscenaGrafo();
+  escena.inicializar(document.getElementById("contenedor3d"), null);
+  leyenda = new Leyenda(null);
+  leyenda.montar(document.getElementById("panelIzquierdo"));
+  conectarEventos();
+  iniciarMedidas();
 
-    await rellenarDesplegable(repositorio, configuracion.getEntidadInicial());
-    prepararDeslizador(configuracion.getUmbralPorDefecto());
-    conectarEventos();
-    await recalcularSubgrafo();
+  try {
+    const urlServicio = await leerUrlServicio();
+    cliente = new ClienteServicio(urlServicio);
+    const configuracion = await cliente.obtenerConfiguracion();
+    await rellenarDesplegable(configuracion.entidadInicial);
+    prepararDeslizador(configuracion.umbralPorDefecto);
+    await cargarSubgrafo();
   } catch (error) {
     mostrarError(error.message);
   }
 }
 
 /**
- * Lee la variable global CONFIGURACION de config.js.
+ * Lee public/config.json (Vite lo copia tal cual al publicar, así se puede
+ * cambiar sin recompilar). Si no se puede leer, se usa "/api".
  *
- * @returns {Configuracion}
+ * @returns {Promise<string>}
  */
-function crearConfiguracion() {
-  if (typeof CONFIGURACION === "undefined") {
-    throw new Error("No se ha encontrado la configuración: revisa que config.js se carga en index.html.");
+async function leerUrlServicio() {
+  try {
+    const respuesta = await fetch("./config.json");
+    if (respuesta.ok) {
+      const datos = await respuesta.json();
+      if (typeof datos.urlServicio === "string" && datos.urlServicio !== "") {
+        return datos.urlServicio;
+      }
+    }
+  } catch (error) {
+    // Si falla, seguimos con el valor por defecto de abajo.
   }
-  const configuracion = new Configuracion();
-  configuracion.cargar(CONFIGURACION);
-  return configuracion;
+  return "/api";
 }
 
 /**
- * Crea el repositorio según el origen de datos configurado.
- * En este incremento solo existe el simulado.
+ * Pone en el desplegable las entidades del servidor y selecciona la inicial.
  *
- * @param {Configuracion} configuracion
- * @returns {RepositorioDatos}
- */
-function crearRepositorio(configuracion) {
-  if (configuracion.getOrigenDatos() !== "simulado") {
-    throw new Error("El origen de datos \"" + configuracion.getOrigenDatos() + "\" aún no está disponible (llegará en el incremento 4). Usa \"simulado\" en config.js.");
-  }
-  // 150 ms de espera para que se note que los datos "llegan por la red".
-  const retardoSimuladoMs = 150;
-  return new RepositorioSimulado(DATOS_EJEMPLO, retardoSimuladoMs);
-}
-
-/**
- * Pone en el desplegable todas las entidades y selecciona la inicial.
- *
- * @param {RepositorioDatos} repositorio
  * @param {string} idEntidadInicial
  */
-async function rellenarDesplegable(repositorio, idEntidadInicial) {
+async function rellenarDesplegable(idEntidadInicial) {
   const desplegable = document.getElementById("selectorEntidad");
-  const entidades = await repositorio.buscarEntidades("", null, null);
+  const entidades = await cliente.buscarEntidades("", null, LIMITE_DEL_DESPLEGABLE);
+  desplegable.textContent = "";
 
   for (let i = 0; i < entidades.length; i++) {
     const entidad = entidades[i];
@@ -87,7 +101,7 @@ async function rellenarDesplegable(repositorio, idEntidadInicial) {
     desplegable.appendChild(opcion);
   }
 
-  if (idEntidadInicial !== "") {
+  if (typeof idEntidadInicial === "string" && idEntidadInicial !== "") {
     desplegable.value = idEntidadInicial;
   }
 }
@@ -107,158 +121,160 @@ function prepararDeslizador(umbralInicial) {
  * Escribe al lado del deslizador el valor actual del umbral.
  */
 function mostrarValorDelUmbral() {
-  const deslizador = document.getElementById("deslizadorUmbral");
-  const umbral = Number(deslizador.value);
+  const umbral = Number(document.getElementById("deslizadorUmbral").value);
   document.getElementById("valorUmbral").textContent = umbral.toFixed(2);
 }
 
 /**
- * Recalcula el subgrafo cuando cambia la entidad o el umbral.
+ * Conecta los controles de la página.
  */
 function conectarEventos() {
-  const desplegable = document.getElementById("selectorEntidad");
-  const deslizador = document.getElementById("deslizadorUmbral");
-
-  desplegable.addEventListener("change", function () {
-    recalcularSubgrafo();
+  document.getElementById("selectorEntidad").addEventListener("change", function () {
+    cargarSubgrafo();
   });
 
-  // "input" salta mientras se arrastra, así la tabla se actualiza en directo.
+  const deslizador = document.getElementById("deslizadorUmbral");
+  // Mientras se arrastra ("input") solo se actualiza el número; el grafo se
+  // pide al soltar ("change"), para no rehacer la escena decenas de veces.
   deslizador.addEventListener("input", function () {
     mostrarValorDelUmbral();
-    recalcularSubgrafo();
+  });
+  deslizador.addEventListener("change", function () {
+    cargarSubgrafo();
+  });
+
+  // RF-27: volver a la vista inicial.
+  document.getElementById("botonVistaInicial").addEventListener("click", function () {
+    escena.restablecerCamara();
   });
 }
 
 /**
- * Construye el subgrafo con la entidad y el umbral elegidos y lo muestra.
+ * Pide el subgrafo de la entidad y el umbral elegidos y lo dibuja.
  * Si algo falla, enseña el aviso rojo en lugar de romper la página.
  */
-async function recalcularSubgrafo() {
-  ocultarError();
-  numeroDeLaUltimaPeticion = numeroDeLaUltimaPeticion + 1;
-  const numeroDeEstaPeticion = numeroDeLaUltimaPeticion;
+async function cargarSubgrafo() {
+  if (cliente === null) {
+    return;
+  }
+  numeroDeLaUltimaCarga = numeroDeLaUltimaCarga + 1;
+  const numeroDeEstaCarga = numeroDeLaUltimaCarga;
 
   const idEntidad = document.getElementById("selectorEntidad").value;
   const umbral = Number(document.getElementById("deslizadorUmbral").value);
-  document.getElementById("resumen").textContent = "Calculando…";
+  ocultarError();
+  document.getElementById("indicadorCarga").hidden = false;
 
   try {
-    constructorDeSubgrafos.setUmbral(umbral);
-    const subgrafo = await constructorDeSubgrafos.construir(idEntidad);
-
+    const subgrafo = await cliente.obtenerSubgrafo(idEntidad, umbral);
     // Si mientras esperábamos se ha pedido otro subgrafo, este ya no interesa.
-    if (numeroDeEstaPeticion !== numeroDeLaUltimaPeticion) {
+    if (numeroDeEstaCarga !== numeroDeLaUltimaCarga) {
       return;
     }
-    mostrarSubgrafo(subgrafo);
+    escena.mostrarSubgrafo(subgrafo);
+    leyenda.actualizar(calcularDatosLeyenda(subgrafo));
+    mostrarResumen(subgrafo);
+    inicioDeLaSimulacion = performance.now();
+    document.getElementById("estadoEstabilizacion").textContent = "Estabilizando…";
   } catch (error) {
-    if (numeroDeEstaPeticion === numeroDeLaUltimaPeticion) {
-      document.getElementById("resumen").textContent = "";
+    if (numeroDeEstaCarga === numeroDeLaUltimaCarga) {
       mostrarError(error.message);
     }
+  } finally {
+    if (numeroDeEstaCarga === numeroDeLaUltimaCarga) {
+      document.getElementById("indicadorCarga").hidden = true;
+    }
   }
+}
+
+/**
+ * Cuenta los nodos de cada tipo y las relaciones de cada tipo para la leyenda.
+ *
+ * @param {Subgrafo} subgrafo
+ * @returns {Object} { nodos: [{ tipo, cantidad }], relaciones: [{ tipo, cantidad }] }
+ */
+function calcularDatosLeyenda(subgrafo) {
+  const cantidadPorTipoDeNodo = new Map();
+  const nodos = subgrafo.getNodos();
+  for (let i = 0; i < nodos.length; i++) {
+    const tipo = nodos[i].getEntidad().getTipo();
+    sumarUno(cantidadPorTipoDeNodo, tipo);
+  }
+
+  // La clave es el propio TipoRelacion: ClienteServicio crea uno solo por id.
+  const cantidadPorTipoDeRelacion = new Map();
+  const relaciones = subgrafo.getRelaciones();
+  for (let i = 0; i < relaciones.length; i++) {
+    sumarUno(cantidadPorTipoDeRelacion, relaciones[i].getTipo());
+  }
+
+  const datos = { nodos: [], relaciones: [] };
+  for (const tipo of cantidadPorTipoDeNodo.keys()) {
+    datos.nodos.push({ tipo: tipo, cantidad: cantidadPorTipoDeNodo.get(tipo) });
+  }
+  for (const tipo of cantidadPorTipoDeRelacion.keys()) {
+    datos.relaciones.push({ tipo: tipo, cantidad: cantidadPorTipoDeRelacion.get(tipo) });
+  }
+  return datos;
+}
+
+/**
+ * Suma 1 al contador de esa clave (empieza en 0 si no existía).
+ *
+ * @param {Map} contadores
+ * @param {*} clave
+ */
+function sumarUno(contadores, clave) {
+  let cantidad = 0;
+  if (contadores.has(clave)) {
+    cantidad = contadores.get(clave);
+  }
+  contadores.set(clave, cantidad + 1);
 }
 
 /**
  * @param {Subgrafo} subgrafo
  */
-function mostrarSubgrafo(subgrafo) {
-  const nodos = subgrafo.getNodos();
-  const relaciones = subgrafo.getRelaciones();
-  document.getElementById("resumen").textContent =
-    "Entidad central: " + subgrafo.getEntidadCentral().getNombre() +
-    " · " + nodos.length + " nodos · " + relaciones.length + " relaciones";
-  mostrarTablaDeNodos(nodos);
-  mostrarTablaDeRelaciones(relaciones);
+function mostrarResumen(subgrafo) {
+  document.getElementById("estadoGrafo").textContent =
+    subgrafo.getEntidadCentral().getNombre() + " · " +
+    subgrafo.getNumeroNodos() + " nodos · " +
+    subgrafo.getRelaciones().length + " relaciones";
 }
 
 /**
- * Tabla de nodos, de más a menos relevante.
- *
- * @param {NodoRelevante[]} nodos
+ * Arranca un bucle propio (requestAnimationFrame, el mismo ritmo al que el
+ * navegador dibuja la escena) para medir los fps cada segundo y detectar
+ * cuándo termina la simulación.
  */
-function mostrarTablaDeNodos(nodos) {
-  nodos.sort(compararNodosPorRelevancia);
-  const cuerpoDeLaTabla = document.getElementById("cuerpoTablaNodos");
-  cuerpoDeLaTabla.innerHTML = "";
+function iniciarMedidas() {
+  ultimaMedidaFps = performance.now();
+  requestAnimationFrame(medirFotograma);
+}
 
-  for (let i = 0; i < nodos.length; i++) {
-    const nodo = nodos[i];
-    const entidad = nodo.getEntidad();
-    const fila = document.createElement("tr");
-    anadirCeldaDeTexto(fila, entidad.getNombre());
-    anadirCeldaDeTexto(fila, nombreDelTipoDeEntidad(entidad.getTipo()));
-    anadirCeldaDeTexto(fila, String(nodo.getNivel()));
-    anadirCeldaDeTexto(fila, nodo.getRelevancia().toFixed(3));
-    anadirCeldaDeTexto(fila, nodo.getCentralidad().toFixed(3));
-    cuerpoDeLaTabla.appendChild(fila);
+/**
+ * Se ejecuta en cada fotograma.
+ *
+ * @param {number} ahora - milisegundos desde que se abrió la página.
+ */
+function medirFotograma(ahora) {
+  fotogramasContados = fotogramasContados + 1;
+  const transcurrido = ahora - ultimaMedidaFps;
+  if (transcurrido >= 1000) {
+    const fps = fotogramasContados * 1000 / transcurrido;
+    document.getElementById("estadoFps").textContent = Math.round(fps) + " fps";
+    fotogramasContados = 0;
+    ultimaMedidaFps = ahora;
   }
-}
 
-/**
- * Tabla de relaciones, de más a menos relevante. El tipo lleva un cuadradito de su color.
- *
- * @param {Relacion[]} relaciones
- */
-function mostrarTablaDeRelaciones(relaciones) {
-  relaciones.sort(compararRelacionesPorRelevancia);
-  const cuerpoDeLaTabla = document.getElementById("cuerpoTablaRelaciones");
-  cuerpoDeLaTabla.innerHTML = "";
-
-  for (let i = 0; i < relaciones.length; i++) {
-    const relacion = relaciones[i];
-    const fila = document.createElement("tr");
-    anadirCeldaDeTexto(fila, relacion.getOrigen().getNombre());
-    fila.appendChild(crearCeldaDeTipo(relacion.getTipo()));
-    anadirCeldaDeTexto(fila, relacion.getDestino().getNombre());
-    anadirCeldaDeTexto(fila, relacion.getRelevancia().toFixed(3));
-    cuerpoDeLaTabla.appendChild(fila);
+  // RNF-29: tiempo hasta que la simulación de fuerzas se queda quieta.
+  if (inicioDeLaSimulacion !== null && escena.estaEstabilizado()) {
+    const segundos = (performance.now() - inicioDeLaSimulacion) / 1000;
+    const texto = segundos.toFixed(1).replace(".", ",");
+    document.getElementById("estadoEstabilizacion").textContent = "Estabilizado en " + texto + " s";
+    inicioDeLaSimulacion = null;
   }
-}
-
-/**
- * Celda con un cuadradito del color del tipo y su nombre.
- *
- * @param {TipoRelacion} tipo
- * @returns {HTMLTableCellElement}
- */
-function crearCeldaDeTipo(tipo) {
-  const celda = document.createElement("td");
-  const cuadradito = document.createElement("span");
-  cuadradito.className = "muestra-color";
-  cuadradito.style.backgroundColor = tipo.getColor();
-  celda.appendChild(cuadradito);
-  celda.appendChild(document.createTextNode(tipo.getNombre()));
-  return celda;
-}
-
-/**
- * Añade a la fila una celda con texto. Usamos textContent (y no innerHTML)
- * para que un nombre con símbolos raros nunca se interprete como HTML.
- *
- * @param {HTMLTableRowElement} fila
- * @param {string} texto
- */
-function anadirCeldaDeTexto(fila, texto) {
-  const celda = document.createElement("td");
-  celda.textContent = texto;
-  fila.appendChild(celda);
-}
-
-/**
- * Para ordenar de mayor a menor relevancia: si b es más relevante que a,
- * el resultado es positivo y b va antes.
- */
-function compararNodosPorRelevancia(nodoA, nodoB) {
-  return nodoB.getRelevancia() - nodoA.getRelevancia();
-}
-
-/**
- * Igual que compararNodosPorRelevancia, pero para relaciones.
- */
-function compararRelacionesPorRelevancia(relacionA, relacionB) {
-  return relacionB.getRelevancia() - relacionA.getRelevancia();
+  requestAnimationFrame(medirFotograma);
 }
 
 /**
@@ -283,7 +299,7 @@ function nombreDelTipoDeEntidad(tipo) {
  */
 function mostrarError(mensaje) {
   const aviso = document.getElementById("avisoError");
-  aviso.textContent = "Error: " + mensaje;
+  aviso.textContent = mensaje;
   aviso.hidden = false;
 }
 

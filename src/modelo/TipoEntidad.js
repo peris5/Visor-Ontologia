@@ -10,7 +10,7 @@
  * @readonly
  * @enum {string}
  */
-const TipoEntidad = Object.freeze({
+export const TipoEntidad = Object.freeze({
   PERSONA: "PERSONA",
   ORGANIZACION: "ORGANIZACION",
   OBRA_DE_ARTE: "OBRA_DE_ARTE"

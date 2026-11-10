@@ -1,0 +1,7 @@
+{
+  "_comentario": "Configuración del servidor (RNF-16). Las credenciales de la base de datos real NO irán aquí, sino en variables de entorno (archivo .env, que no se sube a Git).",
+  "origenDatos": "simulado",
+  "umbralPorDefecto": 0.3,
+  "maxNodos": 150,
+  "entidadInicial": "p01"
+}

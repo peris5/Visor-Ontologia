@@ -1,3 +1,15 @@
+# Dependencias de Node y resultado de "npm run build"
+node_modules/
+dist/
+
+# Python
+.venv/
+__pycache__/
+.pytest_cache/
+
+# Credenciales (para cuando haya base de datos real)
+.env
+
 # Sistema operativo
 .DS_Store
 Thumbs.db

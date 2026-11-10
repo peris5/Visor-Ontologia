@@ -1,3 +1,8 @@
+import { TipoEntidad } from '../modelo/TipoEntidad.js';
+import { Persona } from '../modelo/Persona.js';
+import { Organizacion } from '../modelo/Organizacion.js';
+import { ObraDeArte } from '../modelo/ObraDeArte.js';
+
 /**
  * FabricaEntidades
  *
@@ -5,7 +10,7 @@
  * los datos no tiene que saber qué clase concreta usar (patrón Fábrica).
  *
  */
-class FabricaEntidades {
+export class FabricaEntidades {
   /**
    * @param {string} tipo - un valor de TipoEntidad.
    * @param {Object} datos - datos de la entidad.

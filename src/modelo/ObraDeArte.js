@@ -1,3 +1,6 @@
+import { Entidad } from './Entidad.js';
+import { TipoEntidad } from './TipoEntidad.js';
+
 /**
  * ObraDeArte extends Entidad
  *
@@ -5,7 +8,7 @@
  *
  * Requisitos: modelo de dominio usado en RF-08 a RF-12.
  */
-class ObraDeArte extends Entidad {
+export class ObraDeArte extends Entidad {
   #fechaCreacion;
   #tecnica;
 

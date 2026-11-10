@@ -1,3 +1,6 @@
+import { Entidad } from './Entidad.js';
+import { TipoEntidad } from './TipoEntidad.js';
+
 /**
  * Organizacion extends Entidad
  *
@@ -5,7 +8,7 @@
  *
  * Requisitos: modelo de dominio usado en RF-08 a RF-12.
  */
-class Organizacion extends Entidad {
+export class Organizacion extends Entidad {
   #fechaFundacion;
   #sede;
 

@@ -1,7 +1,9 @@
 /*
- * Mini sistema de pruebas para ejecutar en el navegador (sin Node ni librerías).
+ * Mini sistema de pruebas para ejecutar en el navegador (sin librerías).
  *
- * Uso:
+ * Uso (en cada archivo de pruebas):
+ *   import { prueba, comprobar, comprobarIgual } from './miniPruebas.js';
+ *
  *   prueba("nombre de la prueba", function () {
  *     comprobar(2 + 2 === 4, "2 + 2 debería ser 4");
  *     comprobarIgual(sumar(2, 2), 4, "sumar(2, 2)");
@@ -10,7 +12,8 @@
  * Las pruebas pueden ser asíncronas: prueba("...", async function () { ... await ... });
  *
  * Funcionamiento: prueba() solo apunta la prueba en una lista. Al final,
- * pruebas.html llama a ejecutarPruebas(), que las ejecuta una a una y pinta
+ * tests/ejecutarPruebas.js (que importa todos los archivos de pruebas)
+ * llama a ejecutarPruebas(), que las ejecuta una a una y pinta
  * el resultado. Una comprobación que falla lanza un error; si la prueba
  * termina sin errores, es correcta.
  */
@@ -24,7 +27,7 @@ const listaDePruebasRegistradas = [];
  * @param {string} nombre
  * @param {Function} funcion - normal o async.
  */
-function prueba(nombre, funcion) {
+export function prueba(nombre, funcion) {
   listaDePruebasRegistradas.push({ nombre: nombre, funcion: funcion });
 }
 
@@ -34,7 +37,7 @@ function prueba(nombre, funcion) {
  * @param {boolean} condicion
  * @param {string} mensaje - qué se esperaba.
  */
-function comprobar(condicion, mensaje) {
+export function comprobar(condicion, mensaje) {
   if (!condicion) {
     throw new Error(mensaje);
   }
@@ -47,7 +50,7 @@ function comprobar(condicion, mensaje) {
  * @param {*} esperado - lo que debería dar.
  * @param {string} mensaje - qué se está comprobando.
  */
-function comprobarIgual(obtenido, esperado, mensaje) {
+export function comprobarIgual(obtenido, esperado, mensaje) {
   if (obtenido !== esperado) {
     throw new Error(mensaje + " → obtenido: " + String(obtenido) + ", esperado: " + String(esperado));
   }
@@ -61,7 +64,7 @@ function comprobarIgual(obtenido, esperado, mensaje) {
  * @param {number} numero
  * @returns {number}
  */
-function redondear(numero) {
+export function redondear(numero) {
   return Math.round(numero * 1000000) / 1000000;
 }
 
@@ -70,7 +73,7 @@ function redondear(numero) {
  *
  * @returns {Promise<Object[]>} lista de { nombre, correcta, mensaje }.
  */
-async function ejecutarTodasLasPruebas() {
+export async function ejecutarTodasLasPruebas() {
   const resultados = [];
   for (let i = 0; i < listaDePruebasRegistradas.length; i++) {
     const pruebaActual = listaDePruebasRegistradas[i];
@@ -88,7 +91,7 @@ async function ejecutarTodasLasPruebas() {
 /**
  * Ejecuta las pruebas y pinta el resultado en pruebas.html.
  */
-async function ejecutarPruebas() {
+export async function ejecutarPruebas() {
   const resultados = await ejecutarTodasLasPruebas();
   mostrarResumen(resultados);
   mostrarListaDeResultados(resultados);
