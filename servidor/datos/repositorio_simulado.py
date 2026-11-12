@@ -42,6 +42,7 @@ class RepositorioSimulado(RepositorioDatos):
         self.__entidades = self.__cargar_entidades(datos["entidades"])
         self.__tipos = self.__descubrir_tipos(datos["relaciones"])
         self.__relaciones = self.__cargar_relaciones(datos["relaciones"])
+        self.__relaciones_por_entidad = self.__indexar_relaciones()
 
     async def buscar_entidades(self, texto: str, tipo: TipoEntidad | None,
                                limite: int | None) -> list[Entidad]:
@@ -78,11 +79,12 @@ class RepositorioSimulado(RepositorioDatos):
         recorre en los dos sentidos). Lista vacía si la entidad no existe.
         """
         await self.__esperar()
+        # Se busca en el índice (ver __indexar_relaciones) en lugar de recorrer
+        # todas las relaciones. Se devuelve una copia de la lista para que
+        # quien la reciba no pueda cambiar el índice sin querer.
         relaciones_de_la_entidad = []
-        for relacion in self.__relaciones:
-            es_el_origen = relacion.get_origen().get_id() == id_entidad
-            es_el_destino = relacion.get_destino().get_id() == id_entidad
-            if es_el_origen or es_el_destino:
+        if id_entidad in self.__relaciones_por_entidad:
+            for relacion in self.__relaciones_por_entidad[id_entidad]:
                 relaciones_de_la_entidad.append(relacion)
         return relaciones_de_la_entidad
 
@@ -142,6 +144,31 @@ class RepositorioSimulado(RepositorioDatos):
         for fila in lista_de_relaciones:
             relaciones.append(self.__crear_relacion_desde_fila(fila))
         return relaciones
+
+    def __indexar_relaciones(self) -> dict[str, list[Relacion]]:
+        """(Privado) Índice idEntidad → relaciones en las que participa (como
+        origen o como destino), en el orden de los datos.
+
+        Se prepara UNA vez al crear el repositorio. Sin él, obtener_relaciones
+        tendría que recorrer todas las relaciones cada vez que se expande un
+        nodo: con 1036 relaciones y 150 nodos son unas 150.000 comparaciones
+        por subgrafo, y era el 80 % del tiempo de cada petición. Con el índice,
+        encontrar las relaciones de una entidad es inmediato. (La base de datos
+        real hará lo mismo con sus propios índices.)
+        """
+        relaciones_por_entidad: dict[str, list[Relacion]] = {}
+        for relacion in self.__relaciones:
+            id_origen = relacion.get_origen().get_id()
+            id_destino = relacion.get_destino().get_id()
+            if id_origen not in relaciones_por_entidad:
+                relaciones_por_entidad[id_origen] = []
+            relaciones_por_entidad[id_origen].append(relacion)
+            # Una relación de una entidad consigo misma solo se apunta una vez.
+            if id_destino != id_origen:
+                if id_destino not in relaciones_por_entidad:
+                    relaciones_por_entidad[id_destino] = []
+                relaciones_por_entidad[id_destino].append(relacion)
+        return relaciones_por_entidad
 
     def __crear_relacion_desde_fila(self, fila: list[Any]) -> Relacion:
         """(Privado) Crea una Relacion a partir de una fila, comprobando que

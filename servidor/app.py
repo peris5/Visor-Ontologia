@@ -19,10 +19,11 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from servidor.api.cache_subgrafos import CacheSubgrafos
 from servidor.api.conversor_json import ConversorJson
 from servidor.datos.repositorio_datos import RepositorioDatos
 from servidor.datos.repositorio_simulado import RepositorioSimulado
@@ -43,6 +44,17 @@ CARPETA_PAGINA_PUBLICADA = CARPETA_PROYECTO / "dist"
 # parecerse a una red. Ahora entre el navegador y los datos ya hay una red de
 # verdad (la petición HTTP), así que no hace falta añadir más espera.
 RETARDO_SIMULADO_MS = 0
+
+# Caché de subgrafos en el servidor (ver CacheSubgrafos). Un subgrafo de 150
+# nodos ocupa unos 100 KB, así que 200 subgrafos son unos 20 MB de memoria.
+MAX_SUBGRAFOS_EN_CACHE = 200
+SEGUNDOS_VIGENCIA_CACHE = 600
+
+# Durante cuántos segundos puede el NAVEGADOR reutilizar una respuesta sin
+# volver a pedirla (cabecera Cache-Control). Si el usuario vuelve a una
+# entidad que ya ha visto, ni siquiera llega una petición al servidor.
+SEGUNDOS_CACHE_NAVEGADOR = 120
+CABECERA_CACHE_NAVEGADOR = "public, max-age=" + str(SEGUNDOS_CACHE_NAVEGADOR)
 
 registro = logging.getLogger("servidor")
 
@@ -84,6 +96,7 @@ async def ciclo_de_vida(aplicacion: FastAPI) -> AsyncIterator[None]:
     repositorio = crear_repositorio(configuracion)
     aplicacion.state.configuracion = configuracion
     aplicacion.state.repositorio = repositorio
+    aplicacion.state.cache = CacheSubgrafos(MAX_SUBGRAFOS_EN_CACHE, SEGUNDOS_VIGENCIA_CACHE)
     yield
     await repositorio.cerrar()
 
@@ -118,10 +131,11 @@ async def salud() -> dict[str, str]:
 
 
 @app.get("/api/configuracion")
-async def obtener_configuracion(peticion: Request) -> dict[str, Any]:
+async def obtener_configuracion(peticion: Request, respuesta: Response) -> dict[str, Any]:
     """Lo que la página necesita saber de la configuración del servidor.
     El máximo de nodos NO se envía: lo decide solo el servidor.
     """
+    respuesta.headers["Cache-Control"] = CABECERA_CACHE_NAVEGADOR
     configuracion = peticion.app.state.configuracion
     return {
         "umbralPorDefecto": configuracion.get_umbral_por_defecto(),
@@ -132,11 +146,13 @@ async def obtener_configuracion(peticion: Request) -> dict[str, Any]:
 @app.get("/api/entidades")
 async def buscar_entidades(
     peticion: Request,
+    respuesta: Response,
     texto: str = "",
     tipo: TipoEntidad | None = None,
     limite: int = Query(50, ge=1, le=1000),
 ) -> list[dict[str, Any]]:
     """Entidades cuyo nombre contiene el texto (id, nombre y tipo)."""
+    respuesta.headers["Cache-Control"] = CABECERA_CACHE_NAVEGADOR
     repositorio = peticion.app.state.repositorio
     entidades = await repositorio.buscar_entidades(texto, tipo, limite)
     resultado = []
@@ -150,30 +166,52 @@ async def obtener_subgrafo(
     peticion: Request,
     id_entidad: str,
     umbral: float | None = Query(None, ge=0, le=1),
-) -> dict[str, Any]:
+) -> Response:
     """El subgrafo relevante de una entidad, ya construido.
 
     FastAPI comprueba que el umbral está entre 0 y 1 (si no, responde 422).
     Si no se indica, se usa el de la configuración. El máximo de nodos lo
     pone el servidor y no se puede cambiar desde la petición, para que nadie
     pueda pedir un subgrafo enorme.
+
+    Para que el servidor trabaje lo mínimo con muchos usuarios a la vez:
+     - El umbral se redondea a 2 decimales (el deslizador va de 0,05 en
+       0,05). Así 0,3 y 0,3000001 son el mismo subgrafo y nadie puede
+       saltarse la caché pidiendo umbrales casi iguales.
+     - El subgrafo se busca primero en la caché (CacheSubgrafos); solo se
+       construye si no está.
+     - La respuesta lleva Cache-Control para que el navegador la reutilice.
     """
     configuracion = peticion.app.state.configuracion
     repositorio = peticion.app.state.repositorio
-
-    entidad = await repositorio.obtener_entidad(id_entidad)
-    if entidad is None:
-        raise HTTPException(status_code=404, detail="No existe la entidad " + id_entidad)
+    cache = peticion.app.state.cache
 
     umbral_usado = configuracion.get_umbral_por_defecto()
     if umbral is not None:
         umbral_usado = umbral
+    umbral_usado = round(umbral_usado, 2)
 
-    # Se crea un constructor por petición: es muy ligero y así dos peticiones
-    # a la vez con umbrales distintos no se pisan el umbral la una a la otra.
-    constructor = ConstructorSubgrafo(repositorio, RelevanciaDesdeBD(), umbral_usado, configuracion.get_max_nodos())
-    subgrafo = await constructor.construir(id_entidad)
-    return ConversorJson.subgrafo_a_diccionario(subgrafo)
+    async def construir_json() -> bytes:
+        """Construye el subgrafo y lo convierte a JSON. Solo se ejecuta si
+        no estaba en la caché.
+        """
+        entidad = await repositorio.obtener_entidad(id_entidad)
+        if entidad is None:
+            raise HTTPException(status_code=404, detail="No existe la entidad " + id_entidad)
+        # Se crea un constructor por petición: es muy ligero y así dos
+        # peticiones a la vez con umbrales distintos no se pisan el umbral.
+        constructor = ConstructorSubgrafo(repositorio, RelevanciaDesdeBD(), umbral_usado,
+                                          configuracion.get_max_nodos())
+        subgrafo = await constructor.construir(id_entidad)
+        diccionario = ConversorJson.subgrafo_a_diccionario(subgrafo)
+        # Se guarda ya convertido a texto JSON: así, cuando se reutiliza, el
+        # servidor ni siquiera tiene que volver a convertirlo.
+        return json.dumps(diccionario, ensure_ascii=False).encode("utf-8")
+
+    clave = id_entidad + "|" + str(umbral_usado)
+    contenido = await cache.obtener(clave, construir_json)
+    return Response(content=contenido, media_type="application/json",
+                    headers={"Cache-Control": CABECERA_CACHE_NAVEGADOR})
 
 
 # ─────────────── Página publicada ───────────────

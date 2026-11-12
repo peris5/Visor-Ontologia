@@ -27,6 +27,10 @@ class Subgrafo:
         # por su id al momento y recuerda el orden en que se añadieron.
         self.__nodos: dict[str, NodoRelevante] = {}
         self.__relaciones: list[Relacion] = []
+        # Ids de las relaciones ya añadidas: comprobar si un id está en un
+        # conjunto (set) es inmediato, mientras que en una lista hay que
+        # recorrerla entera. agregar_relacion lo comprueba cientos de veces.
+        self.__ids_de_relaciones: set[str] = set()
 
         # La entidad central siempre está: relevancia 1 y nivel 0.
         nodo_central = NodoRelevante(entidad_central, 1.0, 0)
@@ -84,6 +88,7 @@ class Subgrafo:
         if not self.contiene_entidad(id_origen) or not self.contiene_entidad(id_destino):
             raise ValueError("La relación " + relacion.get_id() + " une entidades que no están en el subgrafo.")
         self.__relaciones.append(relacion)
+        self.__ids_de_relaciones.add(relacion.get_id())
 
     def eliminar_nodo(self, identificador: str) -> None:
         """Quita un nodo y todas las relaciones en las que participa (una
@@ -96,6 +101,9 @@ class Subgrafo:
             return
         del self.__nodos[identificador]
         self.__eliminar_relaciones_de(identificador)
+        self.__ids_de_relaciones = set()
+        for relacion in self.__relaciones:
+            self.__ids_de_relaciones.add(relacion.get_id())
 
     def contiene_entidad(self, identificador: str) -> bool:
         """True si la entidad tiene un nodo en el subgrafo."""
@@ -103,10 +111,7 @@ class Subgrafo:
 
     def __contiene_relacion(self, id_relacion: str) -> bool:
         """(Privado) ¿Hay ya una relación con este id?"""
-        for relacion in self.__relaciones:
-            if relacion.get_id() == id_relacion:
-                return True
-        return False
+        return id_relacion in self.__ids_de_relaciones
 
     def __eliminar_relaciones_de(self, id_entidad: str) -> None:
         """(Privado) Se queda solo con las relaciones que no tocan a la entidad indicada."""

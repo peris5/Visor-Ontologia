@@ -100,6 +100,25 @@ def test_entidad_inexistente_da_404(cliente: TestClient) -> None:
     assert respuesta.json() == {"detail": "No existe la entidad P99"}
 
 
+def test_el_umbral_se_redondea_a_dos_decimales(cliente: TestClient) -> None:
+    subgrafo = cliente.get("/api/subgrafo/p01", params={"umbral": 0.3000001}).json()
+    assert subgrafo["umbral"] == 0.3
+
+
+def test_la_misma_peticion_da_la_misma_respuesta(cliente: TestClient) -> None:
+    primera = cliente.get("/api/subgrafo/p01", params={"umbral": 0.5})
+    segunda = cliente.get("/api/subgrafo/p01", params={"umbral": 0.5})
+    assert primera.content == segunda.content
+    assert primera.headers["content-type"] == "application/json"
+
+
+def test_las_respuestas_permiten_cache_del_navegador(cliente: TestClient) -> None:
+    rutas = ["/api/subgrafo/p01", "/api/entidades", "/api/configuracion"]
+    for ruta in rutas:
+        cabecera = cliente.get(ruta).headers["cache-control"]
+        assert "max-age=" in cabecera
+
+
 def test_con_un_umbral_mayor_no_hay_mas_nodos(cliente: TestClient) -> None:
     anterior = None
     for umbral in [0.1, 0.3, 0.5, 0.7, 0.9]:

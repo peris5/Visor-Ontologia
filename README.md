@@ -91,6 +91,24 @@ python -m uvicorn servidor.app:app --port 8000
 
 `npm run build` deja la página en `dist/`. Si existe esa carpeta, el servidor Python la sirve en `/` además de la API, así que en el servidor real basta con un solo programa: hace falta Python, pero no Node. La aplicación queda en `http://localhost:8000/`.
 
+En un servidor con varios núcleos se pueden arrancar varios procesos para atender a más usuarios a la vez (cada uno con su propia caché): `python -m uvicorn servidor.app:app --port 8000 --workers 4`. `--workers` no se puede usar junto con `--reload`.
+
+## Rendimiento con muchos usuarios a la vez (RNF-01)
+
+El cálculo del subgrafo se queda en el servidor (por seguridad y para hacer una sola petición por subgrafo), pero se ha hecho que cada petición cueste lo mínimo:
+
+1. **Índice de relaciones** (`RepositorioSimulado`): las relaciones de cada entidad se agrupan al arrancar, en lugar de recorrer las 1036 cada vez que se expande un nodo. Construir el subgrafo de 150 nodos de `p01` pasó de 58 ms a 12 ms.
+2. **Caché de subgrafos** (`CacheSubgrafos`): cada subgrafo se calcula y se convierte a JSON una sola vez; las peticiones iguales reciben el JSON guardado. Si llegan varias iguales mientras se calcula, todas esperan al mismo cálculo. Guarda como mucho 200 subgrafos (unos 20 MB) durante 10 minutos.
+3. **Umbral redondeado a 2 decimales**, para que pedir 0,3 y 0,3000001 sea lo mismo y nadie pueda saltarse la caché.
+4. **Caché del navegador**: las respuestas llevan `Cache-Control: max-age=120`, así que si el usuario vuelve a una entidad que ya ha visto en los últimos 2 minutos, el navegador no pregunta al servidor. Durante el desarrollo, si regeneras los datos de ejemplo, reinicia el servidor y recarga con `Ctrl + F5`.
+
+Prueba de carga en un portátil de 4 núcleos (el programa que lanza las peticiones corre en el mismo equipo), con subgrafos de hasta 150 nodos:
+
+| | Peticiones por segundo | Espera mediana (50 a la vez) |
+|---|---|---|
+| Antes | 16–25 | 1,9–3,0 s |
+| Después | 150–200 | 0,17 s |
+
 ## Datos de ejemplo
 
 `servidor/datos/datos_ejemplo.json` tiene 378 entidades (131 personas, 22 organizaciones y 225 obras) y 1036 relaciones de 14 tipos, todas inventadas. Las 16 entidades y 27 relaciones del incremento 1 siguen al principio del archivo, con los mismos ids, porque las pruebas dependen de ellas.
@@ -129,7 +147,7 @@ Crear en `servidor/datos/` una clase nueva que herede de `RepositorioDatos` e im
 | `GET /api/entidades?texto=&tipo=&limite=50` | lista de entidades (`id`, `nombre`, `tipo`) |
 | `GET /api/subgrafo/{id}?umbral=0.3` | el subgrafo completo: `idCentral`, `umbral`, `nodos` y `relaciones` |
 
-- `umbral` entre 0 y 1; si no, **422**. Si no se indica, se usa el de la configuración.
+- `umbral` entre 0 y 1; si no, **422**. Si no se indica, se usa el de la configuración. Se redondea a 2 decimales.
 - El máximo de nodos lo pone el servidor y no se puede cambiar desde la petición.
 - Entidad inexistente: **404** con `{"detail": "No existe la entidad P99"}`. Cualquier otro error: **500** con un mensaje genérico (el detalle queda en el registro del servidor).
 
@@ -141,6 +159,8 @@ Crear en `servidor/datos/` una clase nueva que herede de `RepositorioDatos` e im
 |---|---|
 | `app.py` | Rutas de la API, creación del repositorio al arrancar y página publicada. |
 | `api/conversor_json.py` | **ConversorJson**: convierte entidades, relaciones y subgrafos en diccionarios (la forma del JSON está solo aquí). |
+| `api/cache_subgrafos.py` | **CacheSubgrafos**: guarda los subgrafos ya calculados (en JSON) para no repetir el trabajo con muchos usuarios (RNF-01). |
+| `herramientas/generador_datos_ejemplo.py` | **GeneradorDatosEjemplo**: herramienta que genera los datos de ejemplo grandes (no la usa la aplicación). |
 | `modelo/` | Traducción del modelo del incremento 1 (`TipoEntidad`, `Entidad`, `Persona`, `Organizacion`, `ObraDeArte`, `TipoRelacion`, `Relacion`, `NodoRelevante`, `Subgrafo`). |
 | `datos/` | `RepositorioDatos` (interfaz), `RepositorioSimulado`, `FabricaEntidades` y `datos_ejemplo.json`. |
 | `logica/` | `Configuracion`, `EstrategiaRelevancia`, `RelevanciaDesdeBD`, `CalculadorCentralidad`, `PaletaColores` y `ConstructorSubgrafo` (con la explicación de la búsqueda «primero el mejor»). |
