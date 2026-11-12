@@ -1,11 +1,12 @@
-"""Pruebas del RepositorioSimulado (las mismas que tests/pruebasRepositorio.js).
+"""Pruebas del RepositorioSimulado (las de tests/pruebasRepositorio.js del incremento 1).
+
+Las de obtener_vecindario están en test_vecindario.py.
 
 Los métodos del repositorio son asíncronos; asyncio.run() los ejecuta y
 espera su resultado, así no hace falta ningún complemento de pytest.
 """
 import asyncio
 import inspect
-import re
 
 import pytest
 
@@ -15,8 +16,6 @@ from servidor.modelo.obra_de_arte import ObraDeArte
 from servidor.modelo.relacion import Relacion
 from servidor.modelo.tipo_entidad import TipoEntidad
 from servidor.tests.utilidades import cargar_datos_ejemplo
-
-FORMATO_DE_COLOR = re.compile(r"^#[0-9a-f]{6}$")
 
 
 def crear_datos_prueba() -> dict:
@@ -58,13 +57,13 @@ def test_obtener_relaciones_en_los_dos_sentidos() -> None:
     assert contiene_relacion_con_id(relaciones, "r4")
 
 
-def test_los_tipos_se_descubren_con_nombre_y_color() -> None:
+def test_los_tipos_se_descubren_de_los_datos() -> None:
     tipos = asyncio.run(crear_repositorio().obtener_tipos_relacion())
-    assert len(tipos) == 3
-    assert tipos[0].get_id() == "maestro_de"
-    assert tipos[0].get_nombre() == "Maestro de"
+    ids = []
     for tipo in tipos:
-        assert FORMATO_DE_COLOR.match(tipo.get_color())
+        ids.append(tipo.get_id())
+    # Sin repetir y en orden de aparición. (Nombre y color: en el navegador.)
+    assert ids == ["maestro_de", "autor_de", "miembro_de"]
 
 
 def test_las_relaciones_apuntan_a_su_tipo() -> None:
@@ -89,6 +88,7 @@ def test_todos_los_metodos_son_asincronos() -> None:
     assert inspect.iscoroutinefunction(repositorio.obtener_entidad)
     assert inspect.iscoroutinefunction(repositorio.obtener_relaciones)
     assert inspect.iscoroutinefunction(repositorio.obtener_tipos_relacion)
+    assert inspect.iscoroutinefunction(repositorio.obtener_vecindario)
 
 
 def test_buscar_entidades_filtra_por_texto_tipo_y_limite() -> None:

@@ -5,6 +5,7 @@ from servidor.modelo.entidad import Entidad
 from servidor.modelo.relacion import Relacion
 from servidor.modelo.tipo_entidad import TipoEntidad
 from servidor.modelo.tipo_relacion import TipoRelacion
+from servidor.modelo.vecindario import Vecindario
 
 
 class RepositorioDatos(ABC):
@@ -40,6 +41,23 @@ class RepositorioDatos(ABC):
     @abstractmethod
     async def obtener_tipos_relacion(self) -> list[TipoRelacion]:
         """Todos los tipos de relación conocidos."""
+
+    @abstractmethod
+    async def obtener_vecindario(self, id_entidad: str, umbral: float, max_entidades: int) -> Vecindario:
+        """Todas las entidades y relaciones a las que se llega desde la
+        entidad siguiendo SOLO relaciones cuyo valor supera el umbral (en los
+        dos sentidos), con un máximo de max_entidades entidades.
+
+        Con esto el navegador construye el subgrafo sin hacer una petición
+        por cada nodo que expande.
+
+        Con la base de datos real (incremento 4) será UNA sola consulta, con
+        caminos de longitud variable filtrados por el valor de la relación.
+        Por eso es un método del repositorio: cada base de datos lo hará a su
+        manera, y el resto del servidor no tiene que saber cómo.
+
+        Lanza ValueError si la entidad no existe.
+        """
 
     async def cerrar(self) -> None:
         """Libera lo que use el repositorio (por ejemplo, la conexión con la

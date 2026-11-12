@@ -1,9 +1,9 @@
 /**
  * TipoRelacion
  *
- * Un tipo de relación (por ejemplo "Maestro de"). El servidor descubre los
- * tipos a partir de los datos y les da un nombre legible y un color; el
- * navegador los recibe ya hechos.
+ * Un tipo de relación (por ejemplo "Maestro de"). Los tipos no se conocen de
+ * antemano: el servidor solo envía su id ("maestro_de") y el navegador
+ * (RepositorioVecindario) le da a cada uno un nombre legible y un color.
  *
  * Requisitos: RF-20 y RF-39 (cada tipo tiene su color).
  */
@@ -45,5 +45,32 @@ export class TipoRelacion {
    */
   getColor() {
     return this.#color;
+  }
+
+  /**
+   * Convierte un id en un nombre legible: cambia los guiones bajos por
+   * espacios y pone la primera letra en mayúscula.
+   * Ejemplo: "maestro_de" → "Maestro de".
+   *
+   * @param {string} id
+   * @returns {string}
+   */
+  static nombreDesdeId(id) {
+    if (typeof id !== "string") {
+      return "";
+    }
+    let nombre = "";
+    for (let i = 0; i < id.length; i++) {
+      const caracter = id[i];
+      if (caracter === "_") {
+        nombre = nombre + " ";
+      } else if (nombre === "") {
+        // Es la primera letra: va en mayúscula.
+        nombre = nombre + caracter.toUpperCase();
+      } else {
+        nombre = nombre + caracter.toLowerCase();
+      }
+    }
+    return nombre;
   }
 }

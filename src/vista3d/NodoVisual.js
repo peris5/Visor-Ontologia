@@ -44,7 +44,7 @@ export class NodoVisual {
     });
     this._malla = new THREE.Mesh(this._crearGeometria(), material);
     this._malla.scale.setScalar(tamano);
-    // Así, cuando en el incremento 3 se haga clic en una malla, se sabrá a qué nodo pertenece.
+    // Así, al hacer clic en una malla (SelectorInteraccion), se sabe a qué nodo pertenece.
     this._malla.userData.visual = this;
 
     this._etiqueta = this.#crearEtiqueta(nodo);

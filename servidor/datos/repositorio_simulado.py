@@ -1,14 +1,15 @@
-"""RepositorioSimulado (traducción de src/datos/RepositorioSimulado.js)."""
+"""RepositorioSimulado (traducción de src/datos/RepositorioSimulado.js del incremento 1)."""
 import asyncio
+import math
 from typing import Any
 
 from servidor.datos.fabrica_entidades import FabricaEntidades
 from servidor.datos.repositorio_datos import RepositorioDatos
-from servidor.logica.paleta_colores import PaletaColores
 from servidor.modelo.entidad import Entidad
 from servidor.modelo.relacion import Relacion
 from servidor.modelo.tipo_entidad import TipoEntidad
 from servidor.modelo.tipo_relacion import TipoRelacion
+from servidor.modelo.vecindario import Vecindario
 
 
 class RepositorioSimulado(RepositorioDatos):
@@ -22,7 +23,7 @@ class RepositorioSimulado(RepositorioDatos):
         "relaciones": [ [id, idOrigen, idDestino, idTipoRelacion, valor] ]
       }
 
-    Requisitos: RNF-17; RF-20 y RF-39 (descubre los tipos y les da color).
+    Requisitos: RNF-17; RF-39 (descubre los tipos de relación de los datos).
     """
 
     def __init__(self, datos: dict[str, Any], retardo_ms: float) -> None:
@@ -47,8 +48,8 @@ class RepositorioSimulado(RepositorioDatos):
     async def buscar_entidades(self, texto: str, tipo: TipoEntidad | None,
                                limite: int | None) -> list[Entidad]:
         """Búsqueda simple: nombres que contienen el texto, sin distinguir
-        mayúsculas. (Actualizar en el incremento 3.)
-        texto "" devuelve todas.
+        mayúsculas. texto "" devuelve todas (así la usa /api/nombres).
+        La búsqueda tolerante a erratas la hace el navegador (Buscador.js).
         """
         await self.__esperar()
 
@@ -96,6 +97,110 @@ class RepositorioSimulado(RepositorioDatos):
             lista_de_tipos.append(tipo)
         return lista_de_tipos
 
+    async def obtener_vecindario(self, id_entidad: str, umbral: float, max_entidades: int) -> Vecindario:
+        """Recorrido EN ANCHURA desde la entidad: primero sus vecinos, después
+        los vecinos de sus vecinos, etc. Solo se siguen las relaciones cuyo
+        valor supera el umbral, en los dos sentidos. Se para cuando no quedan
+        entidades por visitar o cuando se llega a max_entidades (entonces el
+        vecindario sale "recortado").
+
+        ¿Por qué el vecindario contiene SEGURO todo lo que necesita el navegador?
+          La relevancia de un nodo es el producto de las relevancias de las
+          relaciones de su camino, y todas están entre 0 y 1. Un producto de
+          números entre 0 y 1 nunca es mayor que ninguno de sus factores
+          (multiplicar por algo ≤ 1 no hace crecer). Por tanto, si un nodo
+          supera el umbral, TODAS las relaciones de su camino lo superan
+          también, y este recorrido, que sigue todas las relaciones que
+          superan el umbral, pasa por ese camino. Ejemplo con umbral 0,3: un
+          nodo con relevancia 0,9 × 0,5 = 0,45 se alcanza por dos relaciones
+          de 0,9 y 0,5, las dos mayores que 0,3.
+          Lo contrario no es cierto: puede haber entidades en el vecindario
+          que luego no superan el umbral (0,5 × 0,5 = 0,25). Esas las
+          descarta el navegador al construir el subgrafo.
+
+        Las entidades y relaciones se devuelven en el MISMO orden que en los
+        datos. Así, si dos candidatos empatan en relevancia, el navegador los
+        desempata igual que lo hacía el servidor en el incremento 2.
+
+        Lanza ValueError si la entidad no existe.
+        """
+        await self.__esperar()
+        if id_entidad not in self.__entidades:
+            raise ValueError("No existe ninguna entidad con el id \"" + id_entidad + "\".")
+
+        # ids de las entidades encontradas y de las relaciones que superan el umbral.
+        ids_encontrados: set[str] = set()
+        ids_de_relaciones: set[str] = set()
+        ids_encontrados.add(id_entidad)
+        recortado = False
+
+        # Cola del recorrido en anchura: se van añadiendo al final y se
+        # visitan en el orden en que entraron (posicion avanza de uno en uno).
+        cola = [id_entidad]
+        posicion = 0
+        while posicion < len(cola):
+            id_actual = cola[posicion]
+            posicion = posicion + 1
+            entidad_actual = self.__entidades[id_actual]
+            for relacion in self.__relaciones_de(id_actual):
+                if self.__supera_el_umbral(relacion.get_valor(), umbral):
+                    ids_de_relaciones.add(relacion.get_id())
+                    id_vecino = relacion.get_otro_extremo(entidad_actual).get_id()
+                    if id_vecino not in ids_encontrados:
+                        if len(ids_encontrados) < max_entidades:
+                            ids_encontrados.add(id_vecino)
+                            cola.append(id_vecino)
+                        else:
+                            # No cabe: el vecindario queda incompleto. Se sigue
+                            # recorriendo la cola (sin añadir entidades) para
+                            # recoger las relaciones entre las que sí están.
+                            recortado = True
+
+        return Vecindario(self.__entidades_en_orden(ids_encontrados),
+                          self.__relaciones_en_orden(ids_de_relaciones, ids_encontrados),
+                          recortado)
+
+    def __relaciones_de(self, id_entidad: str) -> list[Relacion]:
+        """(Privado) Relaciones de la entidad según el índice (sin copiarlas)."""
+        if id_entidad in self.__relaciones_por_entidad:
+            return self.__relaciones_por_entidad[id_entidad]
+        return []
+
+    @staticmethod
+    def __supera_el_umbral(valor: Any, umbral: float) -> bool:
+        """(Privado) ¿El valor de la relación es un número mayor que el umbral?
+        Un valor que no es un número nunca lo supera (igual que en
+        RelevanciaDesdeBD del navegador, que le da relevancia 0).
+        """
+        # bool es un tipo de int en Python; lo excluimos a propósito.
+        if not isinstance(valor, (int, float)) or isinstance(valor, bool):
+            return False
+        if math.isnan(valor):
+            return False
+        return valor > umbral
+
+    def __entidades_en_orden(self, ids_encontrados: set[str]) -> list[Entidad]:
+        """(Privado) Las entidades encontradas, en el orden de los datos."""
+        entidades = []
+        for entidad in self.__entidades.values():
+            if entidad.get_id() in ids_encontrados:
+                entidades.append(entidad)
+        return entidades
+
+    def __relaciones_en_orden(self, ids_de_relaciones: set[str], ids_encontrados: set[str]) -> list[Relacion]:
+        """(Privado) Las relaciones encontradas, en el orden de los datos.
+        Solo las que unen dos entidades del vecindario (si el vecindario está
+        recortado, alguna relación puede apuntar a una entidad que no cabía).
+        """
+        relaciones = []
+        for relacion in self.__relaciones:
+            if relacion.get_id() in ids_de_relaciones:
+                origen_dentro = relacion.get_origen().get_id() in ids_encontrados
+                destino_dentro = relacion.get_destino().get_id() in ids_encontrados
+                if origen_dentro and destino_dentro:
+                    relaciones.append(relacion)
+        return relaciones
+
     async def __esperar(self) -> None:
         """(Privado) Simula la latencia de la red esperando retardo_ms milisegundos."""
         await asyncio.sleep(self.__retardo_ms / 1000)
@@ -120,22 +225,14 @@ class RepositorioSimulado(RepositorioDatos):
 
     def __descubrir_tipos(self, lista_de_relaciones: list[list[Any]]) -> dict[str, TipoRelacion]:
         """(Privado) Descubre los tipos de relación mirando qué tipos aparecen
-        en las relaciones. El nombre sale del id y el color de la paleta.
+        en las relaciones (sin repetir, en orden de aparición). El nombre
+        legible y el color los pone el navegador.
         """
-        # Paso 1: lista de ids de tipo sin repetir, en orden de aparición.
-        ids_de_tipos = []
+        tipos: dict[str, TipoRelacion] = {}
         for fila in lista_de_relaciones:
             id_tipo = fila[3]
-            if id_tipo not in ids_de_tipos:
-                ids_de_tipos.append(id_tipo)
-
-        # Paso 2: un color para cada uno y el objeto TipoRelacion.
-        colores_por_id = PaletaColores.asignar(ids_de_tipos)
-        tipos: dict[str, TipoRelacion] = {}
-        for id_tipo in ids_de_tipos:
-            nombre = TipoRelacion.nombre_desde_id(id_tipo)
-            color = colores_por_id[id_tipo]
-            tipos[id_tipo] = TipoRelacion(id_tipo, nombre, color)
+            if id_tipo not in tipos:
+                tipos[id_tipo] = TipoRelacion(id_tipo)
         return tipos
 
     def __cargar_relaciones(self, lista_de_relaciones: list[list[Any]]) -> list[Relacion]:

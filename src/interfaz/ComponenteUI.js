@@ -1,13 +1,18 @@
+import { TipoEntidad } from '../modelo/TipoEntidad.js';
+
 /**
  * «abstract» ComponenteUI
  *
- * Base de los componentes 2D de la interfaz (leyenda y, en el incremento 3,
- * buscador, panel de información...). Cada componente tiene un elemento HTML
- * propio que se añade a la página con montar() y que dibuja renderizar().
+ * Base de los componentes 2D de la interfaz (Leyenda, PanelBusqueda,
+ * PanelInformacion, ControlUmbral, IndicadorEstado y BarraNavegacion). Cada
+ * componente tiene un elemento HTML propio que se añade a la página con
+ * montar() y que dibuja renderizar(). Todos reciben el controlador, al que
+ * avisan de lo que hace el usuario.
  *
  * Es abstracta: no se puede hacer new ComponenteUI(...).
  *
- * Requisitos: base de RF-23 y RF-24 (leyenda).
+ * Requisitos: base de RF-23 y RF-24 (leyenda) y de los componentes de
+ * exploración del incremento 3; RNF-25 (accesibilidad).
  */
 export class ComponenteUI {
   // Protegidos (los usan las subclases).
@@ -15,8 +20,8 @@ export class ComponenteUI {
   _controlador;
 
   /**
-   * @param {Object|null} controlador - en este incremento es null; en el 3
-   *   recibirá lo que haga el usuario en el componente.
+   * @param {ControladorExploracion|null} controlador - recibe lo que hace el
+   *   usuario en el componente (null en algunas pruebas).
    * @param {string} etiquetaHtml - por ejemplo "aside" o "div".
    * @param {string} clase - clase CSS del elemento.
    */
@@ -53,6 +58,44 @@ export class ComponenteUI {
    */
   renderizar() {
     throw new Error("No implementado: cada subclase de ComponenteUI debe implementar renderizar().");
+  }
+
+  /**
+   * (Protegido) El símbolo de un tipo de entidad, con la misma forma y el
+   * mismo color que en la escena: círculo azul, cuadrado naranja o rombo
+   * verde. Lo usan la leyenda, el buscador y el panel de información.
+   *
+   * @param {string} tipo - un valor de TipoEntidad.
+   * @returns {HTMLElement}
+   */
+  static _crearSimboloEntidad(tipo) {
+    let claseDelSimbolo = "simbolo-obra";
+    if (tipo === TipoEntidad.PERSONA) {
+      claseDelSimbolo = "simbolo-persona";
+    } else if (tipo === TipoEntidad.ORGANIZACION) {
+      claseDelSimbolo = "simbolo-organizacion";
+    }
+    // aria-hidden: el símbolo es decorativo; el tipo ya se dice con texto.
+    return crear("span", { clase: "simbolo-nodo " + claseDelSimbolo, "aria-hidden": "true" }, []);
+  }
+
+  /**
+   * (Protegido) Nombre para mostrar de un tipo de entidad.
+   *
+   * @param {string} tipo - un valor de TipoEntidad.
+   * @returns {string}
+   */
+  static _nombreTipoEntidad(tipo) {
+    if (tipo === TipoEntidad.PERSONA) {
+      return "Persona";
+    }
+    if (tipo === TipoEntidad.ORGANIZACION) {
+      return "Organización";
+    }
+    if (tipo === TipoEntidad.OBRA_DE_ARTE) {
+      return "Obra de arte";
+    }
+    return tipo;
   }
 }
 

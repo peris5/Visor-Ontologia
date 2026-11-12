@@ -19,6 +19,7 @@ export class Subgrafo {
   #umbral;
   #nodos;
   #relaciones;
+  #idsDeRelaciones;
 
   /**
    * @param {Entidad} entidadCentral
@@ -34,6 +35,9 @@ export class Subgrafo {
     // por su id al momento y recuerda el orden en que se añadieron.
     this.#nodos = new Map();
     this.#relaciones = [];
+    // Los ids de las relaciones, para saber al momento si una ya está (ver
+    // #contieneRelacion). Un Set es una colección sin repetidos.
+    this.#idsDeRelaciones = new Set();
 
     // La entidad central siempre está: relevancia 1 y nivel 0.
     const nodoCentral = new NodoRelevante(entidadCentral, 1, 0);
@@ -124,6 +128,25 @@ export class Subgrafo {
       throw new Error("La relación " + relacion.getId() + " une entidades que no están en el subgrafo.");
     }
     this.#relaciones.push(relacion);
+    this.#idsDeRelaciones.add(relacion.getId());
+  }
+
+  /**
+   * Quita un nodo y todas las relaciones en las que participa
+   * (una relación con un extremo fuera del subgrafo no tendría sentido).
+   * La entidad central no se puede quitar: el subgrafo tiene como mínimo un nodo.
+   *
+   * @param {string} id - id de la entidad a quitar.
+   */
+  eliminarNodo(id) {
+    if (id === this.#entidadCentral.getId()) {
+      throw new Error("No se puede eliminar la entidad central del subgrafo.");
+    }
+    if (!this.#nodos.has(id)) {
+      return;
+    }
+    this.#nodos.delete(id);
+    this.#eliminarRelacionesDe(id);
   }
 
   /**
@@ -141,11 +164,29 @@ export class Subgrafo {
    * @returns {boolean}
    */
   #contieneRelacion(idRelacion) {
+    // Antes se recorría la lista entera de relaciones cada vez; con el Set
+    // es inmediato. (Es la misma mejora que se hizo en la versión Python
+    // del incremento 2: con 150 nodos se añaden cientos de relaciones.)
+    return this.#idsDeRelaciones.has(idRelacion);
+  }
+
+  /**
+   * (Privado) Se queda solo con las relaciones que no tocan a la entidad indicada.
+   *
+   * @param {string} idEntidad
+   */
+  #eliminarRelacionesDe(idEntidad) {
+    const relacionesQueSeQuedan = [];
+    const idsQueSeQuedan = new Set();
     for (let i = 0; i < this.#relaciones.length; i++) {
-      if (this.#relaciones[i].getId() === idRelacion) {
-        return true;
+      const relacion = this.#relaciones[i];
+      const tocaLaEntidad = relacion.getOrigen().getId() === idEntidad || relacion.getDestino().getId() === idEntidad;
+      if (!tocaLaEntidad) {
+        relacionesQueSeQuedan.push(relacion);
+        idsQueSeQuedan.add(relacion.getId());
       }
     }
-    return false;
+    this.#relaciones = relacionesQueSeQuedan;
+    this.#idsDeRelaciones = idsQueSeQuedan;
   }
 }

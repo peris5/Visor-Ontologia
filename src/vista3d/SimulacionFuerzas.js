@@ -149,7 +149,7 @@ export class SimulacionFuerzas {
 
   /**
    * Vuelve a poner en marcha la simulación (por ejemplo, tras arrastrar un
-   * nodo en el incremento 3). Si ya tenía más alfa, no lo baja.
+   * nodo, si en el futuro se permite). Si ya tenía más alfa, no lo baja.
    *
    * @param {number} alfa - entre 0 y 1.
    */

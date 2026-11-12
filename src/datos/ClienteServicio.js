@@ -1,23 +1,21 @@
-import { FabricaEntidades } from './FabricaEntidades.js';
-import { TipoRelacion } from '../modelo/TipoRelacion.js';
-import { Relacion } from '../modelo/Relacion.js';
-import { NodoRelevante } from '../modelo/NodoRelevante.js';
-import { Subgrafo } from '../modelo/Subgrafo.js';
-
 /**
  * ClienteServicio
  *
- * Lo único del navegador que sabe que existe un servidor. Pide los datos a
- * la API de Python y convierte el JSON que recibe en objetos del modelo
- * (Entidad, Relacion, Subgrafo...), que son los que usa el resto de la página.
+ * Lo único del navegador que sabe que existe un servidor. Desde el
+ * incremento 3 SOLO pide datos a la API de Python y devuelve el JSON tal
+ * cual: no construye nada. Quien convierte el JSON en objetos del modelo es
+ * RepositorioVecindario, y quien construye el subgrafo es ConstructorSubgrafo.
  *
- * El subgrafo llega ya construido: el navegador hace UNA sola petición por
- * subgrafo, en lugar de una por cada nodo que se expande.
+ * Solo hay tres peticiones:
+ *  - la configuración y el índice de nombres, UNA vez al abrir la página;
+ *  - un vecindario cada vez que cambia la entidad central (o baja el umbral).
  *
- * Requisitos: RNF-17 (el acceso a los datos está separado del resto).
+ * Requisitos: RNF-17 (el acceso a los datos está separado del resto),
+ * RNF-13 (los parámetros van codificados en la URL).
  */
 export class ClienteServicio {
   #urlBase;
+  #bytesUltimaRespuesta;
 
   /**
    * @param {string} urlBase - dirección de la API, normalmente "/api"
@@ -28,128 +26,52 @@ export class ClienteServicio {
       throw new Error("ClienteServicio necesita la dirección de la API (un texto).");
     }
     this.#urlBase = urlBase;
+    this.#bytesUltimaRespuesta = 0;
   }
 
   /**
-   * @returns {Promise<Object>} { umbralPorDefecto, entidadInicial }
+   * @returns {Promise<Object>} { umbralPorDefecto, maxNodos, entidadInicial }
    */
   async obtenerConfiguracion() {
     return await this.#pedir("/configuracion");
   }
 
   /**
-   * Busca entidades por nombre. Cada una se devuelve solo con id, nombre y tipo.
+   * El índice para el buscador: todas las entidades, solo con id, nombre y tipo.
    *
-   * @param {string} texto - "" para todas.
-   * @param {string|null} tipo - un valor de TipoEntidad, o null para todos.
-   * @param {number|null} limite - máximo de resultados, o null para el del servidor.
-   * @returns {Promise<Entidad[]>}
+   * @returns {Promise<Object[]>} [{ id, nombre, tipo }]
    */
-  async buscarEntidades(texto, tipo, limite) {
-    const parametros = new URLSearchParams();
-    if (typeof texto === "string" && texto !== "") {
-      parametros.set("texto", texto);
-    }
-    if (typeof tipo === "string" && tipo !== "") {
-      parametros.set("tipo", tipo);
-    }
-    if (typeof limite === "number") {
-      parametros.set("limite", String(limite));
-    }
-    const lista = await this.#pedir("/entidades?" + parametros.toString());
-
-    const entidades = [];
-    for (let i = 0; i < lista.length; i++) {
-      const datos = lista[i];
-      entidades.push(FabricaEntidades.crearEntidad(datos.tipo, datos));
-    }
-    return entidades;
+  async obtenerNombres() {
+    return await this.#pedir("/nombres");
   }
 
   /**
-   * Pide al servidor el subgrafo ya construido y lo convierte al modelo.
+   * Los datos en bruto alrededor de una entidad (ver RepositorioVecindario).
    *
    * @param {string} idEntidad - id de la entidad central.
    * @param {number} umbral - entre 0 y 1.
-   * @returns {Promise<Subgrafo>}
+   * @returns {Promise<Object>} { idCentral, umbral, recortado, entidades, relaciones, tiposRelacion }
    */
-  async obtenerSubgrafo(idEntidad, umbral) {
-    const ruta = "/subgrafo/" + encodeURIComponent(idEntidad) + "?umbral=" + String(umbral);
-    const json = await this.#pedir(ruta);
-    return ClienteServicio.convertirSubgrafo(json);
+  async obtenerVecindario(idEntidad, umbral) {
+    // URLSearchParams escribe los parámetros con el formato correcto para
+    // una URL. encodeURIComponent hace lo mismo con el id, que va dentro de
+    // la ruta: así un id con caracteres raros ("/", "?", espacios...) no
+    // puede cambiar la petición.
+    const parametros = new URLSearchParams();
+    parametros.set("umbral", String(umbral));
+    const ruta = "/vecindario/" + encodeURIComponent(idEntidad) + "?" + parametros.toString();
+    return await this.#pedir(ruta);
   }
 
   /**
-   * Convierte el JSON de /api/subgrafo en objetos del modelo.
-   * Es estático (no usa la red) para poder probarlo sin servidor.
+   * Tamaño de la última respuesta recibida, para la barra de rendimiento
+   * («Datos recibidos: X KB»), que se usará en las pruebas de rendimiento
+   * del incremento 4.
    *
-   *  - Las entidades se crean con FabricaEntidades (subclase según el tipo).
-   *  - Se crea UN solo TipoRelacion por id, aunque lo usen muchas relaciones:
-   *    así la leyenda puede contar las relaciones de cada tipo.
-   *  - Los nodos guardan la relevancia, el nivel y la centralidad que
-   *    calculó el servidor.
-   *
-   * @param {Object} json - con el formato de servidor/api/conversor_json.py.
-   * @returns {Subgrafo}
+   * @returns {number} bytes.
    */
-  static convertirSubgrafo(json) {
-    const entidadesPorId = ClienteServicio.#crearEntidades(json.nodos);
-    if (!entidadesPorId.has(json.idCentral)) {
-      throw new Error("El subgrafo recibido no contiene su entidad central (" + json.idCentral + ").");
-    }
-
-    // El subgrafo crea él mismo el nodo central (relevancia 1, nivel 0).
-    const subgrafo = new Subgrafo(entidadesPorId.get(json.idCentral), json.umbral);
-    for (let i = 0; i < json.nodos.length; i++) {
-      const datosDelNodo = json.nodos[i];
-      const idEntidad = datosDelNodo.entidad.id;
-      if (idEntidad !== json.idCentral) {
-        const nodo = new NodoRelevante(entidadesPorId.get(idEntidad), datosDelNodo.relevancia, datosDelNodo.nivel);
-        subgrafo.agregarNodo(nodo);
-      }
-      subgrafo.getNodo(idEntidad).setCentralidad(datosDelNodo.centralidad);
-    }
-
-    const tiposPorId = new Map();
-    for (let i = 0; i < json.relaciones.length; i++) {
-      const datosDeLaRelacion = json.relaciones[i];
-      const tipo = ClienteServicio.#obtenerTipo(tiposPorId, datosDeLaRelacion.tipo);
-      const origen = entidadesPorId.get(datosDeLaRelacion.origen);
-      const destino = entidadesPorId.get(datosDeLaRelacion.destino);
-      const relacion = new Relacion(datosDeLaRelacion.id, origen, destino, tipo, datosDeLaRelacion.relevancia);
-      subgrafo.agregarRelacion(relacion);
-    }
-    return subgrafo;
-  }
-
-  /**
-   * (Privado) Crea las entidades de los nodos y las guarda por id.
-   *
-   * @param {Object[]} listaDeNodos
-   * @returns {Map<string, Entidad>}
-   */
-  static #crearEntidades(listaDeNodos) {
-    const entidadesPorId = new Map();
-    for (let i = 0; i < listaDeNodos.length; i++) {
-      const datosDeLaEntidad = listaDeNodos[i].entidad;
-      const entidad = FabricaEntidades.crearEntidad(datosDeLaEntidad.tipo, datosDeLaEntidad);
-      entidadesPorId.set(entidad.getId(), entidad);
-    }
-    return entidadesPorId;
-  }
-
-  /**
-   * (Privado) Devuelve el TipoRelacion de ese id; si aún no existe, lo crea.
-   *
-   * @param {Map<string, TipoRelacion>} tiposPorId
-   * @param {Object} datosDelTipo - { id, nombre, color }
-   * @returns {TipoRelacion}
-   */
-  static #obtenerTipo(tiposPorId, datosDelTipo) {
-    if (!tiposPorId.has(datosDelTipo.id)) {
-      tiposPorId.set(datosDelTipo.id, new TipoRelacion(datosDelTipo.id, datosDelTipo.nombre, datosDelTipo.color));
-    }
-    return tiposPorId.get(datosDelTipo.id);
+  getBytesUltimaRespuesta() {
+    return this.#bytesUltimaRespuesta;
   }
 
   /**
@@ -174,9 +96,14 @@ export class ClienteServicio {
       throw new Error("No se puede conectar con el servidor");
     }
 
+    // Primero se lee el texto (para medir cuánto ocupa) y después se
+    // convierte a objetos con JSON.parse. TextEncoder cuenta los bytes de
+    // verdad: una letra con tilde ocupa 2 bytes en UTF-8.
     let datos = null;
     try {
-      datos = await respuesta.json();
+      const texto = await respuesta.text();
+      this.#bytesUltimaRespuesta = new TextEncoder().encode(texto).length;
+      datos = JSON.parse(texto);
     } catch (error) {
       datos = null;
     }

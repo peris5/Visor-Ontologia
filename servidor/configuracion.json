@@ -3,5 +3,6 @@
   "origenDatos": "simulado",
   "umbralPorDefecto": 0.3,
   "maxNodos": 150,
+  "maxEntidadesVecindario": 2000,
   "entidadInicial": "p01"
 }

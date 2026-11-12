@@ -22,6 +22,7 @@ class Configuracion:
     UMBRAL_POR_DEFECTO = 0.3
     MAX_NODOS_POR_DEFECTO = 150
     ENTIDAD_INICIAL_POR_DEFECTO = ""
+    MAX_ENTIDADES_VECINDARIO_POR_DEFECTO = 2000
 
     def __init__(self) -> None:
         # Mientras no se llame a cargar, todos los getters dan el valor por defecto.
@@ -66,6 +67,16 @@ class Configuracion:
         maximo = self.__datos.get("maxNodos")
         if not isinstance(maximo, int) or isinstance(maximo, bool) or maximo < 1:
             return Configuracion.MAX_NODOS_POR_DEFECTO
+        return maximo
+
+    def get_max_entidades_vecindario(self) -> int:
+        """Máximo de entidades de un vecindario (2000 si falta o no es válido).
+        Lo fija solo el servidor, para que nadie pueda pedir la base de datos
+        entera (RNF-13).
+        """
+        maximo = self.__datos.get("maxEntidadesVecindario")
+        if not isinstance(maximo, int) or isinstance(maximo, bool) or maximo < 1:
+            return Configuracion.MAX_ENTIDADES_VECINDARIO_POR_DEFECTO
         return maximo
 
     def get_entidad_inicial(self) -> str:

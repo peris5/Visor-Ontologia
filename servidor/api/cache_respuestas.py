@@ -1,4 +1,4 @@
-"""CacheSubgrafos: guarda los subgrafos ya calculados para no repetir el trabajo."""
+"""CacheRespuestas: guarda las respuestas ya preparadas para no repetir el trabajo."""
 import asyncio
 import time
 from collections import OrderedDict
@@ -6,23 +6,28 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 
-class CacheSubgrafos:
-    """Memoria de los últimos subgrafos calculados, ya convertidos a JSON.
+class CacheRespuestas:
+    """Memoria de las últimas respuestas preparadas (vecindarios y lista de
+    nombres), ya convertidas a JSON.
 
-    Construir un subgrafo es lo más costoso que hace el servidor, y muchos
-    usuarios piden los mismos (la entidad inicial, las más conocidas...).
-    Con esta caché, cada subgrafo se calcula UNA vez y las siguientes
-    peticiones iguales reciben directamente el JSON guardado.
+    Aunque ahora el cálculo lo hace el navegador, preparar un vecindario
+    sigue siendo lo más costoso del servidor (con la base de datos real será
+    una consulta), y muchos usuarios piden los mismos (la entidad inicial,
+    las más conocidas...). Con esta caché, cada respuesta se prepara UNA vez
+    y las siguientes peticiones iguales reciben directamente el JSON guardado.
+
+    (En el incremento 2 se llamaba CacheSubgrafos y guardaba subgrafos; la
+    clase no ha cambiado, solo lo que se guarda en ella.)
 
     Tres reglas:
-     1. Peticiones a la vez: si llegan varias peticiones iguales mientras el
-        subgrafo todavía se está calculando, no se calcula varias veces: todas
-        esperan al mismo cálculo (se guarda la "tarea" en marcha, no solo el
-        resultado).
-     2. Tamaño máximo: como mucho max_entradas subgrafos. Si se llena, se
-        olvida el que lleva más tiempo sin pedirse (política LRU, "el menos
-        usado recientemente"), así la memoria del servidor no crece sin límite.
-     3. Caducidad: un subgrafo guardado vale segundos_vigencia segundos. Con
+     1. Peticiones a la vez: si llegan varias peticiones iguales mientras la
+        respuesta todavía se está preparando, no se prepara varias veces:
+        todas esperan al mismo cálculo (se guarda la "tarea" en marcha, no
+        solo el resultado).
+     2. Tamaño máximo: como mucho max_entradas respuestas. Si se llena, se
+        olvida la que lleva más tiempo sin pedirse (política LRU, "la menos
+        usada recientemente"), así la memoria del servidor no crece sin límite.
+     3. Caducidad: una respuesta guardada vale segundos_vigencia segundos. Con
         los datos simulados nunca cambian, pero con la base de datos real
         (incremento 4) sí pueden cambiar, y así se acaban viendo los cambios.
 
@@ -33,8 +38,8 @@ class CacheSubgrafos:
     """
 
     def __init__(self, max_entradas: int, segundos_vigencia: float) -> None:
-        """max_entradas: número máximo de subgrafos guardados.
-        segundos_vigencia: tiempo que vale cada subgrafo guardado.
+        """max_entradas: número máximo de respuestas guardadas.
+        segundos_vigencia: tiempo que vale cada respuesta guardada.
         """
         if max_entradas < 1:
             raise ValueError("La caché necesita al menos una entrada.")
@@ -49,8 +54,8 @@ class CacheSubgrafos:
         """Devuelve el JSON guardado con esa clave. Si no está (o ha caducado),
         llama a calcular() para obtenerlo y lo guarda.
 
-        clave: identifica el subgrafo, por ejemplo "p01|0.3".
-        calcular: función asíncrona que construye el subgrafo y devuelve su JSON.
+        clave: identifica la respuesta, por ejemplo "vecindario|p01|0.3".
+        calcular: función asíncrona que prepara la respuesta y devuelve su JSON.
         """
         entrada = self.__buscar_vigente(clave)
         if entrada is None:
@@ -71,7 +76,7 @@ class CacheSubgrafos:
             raise
 
     def get_numero_entradas(self) -> int:
-        """Cuántos subgrafos hay guardados (para las pruebas)."""
+        """Cuántas respuestas hay guardadas (para las pruebas)."""
         return len(self.__entradas)
 
     def __buscar_vigente(self, clave: str) -> dict[str, Any] | None:

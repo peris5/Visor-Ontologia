@@ -1,112 +1,115 @@
 import { prueba, comprobar, comprobarIgual } from './miniPruebas.js';
 import { ClienteServicio } from '../src/datos/ClienteServicio.js';
-import { Persona } from '../src/modelo/Persona.js';
-import { Organizacion } from '../src/modelo/Organizacion.js';
-import { ObraDeArte } from '../src/modelo/ObraDeArte.js';
 
 /*
- * Pruebas de ClienteServicio.convertirSubgrafo (src/datos/).
- * No necesitan servidor: el JSON está escrito aquí, con el mismo formato que
- * envía /api/subgrafo.
+ * Pruebas de ClienteServicio (src/datos/). Desde el incremento 3 solo pide
+ * datos (convertirSubgrafo ya no existe: la conversión la hace
+ * RepositorioVecindario, que tiene sus propias pruebas).
  *
- *   P01 (central) ──autor_de 0.9──────── A03
- *   A03 ──restaurador_de 0.6───────────── P01   (segunda relación del mismo par)
- *   P01 ──miembro_de 0.5──────────────── O02
- *   O02 ──conserva 0.8────────────────── A03
- *   (autor_de lo usan dos relaciones: debe haber un solo TipoRelacion)
+ * Para no necesitar el servidor, cada prueba cambia un momento la función
+ * fetch del navegador por un DOBLE DE PRUEBA que apunta la URL pedida y
+ * contesta lo que la prueba quiere. Al terminar se deja la de verdad.
  */
 
 /**
- * @returns {Object} JSON de un subgrafo pequeño.
+ * Ejecuta la prueba con un fetch falso.
+ *
+ * @param {number} codigo - código HTTP de la respuesta (200, 404...).
+ * @param {string} cuerpo - texto de la respuesta.
+ * @param {Function} pruebaConFetch - async function (urlsPedidas) { ... }
  */
-function crearJsonDePrueba() {
-  const autorDe = { id: "autor_de", nombre: "Autor de", color: "#4c8bf5" };
-  return {
-    idCentral: "P01",
-    umbral: 0.3,
-    nodos: [
-      { entidad: { id: "P01", nombre: "Pintora", tipo: "PERSONA", descripcion: "Retratista", atributos: { nacionalidad: "Española" } },
-        relevancia: 1, nivel: 0, centralidad: 1 },
-      { entidad: { id: "A03", nombre: "Cuadro", tipo: "OBRA_DE_ARTE", descripcion: "", atributos: { tecnica: "Óleo" } },
-        relevancia: 0.9, nivel: 1, centralidad: 0.82 },
-      { entidad: { id: "O02", nombre: "Academia", tipo: "ORGANIZACION", descripcion: "", atributos: {} },
-        relevancia: 0.5, nivel: 1, centralidad: 0.45 },
-      { entidad: { id: "A04", nombre: "Grabado", tipo: "OBRA_DE_ARTE", descripcion: "", atributos: {} },
-        relevancia: 0.4, nivel: 2, centralidad: 0.3 }
-    ],
-    relaciones: [
-      { id: "R07", origen: "P01", destino: "A03", valor: 0.9, relevancia: 0.9, tipo: autorDe },
-      { id: "R08", origen: "A03", destino: "P01", valor: 0.6, relevancia: 0.6, tipo: { id: "restaurador_de", nombre: "Restaurador de", color: "#f5a623" } },
-      { id: "R09", origen: "P01", destino: "O02", valor: 0.5, relevancia: 0.5, tipo: { id: "miembro_de", nombre: "Miembro de", color: "#2bb673" } },
-      { id: "R10", origen: "O02", destino: "A04", valor: 0.8, relevancia: 0.8, tipo: autorDe }
-    ]
+async function conFetchFalso(codigo, cuerpo, pruebaConFetch) {
+  const fetchDeVerdad = window.fetch;
+  const urlsPedidas = [];
+  window.fetch = async function (url) {
+    urlsPedidas.push(url);
+    return new Response(cuerpo, { status: codigo, headers: { "Content-Type": "application/json" } });
   };
+  try {
+    await pruebaConFetch(urlsPedidas);
+  } finally {
+    window.fetch = fetchDeVerdad;
+  }
 }
 
 /**
- * @param {Subgrafo} subgrafo
- * @param {string} id
- * @returns {Relacion|null}
+ * @param {Function} funcionAsincrona
+ * @returns {Promise<string>} el mensaje del error, o "" si no hubo error.
  */
-function buscarRelacion(subgrafo, id) {
-  const relaciones = subgrafo.getRelaciones();
-  for (let i = 0; i < relaciones.length; i++) {
-    if (relaciones[i].getId() === id) {
-      return relaciones[i];
-    }
+async function mensajeDeError(funcionAsincrona) {
+  try {
+    await funcionAsincrona();
+  } catch (error) {
+    return error.message;
   }
-  return null;
+  return "";
 }
 
-prueba("ClienteServicio: convierte la central, el umbral y todos los nodos", function () {
-  const subgrafo = ClienteServicio.convertirSubgrafo(crearJsonDePrueba());
-  comprobarIgual(subgrafo.getEntidadCentral().getId(), "P01", "entidad central");
-  comprobarIgual(subgrafo.getUmbral(), 0.3, "umbral");
-  comprobarIgual(subgrafo.getNumeroNodos(), 4, "número de nodos");
-  comprobarIgual(subgrafo.getNodo("P01").getRelevancia(), 1, "relevancia de la central");
-  comprobarIgual(subgrafo.getNodo("P01").getNivel(), 0, "nivel de la central");
+prueba("ClienteServicio: obtenerVecindario pide la ruta con el id codificado y el umbral", async function () {
+  await conFetchFalso(200, "{\"idCentral\":\"p01\"}", async function (urlsPedidas) {
+    const cliente = new ClienteServicio("/api");
+    const datos = await cliente.obtenerVecindario("p 01/x", 0.35);
+    comprobarIgual(urlsPedidas[0], "/api/vecindario/p%2001%2Fx?umbral=0.35", "URL");
+    comprobarIgual(datos.idCentral, "p01", "devuelve el JSON tal cual");
+  });
 });
 
-prueba("ClienteServicio: cada nodo guarda su relevancia, nivel y centralidad", function () {
-  const subgrafo = ClienteServicio.convertirSubgrafo(crearJsonDePrueba());
-  const nodo = subgrafo.getNodo("A03");
-  comprobarIgual(nodo.getRelevancia(), 0.9, "relevancia de A03");
-  comprobarIgual(nodo.getNivel(), 1, "nivel de A03");
-  comprobarIgual(nodo.getCentralidad(), 0.82, "centralidad de A03");
-  comprobarIgual(subgrafo.getNodo("P01").getCentralidad(), 1, "centralidad de la central");
-  comprobarIgual(subgrafo.getNodo("A04").getNivel(), 2, "nivel de A04");
+prueba("ClienteServicio: obtenerConfiguracion y obtenerNombres piden sus rutas", async function () {
+  await conFetchFalso(200, "[]", async function (urlsPedidas) {
+    const cliente = new ClienteServicio("/api");
+    await cliente.obtenerConfiguracion();
+    await cliente.obtenerNombres();
+    comprobarIgual(urlsPedidas.join(","), "/api/configuracion,/api/nombres", "URL");
+  });
 });
 
-prueba("ClienteServicio: cada entidad es de la subclase de su tipo", function () {
-  const subgrafo = ClienteServicio.convertirSubgrafo(crearJsonDePrueba());
-  comprobar(subgrafo.getNodo("P01").getEntidad() instanceof Persona, "P01 debería ser una Persona");
-  comprobar(subgrafo.getNodo("O02").getEntidad() instanceof Organizacion, "O02 debería ser una Organizacion");
-  comprobar(subgrafo.getNodo("A03").getEntidad() instanceof ObraDeArte, "A03 debería ser una ObraDeArte");
-  comprobarIgual(subgrafo.getNodo("P01").getEntidad().getAtributos().get("nacionalidad"), "Española", "atributo de P01");
+prueba("ClienteServicio: un 404 con detail lanza ese mensaje", async function () {
+  await conFetchFalso(404, "{\"detail\":\"No existe la entidad P99\"}", async function () {
+    const cliente = new ClienteServicio("/api");
+    const mensaje = await mensajeDeError(function () {
+      return cliente.obtenerVecindario("P99", 0.3);
+    });
+    comprobarIgual(mensaje, "No existe la entidad P99", "mensaje");
+  });
 });
 
-prueba("ClienteServicio: se conservan varias relaciones del mismo par", function () {
-  const subgrafo = ClienteServicio.convertirSubgrafo(crearJsonDePrueba());
-  comprobarIgual(subgrafo.getRelaciones().length, 4, "número de relaciones");
-  const r07 = buscarRelacion(subgrafo, "R07");
-  const r08 = buscarRelacion(subgrafo, "R08");
-  comprobar(r07 !== null && r08 !== null, "deben estar R07 y R08");
-  comprobarIgual(r07.getClavePar(), r08.getClavePar(), "R07 y R08 son del mismo par");
-  comprobarIgual(r08.getOrigen().getId(), "A03", "origen de R08");
-  comprobarIgual(r08.getRelevancia(), 0.6, "relevancia de R08");
-  comprobarIgual(r07.getTipo().getColor(), "#4c8bf5", "color del tipo de R07");
+prueba("ClienteServicio: un 5xx sin JSON es «No se puede conectar con el servidor»", async function () {
+  await conFetchFalso(502, "Bad gateway", async function () {
+    const cliente = new ClienteServicio("/api");
+    const mensaje = await mensajeDeError(function () {
+      return cliente.obtenerNombres();
+    });
+    comprobarIgual(mensaje, "No se puede conectar con el servidor", "mensaje");
+  });
 });
 
-prueba("ClienteServicio: un solo TipoRelacion por id", function () {
-  const subgrafo = ClienteServicio.convertirSubgrafo(crearJsonDePrueba());
-  const r07 = buscarRelacion(subgrafo, "R07");
-  const r10 = buscarRelacion(subgrafo, "R10");
-  comprobar(r07.getTipo() === r10.getTipo(), "R07 y R10 deben compartir el mismo objeto TipoRelacion");
-  comprobar(r07.getTipo() !== buscarRelacion(subgrafo, "R08").getTipo(), "tipos distintos deben ser objetos distintos");
+prueba("ClienteServicio: si fetch falla (sin red) es «No se puede conectar con el servidor»", async function () {
+  const fetchDeVerdad = window.fetch;
+  window.fetch = async function () {
+    throw new TypeError("Failed to fetch");
+  };
+  try {
+    const mensaje = await mensajeDeError(function () {
+      return new ClienteServicio("/api").obtenerConfiguracion();
+    });
+    comprobarIgual(mensaje, "No se puede conectar con el servidor", "mensaje");
+  } finally {
+    window.fetch = fetchDeVerdad;
+  }
 });
 
-prueba("ClienteServicio: las relaciones apuntan a las mismas entidades que los nodos", function () {
-  const subgrafo = ClienteServicio.convertirSubgrafo(crearJsonDePrueba());
-  const r10 = buscarRelacion(subgrafo, "R10");
-  comprobar(r10.getOrigen() === subgrafo.getNodo("O02").getEntidad(), "el origen de R10 es la entidad del nodo O02");
+prueba("ClienteServicio: mide los bytes de la última respuesta", async function () {
+  // "ñ" ocupa 2 bytes en UTF-8: {"a":"ñ"} son 10 bytes.
+  await conFetchFalso(200, "{\"a\":\"ñ\"}", async function () {
+    const cliente = new ClienteServicio("/api");
+    await cliente.obtenerConfiguracion();
+    comprobarIgual(cliente.getBytesUltimaRespuesta(), 10, "bytes");
+  });
+});
+
+prueba("ClienteServicio: ya no tiene los métodos del incremento 2", function () {
+  const cliente = new ClienteServicio("/api");
+  comprobar(typeof cliente.obtenerSubgrafo === "undefined", "obtenerSubgrafo");
+  comprobar(typeof cliente.buscarEntidades === "undefined", "buscarEntidades");
+  comprobar(typeof ClienteServicio.convertirSubgrafo === "undefined", "convertirSubgrafo");
 });

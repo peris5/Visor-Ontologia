@@ -5,6 +5,7 @@ import { CalculadorDisposicion } from './CalculadorDisposicion.js';
 import { SimulacionFuerzas } from './SimulacionFuerzas.js';
 import { FabricaNodosVisuales } from './FabricaNodosVisuales.js';
 import { EnlaceVisual } from './EnlaceVisual.js';
+import { SelectorInteraccion } from './SelectorInteraccion.js';
 
 /**
  * EscenaGrafo
@@ -14,10 +15,15 @@ import { EnlaceVisual } from './EnlaceVisual.js';
  * el bucle que avanza la simulación de fuerzas y dibuja cada fotograma.
  *
  * Composición (◆): tiene sus propios NodoVisual, EnlaceVisual,
- * CalculadorDisposicion, SimulacionFuerzas y FabricaNodosVisuales.
+ * CalculadorDisposicion, SimulacionFuerzas, FabricaNodosVisuales y
+ * SelectorInteraccion (el que detecta los clics sobre los nodos).
+ *
+ * Desde el incremento 3 también aplica los filtros de la leyenda (oculta o
+ * muestra nodos y líneas) y resalta lo que el usuario selecciona.
  *
  * Requisitos: RF-16 a RF-22 (representación 3D del subgrafo), RF-25 y RF-26
- * (girar y acercar la cámara), RF-27 (vista inicial), RNF-18 (Three.js).
+ * (girar y acercar la cámara), RF-27 (vista inicial), RF-28 y RF-29
+ * (selección), RF-32 y RF-33 (filtros), RNF-18 (Three.js).
  */
 export class EscenaGrafo {
   // Pasos de simulación por fotograma: con 3, los 300 pasos tardan unos
@@ -40,6 +46,7 @@ export class EscenaGrafo {
   #disposicion;
   #simulacion;
   #fabrica;
+  #selector;
 
   constructor() {
     this.#nodos = new Map();
@@ -49,6 +56,7 @@ export class EscenaGrafo {
     this.#disposicion = new CalculadorDisposicion();
     this.#simulacion = new SimulacionFuerzas();
     this.#fabrica = new FabricaNodosVisuales();
+    this.#selector = null;
   }
 
   /**
@@ -56,8 +64,8 @@ export class EscenaGrafo {
    * bucle de animación.
    *
    * @param {HTMLElement} contenedor - elemento de la página donde va la escena.
-   * @param {Object|null} controlador - en este incremento es null; en el
-   *   incremento 3 recibirá los clics sobre los nodos.
+   * @param {ControladorExploracion|null} controlador - recibe los clics
+   *   sobre los nodos y las relaciones (con null no se puede seleccionar nada).
    */
   inicializar(contenedor, controlador) {
     this.#contenedor = contenedor;
@@ -89,6 +97,10 @@ export class EscenaGrafo {
     this.#renderizador.setAnimationLoop(function () {
       escenaGrafo.#animar();
     });
+
+    if (controlador !== null && controlador !== undefined) {
+      this.#selector = new SelectorInteraccion(this, controlador, contenedor);
+    }
   }
 
   /**
@@ -127,6 +139,80 @@ export class EscenaGrafo {
   }
 
   /**
+   * Resalta una relación y sus dos nodos, y quita el resalte a todo lo demás.
+   *
+   * @param {string} id - id de la relación.
+   */
+  resaltarRelacion(id) {
+    let idOrigen = null;
+    let idDestino = null;
+    for (let i = 0; i < this.#enlaces.length; i++) {
+      const relacion = this.#enlaces[i].getRelacion();
+      const esLaElegida = relacion.getId() === id;
+      this.#enlaces[i].resaltar(esLaElegida);
+      if (esLaElegida) {
+        idOrigen = relacion.getOrigen().getId();
+        idDestino = relacion.getDestino().getId();
+      }
+    }
+    for (const idNodo of this.#nodos.keys()) {
+      const esUnExtremo = idNodo === idOrigen || idNodo === idDestino;
+      this.#nodos.get(idNodo).resaltar(esUnExtremo);
+    }
+  }
+
+  /**
+   * Oculta o muestra cada nodo y cada línea según el filtro de la leyenda.
+   * Los nodos ocultos SIGUEN en la simulación de fuerzas (siguen empujando
+   * y tirando de los demás); solo dejan de verse. Así, al volver a
+   * mostrarlos, todo está donde estaba.
+   *
+   * @param {FiltroVisualizacion} filtro
+   */
+  aplicarFiltro(filtro) {
+    for (const visual of this.#nodos.values()) {
+      visual.setVisible(filtro.esVisibleNodo(visual.getNodo(), this.#idCentral));
+    }
+    for (let i = 0; i < this.#enlaces.length; i++) {
+      const enlace = this.#enlaces[i];
+      enlace.setVisible(filtro.esVisibleRelacion(enlace.getRelacion(), this.#idCentral));
+    }
+  }
+
+  /**
+   * Los objetos 3D sobre los que se puede hacer clic: las mallas de los
+   * nodos y las líneas de las relaciones que se ven ahora.
+   *
+   * @returns {THREE.Object3D[]}
+   */
+  getObjetosSeleccionables() {
+    const objetos = [];
+    for (const visual of this.#nodos.values()) {
+      if (visual.getVisible()) {
+        objetos.push(visual.getMalla());
+      }
+    }
+    for (let i = 0; i < this.#enlaces.length; i++) {
+      const linea = this.#enlaces[i].getLinea();
+      if (linea.visible) {
+        objetos.push(linea);
+      }
+    }
+    return objetos;
+  }
+
+  /**
+   * @param {string} id - id de la entidad.
+   * @returns {NodoVisual|null}
+   */
+  getNodoVisual(id) {
+    if (this.#nodos.has(id)) {
+      return this.#nodos.get(id);
+    }
+    return null;
+  }
+
+  /**
    * Vuelve a la vista inicial: cámara encuadrando el grafo y mirando al
    * centro. Mientras la simulación se mueva, la cámara seguirá ajustando el
    * encuadre hasta que el usuario la mueva.
@@ -160,7 +246,8 @@ export class EscenaGrafo {
   }
 
   /**
-   * Cuántas relaciones visibles hay de cada tipo (para la leyenda).
+   * Cuántas relaciones visibles hay de cada tipo (para la leyenda). Solo
+   * cuenta las que se ven: las ocultas por el filtro no.
    *
    * @returns {Map<TipoRelacion, number>}
    */
@@ -184,7 +271,8 @@ export class EscenaGrafo {
    * (Privado) Renderizador WebGL (formas) y, encima, el de CSS (etiquetas).
    */
   #crearRenderizadores() {
-    // preserveDrawingBuffer permite sacar una imagen del lienzo (incremento 3).
+    // preserveDrawingBuffer permitirá sacar una imagen del lienzo (RF-36,
+    // opcional y pendiente de confirmar con el tutor).
     this.#renderizador = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     // En pantallas de mucha densidad se limita a 2 para no perder fluidez.
     this.#renderizador.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -383,9 +471,13 @@ export class EscenaGrafo {
   }
 
   /**
-   * (Privado) Quita y libera todos los nodos y líneas del subgrafo anterior.
+   * (Privado) Quita y libera todos los nodos y líneas del subgrafo anterior,
+   * y oculta la etiqueta flotante (el objeto que señalaba ya no existe).
    */
   #limpiar() {
+    if (this.#selector !== null) {
+      this.#selector.ocultarEtiqueta();
+    }
     for (const visual of this.#nodos.values()) {
       this.#grupo.remove(visual.getMalla());
       visual.liberar();

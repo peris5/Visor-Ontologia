@@ -1,4 +1,4 @@
-"""Pruebas del modelo de dominio en Python (las mismas que tests/pruebasModelo.js)."""
+"""Pruebas del modelo de dominio en Python (casi las mismas que tests/pruebasModelo.js)."""
 import pytest
 
 from servidor.datos.fabrica_entidades import FabricaEntidades
@@ -19,7 +19,7 @@ def crear_elementos() -> dict:
         "persona": Persona({"id": "per1", "nombre": "Persona de prueba", "nacionalidad": "Española"}),
         "organizacion": Organizacion({"id": "org1", "nombre": "Organización de prueba", "sede": "Ciudad"}),
         "obra": ObraDeArte({"id": "obr1", "nombre": "Obra de prueba", "tecnica": "Óleo"}),
-        "tipo": TipoRelacion("autor_de", "Autor de", "#ff0000"),
+        "tipo": TipoRelacion("autor_de"),
     }
 
 
@@ -63,9 +63,12 @@ def test_get_clave_par_igual_en_los_dos_sentidos() -> None:
     assert de_ida.get_clave_par() == de_vuelta.get_clave_par()
 
 
-def test_nombre_desde_id() -> None:
-    assert TipoRelacion.nombre_desde_id("maestro_de") == "Maestro de"
-    assert TipoRelacion.nombre_desde_id("pareja") == "Pareja"
+def test_tipo_relacion_solo_guarda_el_id() -> None:
+    # El nombre legible y el color los pone el navegador (incremento 3).
+    tipo = TipoRelacion("maestro_de")
+    assert tipo.get_id() == "maestro_de"
+    with pytest.raises(ValueError):
+        TipoRelacion("")
 
 
 def test_subgrafo_nace_con_la_central() -> None:

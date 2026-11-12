@@ -120,3 +120,134 @@ prueba("ComponenteUI: es abstracta y mostrar/ocultar cambian la visibilidad", fu
   l.leyenda.mostrar();
   comprobarIgual(elemento.hidden, false, "tras mostrar()");
 });
+
+/*
+ * Leyenda interactiva (incremento 3): las casillas son el filtro.
+ * Estas pruebas montan la leyenda dentro de la página (y la quitan al
+ * terminar) para que los clics en las casillas funcionen como en la página real.
+ */
+
+/**
+ * Doble de ControladorExploracion: apunta las llamadas de la leyenda.
+ */
+class ControladorFalsoLeyenda {
+  constructor() {
+    this.llamadas = [];
+  }
+
+  alternarFiltroNodo(tipo) {
+    this.llamadas.push("nodo:" + tipo);
+  }
+
+  alternarFiltroRelacion(tipo) {
+    this.llamadas.push("relacion:" + tipo.getId());
+    this.ultimoTipo = tipo;
+  }
+
+  mostrarTodasLasRelaciones(visible) {
+    this.llamadas.push("todas:" + visible);
+  }
+}
+
+/**
+ * @param {Object} controlador
+ * @returns {Object} { leyenda, padre, autorDe, conserva }
+ */
+function crearLeyendaInteractiva(controlador) {
+  const padre = document.createElement("div");
+  document.body.appendChild(padre);
+  const leyenda = new Leyenda(controlador);
+  leyenda.montar(padre);
+  const autorDe = new TipoRelacion("autor_de", "Autor de", "#4c8bf5");
+  const conserva = new TipoRelacion("conserva", "Conserva", "#2bb673");
+  leyenda.actualizar({
+    nodos: [
+      { tipo: TipoEntidad.PERSONA, cantidad: 3, activo: true },
+      { tipo: TipoEntidad.OBRA_DE_ARTE, cantidad: 2, activo: false }
+    ],
+    relaciones: [
+      { tipo: autorDe, cantidad: 4, activo: true, visibles: 4 },
+      { tipo: conserva, cantidad: 1, activo: true, visibles: 0 }
+    ]
+  });
+  return { leyenda: leyenda, padre: padre, autorDe: autorDe, conserva: conserva };
+}
+
+/**
+ * @param {HTMLElement} padre
+ * @param {string} grupo
+ * @param {string} valor
+ * @returns {HTMLInputElement}
+ */
+function buscarCasilla(padre, grupo, valor) {
+  return padre.querySelector("input[data-grupo=\"" + grupo + "\"][data-valor=\"" + valor + "\"]");
+}
+
+prueba("Leyenda: una casilla por tipo, marcada según su estado y con su etiqueta", function () {
+  const l = crearLeyendaInteractiva(new ControladorFalsoLeyenda());
+  try {
+    comprobarIgual(l.padre.querySelectorAll("input[type=checkbox]").length, 4, "2 tipos de nodo y 2 de relación");
+    comprobarIgual(buscarCasilla(l.padre, "nodo", TipoEntidad.PERSONA).checked, true, "persona activa");
+    comprobarIgual(buscarCasilla(l.padre, "nodo", TipoEntidad.OBRA_DE_ARTE).checked, false, "obra inactiva");
+    comprobarIgual(buscarCasilla(l.padre, "relacion", "autor_de").checked, true, "autor_de activo");
+    const etiqueta = buscarCasilla(l.padre, "relacion", "autor_de").closest("label");
+    comprobar(etiqueta !== null && etiqueta.textContent.includes("Autor de"), "la casilla está dentro de su <label>");
+  } finally {
+    l.padre.remove();
+  }
+});
+
+prueba("Leyenda: marcar o desmarcar una casilla llama al controlador con el tipo correcto", function () {
+  const controlador = new ControladorFalsoLeyenda();
+  const l = crearLeyendaInteractiva(controlador);
+  try {
+    buscarCasilla(l.padre, "nodo", TipoEntidad.OBRA_DE_ARTE).click();
+    buscarCasilla(l.padre, "relacion", "conserva").click();
+    comprobarIgual(controlador.llamadas.join(","), "nodo:OBRA_DE_ARTE,relacion:conserva", "llamadas");
+    comprobar(controlador.ultimoTipo === l.conserva, "se pasa el mismo objeto TipoRelacion");
+  } finally {
+    l.padre.remove();
+  }
+});
+
+prueba("Leyenda: los botones «Todas» y «Ninguna»", function () {
+  const controlador = new ControladorFalsoLeyenda();
+  const l = crearLeyendaInteractiva(controlador);
+  try {
+    const botones = l.padre.querySelectorAll(".leyenda-botones button");
+    comprobarIgual(botones[0].textContent, "Todas", "primer botón");
+    comprobarIgual(botones[1].textContent, "Ninguna", "segundo botón");
+    botones[1].click();
+    botones[0].click();
+    comprobarIgual(controlador.llamadas.join(","), "todas:false,todas:true", "llamadas");
+  } finally {
+    l.padre.remove();
+  }
+});
+
+prueba("Leyenda: un tipo activo sin relaciones visibles sale atenuado", function () {
+  const l = crearLeyendaInteractiva(new ControladorFalsoLeyenda());
+  try {
+    const conserva = buscarCasilla(l.padre, "relacion", "conserva").closest("li");
+    const autorDe = buscarCasilla(l.padre, "relacion", "autor_de").closest("li");
+    comprobar(conserva.classList.contains("leyenda-atenuado"), "conserva atenuado");
+    comprobar(conserva.textContent.includes("(ocultas por los nodos)"), "con la nota");
+    comprobar(!autorDe.classList.contains("leyenda-atenuado"), "autor_de no");
+  } finally {
+    l.padre.remove();
+  }
+});
+
+prueba("Leyenda: el foco del teclado sigue en la casilla tras actualizar", function () {
+  const l = crearLeyendaInteractiva(new ControladorFalsoLeyenda());
+  try {
+    buscarCasilla(l.padre, "relacion", "autor_de").focus();
+    l.leyenda.actualizar({
+      nodos: [{ tipo: TipoEntidad.PERSONA, cantidad: 3, activo: true }],
+      relaciones: [{ tipo: l.autorDe, cantidad: 4, activo: false, visibles: 0 }]
+    });
+    comprobar(document.activeElement === buscarCasilla(l.padre, "relacion", "autor_de"), "foco en la casilla nueva");
+  } finally {
+    l.padre.remove();
+  }
+});

@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  Visor de patrimonio 3D · Incremento 2: visualización 3D.
+  Visor de patrimonio 3D · Incremento 3: exploración interactiva.
 
   En desarrollo (npm run dev) se abre en http://localhost:5173/ y necesita el
   servidor Python en marcha (puerto 8000). Una vez publicado (npm run build),
@@ -14,34 +14,35 @@
   <link rel="stylesheet" href="/src/estilos.css">
 </head>
 <body class="pagina-visor">
-  <!-- Aquí dibuja EscenaGrafo (lienzo WebGL y capa de etiquetas). -->
+  <!-- Aquí dibuja EscenaGrafo (lienzo WebGL, capa de etiquetas y etiqueta flotante). -->
   <div id="contenedor3d" class="contenedor-3d"></div>
 
-  <!-- Controles temporales: en el incremento 3 se sustituyen por el buscador. -->
-  <header class="barra-superior">
-    <h1>Visor de patrimonio 3D</h1>
-    <div class="control">
-      <label for="selectorEntidad">Entidad central</label>
-      <select id="selectorEntidad"></select>
-    </div>
-    <div class="control">
-      <label for="deslizadorUmbral">Umbral de relevancia: <span id="valorUmbral"></span></label>
-      <input type="range" id="deslizadorUmbral" min="0" max="1" step="0.05">
-    </div>
-    <button type="button" id="botonVistaInicial">Vista inicial</button>
-  </header>
+  <!--
+    Capa de la interfaz 2D, por encima de la escena. InterfazUsuario monta
+    cada componente en su zona (data-zona). El centro queda libre para la
+    vista 3D: la capa no captura el ratón salvo en sus paneles.
+  -->
+  <div id="interfaz" class="interfaz">
+    <header class="zona-superior barra-superior" data-zona="superior">
+      <h1>Visor de patrimonio 3D</h1>
+    </header>
+    <div class="zona-izquierda" data-zona="izquierda"></div>
+    <div class="zona-derecha" data-zona="derecha"></div>
+    <footer class="zona-inferior">
+      <div class="zona-estado" data-zona="estado"></div>
+      <!-- La rellena Aplicacion (barra de rendimiento). -->
+      <div class="barra-rendimiento" aria-label="Rendimiento">
+        <span id="rendimientoGrafo">Sin grafo</span>
+        <span id="rendimientoFps">— fps</span>
+        <span id="rendimientoEstabilizacion"></span>
+        <span id="rendimientoCalculo"></span>
+        <span id="rendimientoDatos"></span>
+      </div>
+    </footer>
+  </div>
 
-  <!-- La Leyenda se monta aquí desde main.js. -->
-  <div id="panelIzquierdo" class="panel-izquierdo"></div>
-
-  <div id="indicadorCarga" class="indicador-carga" hidden>Cargando…</div>
-  <div id="avisoError" class="aviso-error" role="alert" hidden></div>
-
-  <footer class="barra-estado">
-    <span id="estadoGrafo">Sin grafo</span>
-    <span id="estadoFps">— fps</span>
-    <span id="estadoEstabilizacion"></span>
-  </footer>
+  <!-- Aviso si la página no puede arrancar (por ejemplo, sin servidor). -->
+  <div id="avisoArranque" class="aviso-arranque" role="alert" hidden></div>
 
   <!-- Vite carga main.js como módulo; main.js importa todo lo demás. -->
   <script type="module" src="/src/main.js"></script>

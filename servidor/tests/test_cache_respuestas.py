@@ -1,9 +1,9 @@
-"""Pruebas de CacheSubgrafos (servidor/api/)."""
+"""Pruebas de CacheRespuestas (servidor/api/)."""
 import asyncio
 
 import pytest
 
-from servidor.api.cache_subgrafos import CacheSubgrafos
+from servidor.api.cache_respuestas import CacheRespuestas
 
 
 class ContadorDeCalculos:
@@ -14,13 +14,13 @@ class ContadorDeCalculos:
         self.__espera = espera
 
     async def calcular(self) -> bytes:
-        """Tarda un poco (como un subgrafo de verdad) y devuelve un JSON."""
+        """Tarda un poco (como un vecindario de verdad) y devuelve un JSON."""
         self.veces = self.veces + 1
         await asyncio.sleep(self.__espera)
         return b"{}"
 
 
-async def pedir_varias_veces_a_la_vez(cache: CacheSubgrafos, contador: ContadorDeCalculos, veces: int) -> None:
+async def pedir_varias_veces_a_la_vez(cache: CacheRespuestas, contador: ContadorDeCalculos, veces: int) -> None:
     """Lanza varias peticiones iguales a la vez y espera a todas."""
     tareas = []
     for _ in range(veces):
@@ -30,7 +30,7 @@ async def pedir_varias_veces_a_la_vez(cache: CacheSubgrafos, contador: ContadorD
 
 
 def test_la_segunda_peticion_no_vuelve_a_calcular() -> None:
-    cache = CacheSubgrafos(10, 600)
+    cache = CacheRespuestas(10, 600)
     contador = ContadorDeCalculos(0)
     asyncio.run(cache.obtener("p01|0.3", contador.calcular))
     asyncio.run(cache.obtener("p01|0.3", contador.calcular))
@@ -38,14 +38,14 @@ def test_la_segunda_peticion_no_vuelve_a_calcular() -> None:
 
 
 def test_peticiones_iguales_a_la_vez_calculan_una_sola_vez() -> None:
-    cache = CacheSubgrafos(10, 600)
+    cache = CacheRespuestas(10, 600)
     contador = ContadorDeCalculos(0.05)
     asyncio.run(pedir_varias_veces_a_la_vez(cache, contador, 50))
     assert contador.veces == 1
 
 
 def test_claves_distintas_se_calculan_por_separado() -> None:
-    cache = CacheSubgrafos(10, 600)
+    cache = CacheRespuestas(10, 600)
     contador = ContadorDeCalculos(0)
     asyncio.run(cache.obtener("p01|0.3", contador.calcular))
     asyncio.run(cache.obtener("p01|0.5", contador.calcular))
@@ -53,7 +53,7 @@ def test_claves_distintas_se_calculan_por_separado() -> None:
 
 
 def test_no_guarda_mas_del_maximo_y_olvida_el_menos_usado() -> None:
-    cache = CacheSubgrafos(2, 600)
+    cache = CacheRespuestas(2, 600)
     contador = ContadorDeCalculos(0)
     asyncio.run(cache.obtener("A", contador.calcular))
     asyncio.run(cache.obtener("B", contador.calcular))
@@ -68,7 +68,7 @@ def test_no_guarda_mas_del_maximo_y_olvida_el_menos_usado() -> None:
 
 
 def test_las_entradas_caducan() -> None:
-    cache = CacheSubgrafos(10, 0)
+    cache = CacheRespuestas(10, 0)
     contador = ContadorDeCalculos(0)
     asyncio.run(cache.obtener("p01|0.3", contador.calcular))
     asyncio.run(asyncio.sleep(0.01))
@@ -77,7 +77,7 @@ def test_las_entradas_caducan() -> None:
 
 
 def test_los_errores_no_se_guardan() -> None:
-    cache = CacheSubgrafos(10, 600)
+    cache = CacheRespuestas(10, 600)
 
     async def fallar() -> bytes:
         raise ValueError("fallo de prueba")

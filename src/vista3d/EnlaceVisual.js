@@ -52,7 +52,7 @@ export class EnlaceVisual {
       opacity: this.#opacidadBase
     });
     this.#linea = new THREE.Line(geometria, material);
-    // Así, en el incremento 3, desde la línea se podrá llegar a su relación.
+    // Así, al hacer clic en la línea (SelectorInteraccion), se llega a su relación.
     this.#linea.userData.visual = this;
     this.actualizar();
   }
