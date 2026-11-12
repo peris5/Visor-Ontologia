@@ -4,21 +4,20 @@ import { TipoEntidad } from './TipoEntidad.js';
 /**
  * Organizacion extends Entidad
  *
- * Una organización del grafo (academia, taller, fundación, museo...).
+ * Una organización (:Organization en Neo4j): museo, academia, taller...
+ * Su nombre está en tres idiomas (name_es, name_ca, name_en).
  *
- * Requisitos: modelo de dominio usado en RF-08 a RF-12.
+ * Desde el incremento 3b no tiene fechaFundacion ni sede: la fundación es un
+ * evento (Fund) y el lugar, un nodo Ubication; los dos se ven en el detalle.
+ *
+ * Requisitos: RF-19 (tipo de nodo), RF-28.
  */
 export class Organizacion extends Entidad {
-  #fechaFundacion;
-  #sede;
-
   /**
-   * @param {Object} datos - los de Entidad más fechaFundacion y sede (opcionales).
+   * @param {Object} datos - ver Entidad.
    */
   constructor(datos) {
     super(datos);
-    this.#fechaFundacion = Entidad._textoOVacio(datos.fechaFundacion);
-    this.#sede = Entidad._textoOVacio(datos.sede);
   }
 
   /**
@@ -26,17 +25,5 @@ export class Organizacion extends Entidad {
    */
   getTipo() {
     return TipoEntidad.ORGANIZACION;
-  }
-
-  /**
-   * Atributos comunes más los propios de una organización.
-   *
-   * @returns {Map<string, *>}
-   */
-  getAtributos() {
-    const atributos = super.getAtributos();
-    this._anadirSiNoVacio(atributos, "fechaFundacion", this.#fechaFundacion);
-    this._anadirSiNoVacio(atributos, "sede", this.#sede);
-    return atributos;
   }
 }

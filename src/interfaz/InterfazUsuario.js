@@ -47,13 +47,15 @@ export class InterfazUsuario {
    *
    * @param {HTMLElement} raiz - el elemento que contiene las zonas (data-zona).
    * @param {ControladorExploracion} controlador
+   * @param {Object} contexto - { idioma, nombresTipos, ... } (para los
+   *   nombres de los tipos en el panel de información).
    */
-  inicializar(raiz, controlador) {
+  inicializar(raiz, controlador, contexto) {
     this.#panelBusqueda = new PanelBusqueda(controlador);
     this.#controlUmbral = new ControlUmbral(controlador);
     this.#barraNavegacion = new BarraNavegacion(controlador);
     this.#leyenda = new Leyenda(controlador);
-    this.#panelInformacion = new PanelInformacion(controlador);
+    this.#panelInformacion = new PanelInformacion(controlador, contexto);
     this.#indicadorEstado = new IndicadorEstado(controlador);
 
     const superior = InterfazUsuario.#zona(raiz, "superior");
@@ -72,6 +74,26 @@ export class InterfazUsuario {
    */
   mostrarEntidad(entidad, nodo, subgrafo) {
     this.#panelInformacion.mostrarEntidad(entidad, nodo, subgrafo);
+  }
+
+  /**
+   * El detalle de una entidad (eventos, imágenes, fuentes) ha llegado.
+   *
+   * @param {string} idEntidad
+   * @param {DetalleEntidad} detalle
+   */
+  mostrarDetalle(idEntidad, detalle) {
+    this.#panelInformacion.mostrarDetalle(idEntidad, detalle);
+  }
+
+  /**
+   * No se ha podido obtener el detalle de una entidad.
+   *
+   * @param {string} idEntidad
+   * @param {string} mensaje
+   */
+  mostrarErrorDetalle(idEntidad, mensaje) {
+    this.#panelInformacion.mostrarErrorDetalle(idEntidad, mensaje);
   }
 
   /**

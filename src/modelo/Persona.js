@@ -4,24 +4,31 @@ import { TipoEntidad } from './TipoEntidad.js';
 /**
  * Persona extends Entidad
  *
- * Una persona del grafo (artista, mecenas, restauradora...).
+ * Una persona (:Person en Neo4j). A diferencia del resto de entidades, su
+ * nombre no está en tres idiomas: tiene nombre propio (name) y apellidos
+ * (lastName), y su nombre para mostrar es «nombre apellidos».
  *
- * Requisitos: modelo de dominio usado en RF-08 a RF-12.
+ * Desde el incremento 3b no tiene fechas ni nacionalidad: el nacimiento, la
+ * defunción y la residencia son eventos de la base de datos y se ven en el
+ * detalle (DetalleEntidad).
+ *
+ * Requisitos: RF-19 (tipo de nodo), RF-28.
  */
 export class Persona extends Entidad {
-  #fechaNacimiento;
-  #fechaDefuncion;
-  #nacionalidad;
+  #nombrePropio;
+  #apellidos;
 
   /**
-   * @param {Object} datos - los de Entidad más fechaNacimiento,
-   *   fechaDefuncion y nacionalidad (todos opcionales).
+   * @param {Object} datos - ver Entidad (propiedades con name y lastName).
    */
   constructor(datos) {
     super(datos);
-    this.#fechaNacimiento = Entidad._textoOVacio(datos.fechaNacimiento);
-    this.#fechaDefuncion = Entidad._textoOVacio(datos.fechaDefuncion);
-    this.#nacionalidad = Entidad._textoOVacio(datos.nacionalidad);
+    let propiedades = {};
+    if (datos.propiedades !== undefined && datos.propiedades !== null) {
+      propiedades = datos.propiedades;
+    }
+    this.#nombrePropio = Entidad._textoOVacio(propiedades.name).trim();
+    this.#apellidos = Entidad._textoOVacio(propiedades.lastName).trim();
   }
 
   /**
@@ -32,15 +39,52 @@ export class Persona extends Entidad {
   }
 
   /**
-   * Atributos comunes más los propios de una persona.
-   *
-   * @returns {Map<string, *>}
+   * @returns {string} «nombre apellidos»; «(sin nombre)» si no tiene ninguno.
    */
-  getAtributos() {
-    const atributos = super.getAtributos();
-    this._anadirSiNoVacio(atributos, "fechaNacimiento", this.#fechaNacimiento);
-    this._anadirSiNoVacio(atributos, "fechaDefuncion", this.#fechaDefuncion);
-    this._anadirSiNoVacio(atributos, "nacionalidad", this.#nacionalidad);
-    return atributos;
+  getNombre() {
+    const completo = (this.#nombrePropio + " " + this.#apellidos).trim();
+    if (completo === "") {
+      return Entidad.NOMBRE_VACIO;
+    }
+    return completo;
+  }
+
+  /**
+   * @returns {string}
+   */
+  getNombrePropio() {
+    return this.#nombrePropio;
+  }
+
+  /**
+   * @returns {string}
+   */
+  getApellidos() {
+    return this.#apellidos;
+  }
+
+  /**
+   * Para el buscador: el nombre completo y, por separado, el nombre propio y
+   * los apellidos.
+   *
+   * @returns {string[]}
+   */
+  getTodosLosNombres() {
+    const todos = super.getTodosLosNombres();
+    Entidad._anadirSinRepetir(todos, this.#nombrePropio);
+    Entidad._anadirSinRepetir(todos, this.#apellidos);
+    return todos;
+  }
+
+  /**
+   * (Protegido) name y lastName forman el nombre: no son atributos.
+   *
+   * @returns {string[]}
+   */
+  _propiedadesConocidas() {
+    const conocidas = super._propiedadesConocidas();
+    conocidas.push("name");
+    conocidas.push("lastName");
+    return conocidas;
   }
 }

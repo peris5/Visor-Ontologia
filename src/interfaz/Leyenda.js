@@ -5,12 +5,13 @@ import { TipoEntidad } from '../modelo/TipoEntidad.js';
  * Leyenda extends ComponenteUI
  *
  * Explica qué significa lo que se ve en la escena 3D y, desde el incremento
- * 3, sirve también de FILTRO: cada tipo tiene una casilla para mostrarlo u
- * ocultarlo. Muestra SOLO los tipos presentes en el grafo actual, con
+ * 3, sirve también de FILTRO: se pulsa cada tipo para mostrarlo u
+ * ocultarlo (los ocultos salen apagados y tachados). Muestra SOLO los tipos presentes en el grafo actual, con
  * cuántos hay de cada uno:
  *  - los tipos de nodo, con un símbolo de su forma y su color;
- *  - los tipos de relación, con una línea de su color, de más a menos
- *    frecuentes (a igualdad, por nombre), y los botones «Todas» y «Ninguna»;
+ *  - los tipos de relación, con una línea de su color, AGRUPADOS POR FAMILIA
+ *    (Parentesco, Relación profesional...), de más a menos frecuentes (a
+ *    igualdad, por nombre), y los botones «Todas» y «Ninguna»;
  *  - qué significan el tamaño y la distancia al centro.
  *
  * Si un tipo de relación está activo pero no se ve ninguna de sus
@@ -21,7 +22,8 @@ import { TipoEntidad } from '../modelo/TipoEntidad.js';
  *
  * Requisitos: RF-23 (leyenda de nodos y relaciones), RF-24 (solo lo
  * presente), RF-32 y RF-33 (filtros), RNF-09 (pantallas pequeñas), RNF-25
- * (casillas con su etiqueta, usables con el teclado).
+ * (cada tipo es un botón con aria-pressed: se usa con el teclado y los
+ * lectores de pantalla dicen si está activado o no).
  */
 export class Leyenda extends ComponenteUI {
   // Orden fijo en el que se muestran los tipos de nodo.
@@ -33,8 +35,8 @@ export class Leyenda extends ComponenteUI {
   #botonPlegar;
 
   /**
-   * @param {ControladorExploracion|null} controlador - recibe los cambios de
-   *   las casillas (con null la leyenda solo informa).
+   * @param {ControladorExploracion|null} controlador - recibe los tipos que
+   *   se pulsan (con null la leyenda solo informa).
    */
   constructor(controlador) {
     super(controlador, "aside", "leyenda");
@@ -44,13 +46,13 @@ export class Leyenda extends ComponenteUI {
     this.#tipos = new Map();
     this.#botonPlegar = null;
 
-    // Un solo escuchador para todas las casillas (las casillas se crean y
-    // se borran en cada actualizar, pero el elemento de la leyenda no).
+    // Un solo escuchador para todos los tipos (sus botones se crean y se
+    // borran en cada actualizar, pero el elemento de la leyenda no).
     // El navegador llama a la función desde fuera de la clase, y dentro de
     // una función normal "this" ya no es la leyenda; por eso la guardamos antes.
     const leyenda = this;
-    this._elemento.addEventListener("change", function (evento) {
-      leyenda.#onCambio(evento);
+    this._elemento.addEventListener("click", function (evento) {
+      leyenda.#onPulsar(evento);
     });
   }
 
@@ -109,21 +111,21 @@ export class Leyenda extends ComponenteUI {
     if (this.#nodos === null) {
       this.renderizar();
     }
-    // Las casillas se vuelven a crear. Si el usuario estaba usando una con
-    // el teclado, se le devuelve el foco a la nueva; si no, el foco se
-    // perdería cada vez que marca una casilla (RNF-25).
-    const casillaConFoco = this.#casillaConFoco();
+    // Los botones de los tipos se vuelven a crear. Si el usuario estaba
+    // usando uno con el teclado, se le devuelve el foco al nuevo; si no, el
+    // foco se perdería cada vez que pulsa un tipo (RNF-25).
+    const tipoConFoco = this.#tipoConFoco();
     this.#actualizarNodos(datos.nodos);
     this.#actualizarRelaciones(datos.relaciones);
-    this.#devolverFoco(casillaConFoco);
+    this.#devolverFoco(tipoConFoco);
   }
 
   /**
-   * (Privado) Grupo y valor de la casilla de la leyenda que tiene el foco.
+   * (Privado) Grupo y valor del tipo de la leyenda que tiene el foco.
    *
    * @returns {Object|null} { grupo, valor }, o null si el foco está en otro sitio.
    */
-  #casillaConFoco() {
+  #tipoConFoco() {
     const elementoConFoco = document.activeElement;
     if (elementoConFoco === null || !this._elemento.contains(elementoConFoco)) {
       return null;
@@ -135,16 +137,16 @@ export class Leyenda extends ComponenteUI {
   }
 
   /**
-   * (Privado) Pone el foco en la casilla nueva del mismo grupo y valor.
+   * (Privado) Pone el foco en el botón nuevo del mismo grupo y valor.
    *
-   * @param {Object|null} casilla - { grupo, valor }
+   * @param {Object|null} tipo - { grupo, valor }
    */
-  #devolverFoco(casilla) {
-    if (casilla === null) {
+  #devolverFoco(tipo) {
+    if (tipo === null) {
       return;
     }
     // CSS.escape evita problemas si el id del tipo tiene caracteres especiales.
-    const selector = "input[data-grupo=\"" + CSS.escape(casilla.grupo) + "\"][data-valor=\"" + CSS.escape(casilla.valor) + "\"]";
+    const selector = "button[data-grupo=\"" + CSS.escape(tipo.grupo) + "\"][data-valor=\"" + CSS.escape(tipo.valor) + "\"]";
     const nueva = this._elemento.querySelector(selector);
     if (nueva !== null) {
       nueva.focus();
@@ -190,50 +192,115 @@ export class Leyenda extends ComponenteUI {
       return;
     }
 
-    presentes.sort(Leyenda.#compararRelaciones);
-    for (let i = 0; i < presentes.length; i++) {
-      const tipo = presentes[i].tipo;
-      // Se guarda el tipo por su id: al marcar una casilla solo se sabe su
-      // id (data-valor), y así se recupera el objeto TipoRelacion.
-      this.#tipos.set(tipo.getId(), tipo);
-
-      const linea = crear("span", { clase: "simbolo-relacion", "aria-hidden": "true" }, []);
-      linea.style.backgroundColor = tipo.getColor();
-      const activo = Leyenda.#leerActivo(presentes[i]);
-      let seVe = true;
-      if (activo && typeof presentes[i].visibles === "number" && presentes[i].visibles === 0) {
-        seVe = false;
+    // Se agrupan por familia (Parentesco, Relación profesional, Creación...):
+    // un subtítulo por familia, de la más frecuente a la menos (a igualdad,
+    // por nombre), y dentro de cada una los tipos como antes.
+    const familias = Leyenda.#agruparPorFamilia(presentes);
+    for (let f = 0; f < familias.length; f++) {
+      const familia = familias[f];
+      this.#relaciones.appendChild(crear("li", { clase: "leyenda-familia", role: "presentation" }, [
+        crear("span", { texto: familia.nombre }, [])
+      ]));
+      familia.elementos.sort(Leyenda.#compararRelaciones);
+      for (let i = 0; i < familia.elementos.length; i++) {
+        this.#relaciones.appendChild(this.#elementoDeRelacion(familia.elementos[i]));
       }
-      this.#relaciones.appendChild(this.#elemento("relacion", tipo.getId(), linea, tipo.getNombre(), presentes[i].cantidad, activo, seVe));
     }
   }
 
   /**
-   * (Privado) Un elemento de la lista: una casilla dentro de su etiqueta
-   * (<label>), con el símbolo, el nombre y la cantidad. Al estar la casilla
-   * dentro del <label>, hacer clic en el nombre también la marca, y los
-   * lectores de pantalla leen el nombre al llegar a la casilla (RNF-25).
+   * (Privado) Un tipo de relación de la leyenda.
+   *
+   * @param {Object} dato - { tipo, cantidad, activo, visibles }
+   * @returns {HTMLElement}
+   */
+  #elementoDeRelacion(dato) {
+    const tipo = dato.tipo;
+    // Se guarda el tipo por su id: al pulsar un tipo solo se sabe su
+    // id (data-valor), y así se recupera el objeto TipoRelacion.
+    this.#tipos.set(tipo.getId(), tipo);
+
+    const linea = crear("span", { clase: "simbolo-relacion", "aria-hidden": "true" }, []);
+    linea.style.backgroundColor = tipo.getColor();
+    const activo = Leyenda.#leerActivo(dato);
+    let seVe = true;
+    if (activo && typeof dato.visibles === "number" && dato.visibles === 0) {
+      seVe = false;
+    }
+    return this.#elemento("relacion", tipo.getId(), linea, tipo.getNombre(), dato.cantidad, activo, seVe);
+  }
+
+  /**
+   * (Privado) Agrupa los tipos de relación por su familia
+   * (TipoRelacion.getFamilia) y ordena las familias.
+   *
+   * @param {Object[]} presentes - [{ tipo, cantidad, ... }]
+   * @returns {Object[]} [{ id, nombre, cantidad, elementos: [...] }]
+   */
+  static #agruparPorFamilia(presentes) {
+    const porId = new Map();
+    for (let i = 0; i < presentes.length; i++) {
+      const tipo = presentes[i].tipo;
+      const idFamilia = tipo.getFamilia();
+      if (!porId.has(idFamilia)) {
+        porId.set(idFamilia, { id: idFamilia, nombre: tipo.getNombreFamilia(), cantidad: 0, elementos: [] });
+      }
+      const familia = porId.get(idFamilia);
+      familia.cantidad = familia.cantidad + presentes[i].cantidad;
+      familia.elementos.push(presentes[i]);
+    }
+    const familias = [];
+    for (const familia of porId.values()) {
+      familias.push(familia);
+    }
+    familias.sort(Leyenda.#compararFamilias);
+    return familias;
+  }
+
+  /**
+   * (Privado) Para ordenar familias de más a menos relaciones y, a igualdad, por nombre.
+   *
+   * @param {Object} a - { nombre, cantidad }
+   * @param {Object} b - { nombre, cantidad }
+   * @returns {number}
+   */
+  static #compararFamilias(a, b) {
+    if (a.cantidad !== b.cantidad) {
+      return b.cantidad - a.cantidad;
+    }
+    return a.nombre.localeCompare(b.nombre, "es");
+  }
+
+  /**
+   * (Privado) Un elemento de la lista: una etiqueta pulsable con el
+   * símbolo, el nombre y la cantidad. Es un <button> con aria-pressed (true
+   * si el tipo se ve): así se usa con el teclado (Tab, Intro o espacio) y
+   * los lectores de pantalla dicen si está activado (RNF-25). Los tipos
+   * ocultos se ven apagados y tachados (CSS).
    *
    * @param {string} grupo - "nodo" o "relacion".
    * @param {string} valor - el tipo de entidad o el id del tipo de relación.
    * @param {HTMLElement} simbolo
    * @param {string} nombre
    * @param {number} cantidad
-   * @param {boolean} activo - si la casilla está marcada.
+   * @param {boolean} activo - si el tipo se muestra.
    * @param {boolean} seVe - false si está activo pero no se ve ninguna (se atenúa).
    * @returns {HTMLElement}
    */
   #elemento(grupo, valor, simbolo, nombre, cantidad, activo, seVe) {
-    const casilla = crear("input", { type: "checkbox", "data-grupo": grupo, "data-valor": valor }, []);
-    casilla.checked = activo;
-
     const partes = [
-      casilla,
       simbolo,
       crear("span", { clase: "leyenda-nombre", texto: nombre }, []),
       crear("span", { clase: "leyenda-cantidad", texto: String(cantidad) }, [])
     ];
-    const etiqueta = crear("label", { clase: "leyenda-elemento" }, partes);
+    const etiqueta = crear("button", {
+      type: "button",
+      clase: "leyenda-elemento",
+      "data-grupo": grupo,
+      "data-valor": valor,
+      "aria-pressed": String(activo),
+      title: "Mostrar u ocultar: " + nombre
+    }, partes);
 
     let claseDelElemento = "";
     if (!seVe) {
@@ -244,17 +311,22 @@ export class Leyenda extends ComponenteUI {
   }
 
   /**
-   * (Privado) Se ha marcado o desmarcado una casilla: se avisa al controlador.
+   * (Privado) Se ha pulsado un tipo: se avisa al controlador. El clic
+   * puede caer en el símbolo o en el nombre, que están dentro del botón:
+   * closest busca el botón del tipo que los contiene.
    *
    * @param {Event} evento
    */
-  #onCambio(evento) {
-    const casilla = evento.target;
-    if (this._controlador === null || casilla.dataset === undefined) {
+  #onPulsar(evento) {
+    if (this._controlador === null || typeof evento.target.closest !== "function") {
       return;
     }
-    const grupo = casilla.dataset.grupo;
-    const valor = casilla.dataset.valor;
+    const boton = evento.target.closest("button[data-grupo]");
+    if (boton === null) {
+      return;
+    }
+    const grupo = boton.dataset.grupo;
+    const valor = boton.dataset.valor;
     if (grupo === "nodo") {
       this._controlador.alternarFiltroNodo(valor);
     } else if (grupo === "relacion" && this.#tipos.has(valor)) {

@@ -4,21 +4,27 @@ import { TipoEntidad } from './TipoEntidad.js';
 /**
  * ObraDeArte extends Entidad
  *
- * Una obra de arte del grafo (pintura, escultura, edificio...).
+ * Un bien patrimonial (:HeritageItem en Neo4j). Su nombre está en tres
+ * idiomas y tiene dimensiones (dimensions).
  *
- * Requisitos: modelo de dominio usado en RF-08 a RF-12.
+ * Desde el incremento 3b no tiene fechaCreacion ni tecnica: la creación es un
+ * evento (Creation, Paint, Design) que la une con su autor.
+ *
+ * Requisitos: RF-19 (tipo de nodo), RF-28.
  */
 export class ObraDeArte extends Entidad {
-  #fechaCreacion;
-  #tecnica;
+  #dimensiones;
 
   /**
-   * @param {Object} datos - los de Entidad más fechaCreacion y tecnica (opcionales).
+   * @param {Object} datos - ver Entidad (propiedades con dimensions).
    */
   constructor(datos) {
     super(datos);
-    this.#fechaCreacion = Entidad._textoOVacio(datos.fechaCreacion);
-    this.#tecnica = Entidad._textoOVacio(datos.tecnica);
+    let propiedades = {};
+    if (datos.propiedades !== undefined && datos.propiedades !== null) {
+      propiedades = datos.propiedades;
+    }
+    this.#dimensiones = Entidad._textoOVacio(propiedades.dimensions);
   }
 
   /**
@@ -29,14 +35,35 @@ export class ObraDeArte extends Entidad {
   }
 
   /**
-   * Atributos comunes más los propios de una obra de arte.
+   * @returns {string} por ejemplo "120 × 90 cm" ("" si no las tiene).
+   */
+  getDimensiones() {
+    return this.#dimensiones;
+  }
+
+  /**
+   * Las dimensiones (si las tiene) y las propiedades desconocidas.
    *
    * @returns {Map<string, *>}
    */
   getAtributos() {
-    const atributos = super.getAtributos();
-    this._anadirSiNoVacio(atributos, "fechaCreacion", this.#fechaCreacion);
-    this._anadirSiNoVacio(atributos, "tecnica", this.#tecnica);
+    const atributos = new Map();
+    this._anadirSiNoVacio(atributos, "dimensiones", this.#dimensiones);
+    const desconocidas = super.getAtributos();
+    for (const clave of desconocidas.keys()) {
+      atributos.set(clave, desconocidas.get(clave));
+    }
     return atributos;
+  }
+
+  /**
+   * (Protegido) dimensions es una propiedad conocida (no va a los atributos tal cual).
+   *
+   * @returns {string[]}
+   */
+  _propiedadesConocidas() {
+    const conocidas = super._propiedadesConocidas();
+    conocidas.push("dimensions");
+    return conocidas;
   }
 }

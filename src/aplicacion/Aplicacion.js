@@ -5,6 +5,7 @@ import { Buscador } from '../logica/Buscador.js';
 import { ControladorExploracion } from '../logica/ControladorExploracion.js';
 import { EscenaGrafo } from '../vista3d/EscenaGrafo.js';
 import { InterfazUsuario } from '../interfaz/InterfazUsuario.js';
+import { FabricaEntidades } from '../datos/FabricaEntidades.js';
 
 /**
  * Aplicacion
@@ -20,8 +21,14 @@ import { InterfazUsuario } from '../interfaz/InterfazUsuario.js';
  * cliente, el gestor y el buscador.
  *
  * También lleva la barra de rendimiento (nodos, relaciones, fps, tiempo de
- * estabilización, tiempo de cálculo y datos recibidos), que se usará en
- * las pruebas de rendimiento del incremento 4.
+ * estabilización, tiempo de cálculo, datos recibidos y relevancias
+ * asignadas o reutilizadas por el servidor), que se usará en las pruebas de
+ * rendimiento del incremento 4.
+ *
+ * Desde el incremento 3b prepara también el CONTEXTO con el que se
+ * interpretan los datos de Neo4j: idioma, nombres de los tipos y etiquetas
+ * de entidad (de /api/configuracion) y los tipos de relación con sus padres
+ * (de /api/tipos).
  *
  * Requisitos: RNF-16 (configuración en un solo sitio), RNF-17 (inyección
  * de dependencias: cada pieza recibe las que usa), RF-15 (aviso si no hay
@@ -32,6 +39,7 @@ export class Aplicacion {
   static MAX_NODOS_POR_DEFECTO = 150;
 
   #controlador;
+  #contexto;
   #escena;
   #interfaz;
   #cliente;
@@ -46,6 +54,7 @@ export class Aplicacion {
 
   constructor() {
     this.#controlador = null;
+    this.#contexto = null;
     this.#escena = null;
     this.#interfaz = null;
     this.#cliente = null;
@@ -60,7 +69,7 @@ export class Aplicacion {
   /**
    * Punto de entrada (lo llama main.js):
    *   1. Lee public/config.json para saber dónde está la API.
-   *   2. Pide a la vez la configuración y el índice de nombres.
+   *   2. Pide a la vez la configuración, el índice de nombres y los tipos.
    *   3. Crea y conecta todas las piezas.
    *   4. Carga la entidad inicial.
    * Si no hay servidor, muestra el aviso de error en la página.
@@ -75,17 +84,25 @@ export class Aplicacion {
       // ANTES, para pedir la configuración con la que se crea todo lo demás.
       aplicacion.#cliente = new ClienteServicio(urlServicio);
 
-      // Promise.all lanza las dos peticiones A LA VEZ y espera a que
-      // lleguen las dos (en el orden en que se pidieron). Pedirlas una
-      // detrás de otra tardaría el doble, porque la segunda no saldría
-      // hasta que llegara la primera.
+      // Promise.all lanza las tres peticiones A LA VEZ y espera a que
+      // lleguen todas (en el orden en que se pidieron). Pedirlas una
+      // detrás de otra tardaría el triple, porque cada una no saldría
+      // hasta que llegara la anterior.
       const respuestas = await Promise.all([
         aplicacion.#cliente.obtenerConfiguracion(),
-        aplicacion.#cliente.obtenerNombres()
+        aplicacion.#cliente.obtenerNombres(),
+        aplicacion.#cliente.obtenerTipos()
       ]);
       const configuracion = respuestas[0];
       const nombres = respuestas[1];
+      const tipos = respuestas[2];
 
+      aplicacion.#contexto = {
+        idioma: configuracion.idioma,
+        nombresTipos: configuracion.nombresTipos,
+        etiquetasEntidad: configuracion.etiquetasEntidad,
+        tipos: tipos
+      };
       aplicacion.#crearDependencias(configuracion, nombres);
       aplicacion.#iniciarBarraRendimiento();
       await aplicacion.#controlador.iniciar(configuracion.entidadInicial);
@@ -104,15 +121,16 @@ export class Aplicacion {
    * (la estrategia de relevancia, el origen de los datos...) basta con
    * tocar este método.
    *
-   * @param {Object} configuracion - { umbralPorDefecto, maxNodos, entidadInicial }
-   * @param {Object[]} nombres - [{ id, nombre, tipo }]
+   * @param {Object} configuracion - { umbralPorDefecto, maxNodos, entidadInicial, ... }
+   * @param {Object[]} nombres - [{ id, etiquetas, propiedades }] (de /api/nombres)
    */
   #crearDependencias(configuracion, nombres) {
     const umbral = Aplicacion.#leerUmbral(configuracion);
     const maxNodos = Aplicacion.#leerMaxNodos(configuracion);
 
-    this.#gestor = new GestorSubgrafos(this.#cliente, new RelevanciaDesdeBD(), maxNodos);
-    this.#buscador = new Buscador(nombres);
+    // RelevanciaDesdeBD lee la relevancia que ya asignó el servidor.
+    this.#gestor = new GestorSubgrafos(this.#cliente, new RelevanciaDesdeBD(), maxNodos, this.#contexto);
+    this.#buscador = new Buscador(Aplicacion.#prepararIndice(nombres, this.#contexto));
     this.#controlador = new ControladorExploracion(this.#gestor, this.#buscador, umbral);
 
     // Las vistas necesitan el controlador (para avisarle de los clics) y el
@@ -121,7 +139,7 @@ export class Aplicacion {
     this.#escena = new EscenaGrafo();
     this.#escena.inicializar(document.getElementById("contenedor3d"), this.#controlador);
     this.#interfaz = new InterfazUsuario();
-    this.#interfaz.inicializar(document.getElementById("interfaz"), this.#controlador);
+    this.#interfaz.inicializar(document.getElementById("interfaz"), this.#controlador, this.#contexto);
     this.#controlador.conectar(this.#escena, this.#interfaz);
   }
 
@@ -134,7 +152,10 @@ export class Aplicacion {
    *    quedarse quieta (RNF-29);
    *  - «Subgrafo calculado en X ms»: lo que tarda GestorSubgrafos en
    *    construir el subgrafo, sin contar la red;
-   *  - «Datos recibidos: X KB»: lo que ocupaba el vecindario.
+   *  - «Datos recibidos: X KB»: lo que ocupaba el vecindario;
+   *  - «Relevancias asignadas: X · reutilizadas: Y»: en el último
+   *    vecindario, cuántas relevancias calculó y guardó el servidor y
+   *    cuántas ya estaban guardadas.
    */
   #iniciarBarraRendimiento() {
     this.#ultimaMedidaFps = performance.now();
@@ -175,6 +196,9 @@ export class Aplicacion {
       const kilobytes = this.#gestor.getBytesVecindario() / 1024;
       Aplicacion.#escribir("rendimientoDatos", "Datos recibidos: " + kilobytes.toFixed(1).replace(".", ",") + " KB");
       Aplicacion.#escribir("rendimientoEstabilizacion", "Estabilizando…");
+      const estadisticas = this.#gestor.getEstadisticasAsignacion();
+      Aplicacion.#escribir("rendimientoRelevancias", "Relevancias asignadas: " + estadisticas.asignadas +
+        " · reutilizadas: " + estadisticas.reutilizadas);
     }
 
     if (this.#inicioSimulacion !== null && this.#escena.estaEstabilizado()) {
@@ -182,6 +206,32 @@ export class Aplicacion {
       Aplicacion.#escribir("rendimientoEstabilizacion", "Estabilizado en " + segundos.toFixed(1).replace(".", ",") + " s");
       this.#inicioSimulacion = null;
     }
+  }
+
+  /**
+   * (Privado) Convierte los nombres en bruto de /api/nombres en el índice
+   * del buscador: cada entidad con el nombre que se muestra (en el idioma
+   * configurado), su tipo y todos sus nombres (los tres idiomas, y nombre y
+   * apellidos por separado), para buscar en todos.
+   *
+   * @param {Object[]} nombres - [{ id, etiquetas, propiedades }]
+   * @param {Object} contexto - { idioma, etiquetasEntidad }
+   * @returns {Object[]} [{ id, nombre, tipo, nombresAlternativos }]
+   */
+  static #prepararIndice(nombres, contexto) {
+    const indice = [];
+    for (let i = 0; i < nombres.length; i++) {
+      const datos = nombres[i];
+      const entidad = FabricaEntidades.crearDesdeNeo4j(datos.etiquetas, datos.propiedades, datos.id,
+        contexto.idioma, contexto.etiquetasEntidad);
+      indice.push({
+        id: entidad.getId(),
+        nombre: entidad.getNombre(),
+        tipo: entidad.getTipo(),
+        nombresAlternativos: entidad.getTodosLosNombres()
+      });
+    }
+    return indice;
   }
 
   /**

@@ -25,7 +25,8 @@ function crearLeyendaMontada() {
  * @returns {string[]} textos "nombre cantidad" de cada elemento de la lista.
  */
 function textosDeLaLista(padre, selector) {
-  const elementos = padre.querySelectorAll(selector + " li");
+  // Los subtítulos de familia (li.leyenda-familia) no son elementos de la lista.
+  const elementos = padre.querySelectorAll(selector + " li:not(.leyenda-familia)");
   const textos = [];
   for (let i = 0; i < elementos.length; i++) {
     const nombre = elementos[i].querySelector(".leyenda-nombre");
@@ -122,9 +123,10 @@ prueba("ComponenteUI: es abstracta y mostrar/ocultar cambian la visibilidad", fu
 });
 
 /*
- * Leyenda interactiva (incremento 3): las casillas son el filtro.
+ * Leyenda interactiva: cada tipo es una etiqueta pulsable (un botón con
+ * aria-pressed) que hace de filtro.
  * Estas pruebas montan la leyenda dentro de la página (y la quitan al
- * terminar) para que los clics en las casillas funcionen como en la página real.
+ * terminar) para que los clics en los tipos funcionen como en la página real.
  */
 
 /**
@@ -179,30 +181,31 @@ function crearLeyendaInteractiva(controlador) {
  * @param {string} valor
  * @returns {HTMLInputElement}
  */
-function buscarCasilla(padre, grupo, valor) {
-  return padre.querySelector("input[data-grupo=\"" + grupo + "\"][data-valor=\"" + valor + "\"]");
+function buscarTipo(padre, grupo, valor) {
+  return padre.querySelector("button[data-grupo=\"" + grupo + "\"][data-valor=\"" + valor + "\"]");
 }
 
-prueba("Leyenda: una casilla por tipo, marcada según su estado y con su etiqueta", function () {
+prueba("Leyenda: una etiqueta pulsable por tipo, sin casillas, con su estado en aria-pressed", function () {
   const l = crearLeyendaInteractiva(new ControladorFalsoLeyenda());
   try {
-    comprobarIgual(l.padre.querySelectorAll("input[type=checkbox]").length, 4, "2 tipos de nodo y 2 de relación");
-    comprobarIgual(buscarCasilla(l.padre, "nodo", TipoEntidad.PERSONA).checked, true, "persona activa");
-    comprobarIgual(buscarCasilla(l.padre, "nodo", TipoEntidad.OBRA_DE_ARTE).checked, false, "obra inactiva");
-    comprobarIgual(buscarCasilla(l.padre, "relacion", "autor_de").checked, true, "autor_de activo");
-    const etiqueta = buscarCasilla(l.padre, "relacion", "autor_de").closest("label");
-    comprobar(etiqueta !== null && etiqueta.textContent.includes("Autor de"), "la casilla está dentro de su <label>");
+    comprobarIgual(l.padre.querySelectorAll("input[type=checkbox]").length, 0, "no hay casillas");
+    comprobarIgual(l.padre.querySelectorAll("button[data-grupo]").length, 4, "2 tipos de nodo y 2 de relación");
+    comprobarIgual(buscarTipo(l.padre, "nodo", TipoEntidad.PERSONA).getAttribute("aria-pressed"), "true", "persona activa");
+    comprobarIgual(buscarTipo(l.padre, "nodo", TipoEntidad.OBRA_DE_ARTE).getAttribute("aria-pressed"), "false", "obra oculta");
+    comprobarIgual(buscarTipo(l.padre, "relacion", "autor_de").getAttribute("aria-pressed"), "true", "autor_de activo");
+    comprobar(buscarTipo(l.padre, "relacion", "autor_de").textContent.includes("Autor de"), "la etiqueta lleva el nombre");
   } finally {
     l.padre.remove();
   }
 });
 
-prueba("Leyenda: marcar o desmarcar una casilla llama al controlador con el tipo correcto", function () {
+prueba("Leyenda: pulsar un tipo (también en su nombre) llama al controlador con el tipo correcto", function () {
   const controlador = new ControladorFalsoLeyenda();
   const l = crearLeyendaInteractiva(controlador);
   try {
-    buscarCasilla(l.padre, "nodo", TipoEntidad.OBRA_DE_ARTE).click();
-    buscarCasilla(l.padre, "relacion", "conserva").click();
+    buscarTipo(l.padre, "nodo", TipoEntidad.OBRA_DE_ARTE).click();
+    // Un clic en el nombre (dentro del botón) también cuenta.
+    buscarTipo(l.padre, "relacion", "conserva").querySelector(".leyenda-nombre").click();
     comprobarIgual(controlador.llamadas.join(","), "nodo:OBRA_DE_ARTE,relacion:conserva", "llamadas");
     comprobar(controlador.ultimoTipo === l.conserva, "se pasa el mismo objeto TipoRelacion");
   } finally {
@@ -228,8 +231,8 @@ prueba("Leyenda: los botones «Todas» y «Ninguna»", function () {
 prueba("Leyenda: un tipo activo sin relaciones visibles sale atenuado", function () {
   const l = crearLeyendaInteractiva(new ControladorFalsoLeyenda());
   try {
-    const conserva = buscarCasilla(l.padre, "relacion", "conserva").closest("li");
-    const autorDe = buscarCasilla(l.padre, "relacion", "autor_de").closest("li");
+    const conserva = buscarTipo(l.padre, "relacion", "conserva").closest("li");
+    const autorDe = buscarTipo(l.padre, "relacion", "autor_de").closest("li");
     comprobar(conserva.classList.contains("leyenda-atenuado"), "conserva atenuado");
     comprobar(conserva.textContent.includes("(ocultas por los nodos)"), "con la nota");
     comprobar(!autorDe.classList.contains("leyenda-atenuado"), "autor_de no");
@@ -238,16 +241,46 @@ prueba("Leyenda: un tipo activo sin relaciones visibles sale atenuado", function
   }
 });
 
-prueba("Leyenda: el foco del teclado sigue en la casilla tras actualizar", function () {
+prueba("Leyenda: el foco del teclado sigue en el tipo tras actualizar", function () {
   const l = crearLeyendaInteractiva(new ControladorFalsoLeyenda());
   try {
-    buscarCasilla(l.padre, "relacion", "autor_de").focus();
+    buscarTipo(l.padre, "relacion", "autor_de").focus();
     l.leyenda.actualizar({
       nodos: [{ tipo: TipoEntidad.PERSONA, cantidad: 3, activo: true }],
       relaciones: [{ tipo: l.autorDe, cantidad: 4, activo: false, visibles: 0 }]
     });
-    comprobar(document.activeElement === buscarCasilla(l.padre, "relacion", "autor_de"), "foco en la casilla nueva");
+    comprobar(document.activeElement === buscarTipo(l.padre, "relacion", "autor_de"), "foco en el botón nuevo");
   } finally {
     l.padre.remove();
   }
+});
+
+prueba("Leyenda: las relaciones se agrupan por familia, con un subtítulo cada una", function () {
+  const l = crearLeyendaMontada();
+  const matrimonio = new TipoRelacion("Marriage", "Matrimonio", "#ff0000", ["Related", "Relationship"], "Parentesco");
+  const filiacion = new TipoRelacion("Filiation", "Filiación", "#00ff00", ["Related", "Relationship"], "Parentesco");
+  const mentoria = new TipoRelacion("Mentorship", "Mentoría", "#0000ff", ["Relationship"], "Mentoría");
+  const pintura = new TipoRelacion("Paint", "Pintura", "#ffff00", ["Creation", "Event"], "Creación");
+  l.leyenda.actualizar({
+    nodos: [],
+    relaciones: [
+      { tipo: mentoria, cantidad: 2, activo: true, visibles: 2 },
+      { tipo: matrimonio, cantidad: 3, activo: true, visibles: 3 },
+      { tipo: pintura, cantidad: 9, activo: true, visibles: 9 },
+      { tipo: filiacion, cantidad: 4, activo: true, visibles: 4 }
+    ]
+  });
+  const filas = l.padre.querySelectorAll(".leyenda-relaciones li");
+  const textos = [];
+  for (let i = 0; i < filas.length; i++) {
+    if (filas[i].classList.contains("leyenda-familia")) {
+      textos.push("## " + filas[i].textContent);
+    } else {
+      textos.push(filas[i].querySelector(".leyenda-nombre").textContent);
+    }
+  }
+  // Creación (9) > Parentesco (3 + 4 = 7) > Mentoría (2); dentro de Parentesco, Filiación (4) antes que Matrimonio (3).
+  comprobarIgual(textos.join(" | "), "## Creación | Pintura | ## Parentesco | Filiación | Matrimonio | ## Mentoría | Mentoría",
+    "orden de familias y tipos");
+  comprobarIgual(l.padre.querySelectorAll("button[data-grupo=relacion]").length, 4, "una etiqueta por tipo, no por familia");
 });

@@ -2,10 +2,16 @@
 
 Desde el incremento 3 el servidor hace LO MÍNIMO: solo da acceso a los
 datos (lo que obligatoriamente tiene que estar aquí: la conexión con la base
-de datos, sus credenciales y las consultas). Entrega los datos en bruto y
-todo el cálculo (relevancias, subgrafo, centralidad, colores y búsqueda) lo
-hace el navegador. Así el servidor apenas consume recursos y puede atender
-a más usuarios a la vez (RNF-05).
+de datos, sus credenciales y las consultas). Entrega los datos en bruto y el
+cálculo del subgrafo (relevancia de los nodos, centralidad, colores y
+búsqueda) lo hace el navegador. Así el servidor apenas consume recursos y
+puede atender a más usuarios a la vez (RNF-05).
+
+Desde el incremento 3b los datos tienen la forma de la base de datos Neo4j
+del proyecto, y el servidor hace una cosa más: ASIGNA la relevancia a las
+relaciones que recorre y no la tienen, y la GUARDA (ver AsignadorRelevancia).
+Es lo único del cálculo que va aquí, porque es lo único que hay que guardar
+en la base de datos.
 
 Se arranca desde la carpeta del proyecto con:
     python -m uvicorn servidor.app:app --reload --port 8000
@@ -13,7 +19,8 @@ Se arranca desde la carpeta del proyecto con:
 La documentación de la API se genera sola en http://localhost:8000/docs
 
 Requisitos: RNF-17 (acceso a datos separado), RNF-16 (configuración),
-RNF-05 (usuarios simultáneos), RNF-13 (entradas acotadas y validadas).
+RNF-05 (usuarios simultáneos), RNF-13 (entradas acotadas y validadas),
+RF-09 (relevancia asignada), RF-39 (/api/tipos).
 """
 import json
 import logging
@@ -32,7 +39,7 @@ from fastapi.staticfiles import StaticFiles
 
 from servidor.api.cache_respuestas import CacheRespuestas
 from servidor.api.conversor_json import ConversorJson
-from servidor.datos.repositorio_datos import RepositorioDatos
+from servidor.datos.repositorio_datos import EntidadNoEncontrada, RepositorioDatos
 from servidor.datos.repositorio_simulado import RepositorioSimulado
 from servidor.logica.configuracion import Configuracion
 
@@ -50,7 +57,7 @@ CARPETA_PAGINA_PUBLICADA = CARPETA_PROYECTO / "dist"
 RETARDO_SIMULADO_MS = 0
 
 # Caché de respuestas en el servidor (ver CacheRespuestas). Un vecindario
-# grande ocupa unos 100 KB, así que 200 respuestas son unos 20 MB de memoria.
+# grande ocupa unos 200 KB, así que 200 respuestas son unos 40 MB de memoria.
 MAX_RESPUESTAS_EN_CACHE = 200
 SEGUNDOS_VIGENCIA_CACHE = 600
 
@@ -61,18 +68,27 @@ SEGUNDOS_CACHE_NAVEGADOR = 120
 CABECERA_CACHE_NAVEGADOR = "public, max-age=" + str(SEGUNDOS_CACHE_NAVEGADOR)
 
 registro = logging.getLogger("servidor")
+# Que se vean en la consola de uvicorn los mensajes informativos (cuántas
+# relevancias se asignan en cada vecindario).
+if len(registro.handlers) == 0:
+    manejador = logging.StreamHandler()
+    manejador.setFormatter(logging.Formatter("%(levelname)s:     %(message)s"))
+    registro.addHandler(manejador)
+    registro.setLevel(logging.INFO)
 
 
 def crear_configuracion() -> Configuracion:
-    """Lee servidor/configuracion.json. Si no se puede leer, sigue con los
-    valores por defecto y lo apunta en el registro (RNF-16).
+    """Lee servidor/configuracion.json y comprueba que tiene todo lo que
+    describe la base de datos (clasificación de etiquetas, pesos...). Si no
+    se puede leer o falta algo, el servidor NO arranca y dice qué pasa
+    (RNF-16): sin esos datos no se puede interpretar la base de datos.
     """
     configuracion = Configuracion()
     try:
         configuracion.cargar_archivo(ARCHIVO_CONFIGURACION)
+        configuracion.comprobar()
     except (OSError, ValueError) as error:
-        registro.warning("No se ha podido leer %s (%s). Se usan los valores por defecto.",
-                         ARCHIVO_CONFIGURACION, error)
+        raise RuntimeError("No se puede arrancar el servidor: " + str(error)) from error
     return configuracion
 
 
@@ -87,7 +103,8 @@ def crear_repositorio(configuracion: Configuracion) -> RepositorioDatos:
                            "(llegará en el incremento 4). Usa \"simulado\" en servidor/configuracion.json.")
     with open(ARCHIVO_DATOS_EJEMPLO, encoding="utf-8") as archivo:
         datos = json.load(archivo)
-    return RepositorioSimulado(datos, RETARDO_SIMULADO_MS)
+    # El repositorio crea, UNA sola vez, el AsignadorRelevancia y su almacén.
+    return RepositorioSimulado(datos, RETARDO_SIMULADO_MS, configuracion)
 
 
 @asynccontextmanager
@@ -107,8 +124,9 @@ async def ciclo_de_vida(aplicacion: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(
     title="Visor de patrimonio 3D",
-    description="API del visor: solo da acceso a los datos (nombres y vecindarios).",
-    version="3.0.0",
+    description=("API del visor: da acceso a los datos (tipos, nombres, vecindarios y detalles) "
+                 "y asigna la relevancia de las relaciones que recorre."),
+    version="3.1.0",
     lifespan=ciclo_de_vida,
 )
 
@@ -136,46 +154,51 @@ async def salud() -> dict[str, str]:
 
 @app.get("/api/configuracion")
 async def obtener_configuracion(peticion: Request, respuesta: Response) -> dict[str, Any]:
-    """Lo que la página necesita saber de la configuración del servidor.
-    Desde el incremento 3 también se envía maxNodos, porque la poda del
-    subgrafo la hace el navegador. Así sigue definido en un solo sitio
-    (servidor/configuracion.json, RNF-16).
+    """Lo que la página necesita saber de la configuración del servidor
+    (umbral, máximo de nodos, entidad inicial, idioma, nombres de los tipos y
+    etiquetas de entidad). Lo que solo usa el servidor (pesos, etiquetas
+    auxiliares, límites...) no se envía.
     """
     respuesta.headers["Cache-Control"] = CABECERA_CACHE_NAVEGADOR
-    configuracion = peticion.app.state.configuracion
-    return {
-        "umbralPorDefecto": configuracion.get_umbral_por_defecto(),
-        "maxNodos": configuracion.get_max_nodos(),
-        "entidadInicial": configuracion.get_entidad_inicial(),
-    }
+    return ConversorJson.configuracion_a_diccionario(peticion.app.state.configuracion)
+
+
+@app.get("/api/tipos")
+async def obtener_tipos(peticion: Request) -> Response:
+    """Los tipos de relación que hay en los datos, con sus padres (RF-39).
+    Salen de los datos, no de una lista: un tipo nuevo de la BD aparece aquí
+    sin cambiar el código.
+    """
+    repositorio = peticion.app.state.repositorio
+
+    async def preparar_json() -> bytes:
+        """Solo se ejecuta si no estaba en la caché."""
+        return json.dumps(await repositorio.obtener_tipos(), ensure_ascii=False).encode("utf-8")
+
+    contenido = await peticion.app.state.cache.obtener("tipos", preparar_json)
+    return Response(content=contenido, media_type="application/json",
+                    headers={"Cache-Control": CABECERA_CACHE_NAVEGADOR})
 
 
 @app.get("/api/nombres")
 async def obtener_nombres(peticion: Request) -> Response:
-    """Todas las entidades, solo con id, nombre y tipo: el índice en el que
-    busca el buscador del navegador (Buscador.js). La página lo pide UNA vez
-    al arrancar; así las sugerencias salen al instante, sin ir al servidor
-    cada vez que se escribe una letra (RNF-03).
+    """Todas las entidades con sus etiquetas y sus propiedades de nombre, en
+    bruto: el índice en el que busca el buscador del navegador (Buscador.js).
+    La página lo pide UNA vez al arrancar; así las sugerencias salen al
+    instante (RNF-03).
 
-    Con los datos simulados (unas 400 entidades, unos 25 KB) se envían
-    todos los nombres y el cliente busca entre ellos. Si la base de datos
-    real es demasiado grande para esto, en el incremento 4 se cambiará por
-    una ruta que devuelva solo candidatos.
+    Con los datos simulados (205 entidades) se envían todos los nombres y el
+    cliente busca entre ellos. Si la base de datos real es demasiado grande
+    para esto, en el incremento 4 se cambiará por una ruta que devuelva solo
+    candidatos.
     """
     repositorio = peticion.app.state.repositorio
-    cache = peticion.app.state.cache
 
     async def preparar_json() -> bytes:
-        """Lee todas las entidades y las convierte a JSON. Solo se ejecuta si
-        no estaba en la caché.
-        """
-        entidades = await repositorio.buscar_entidades("", None, None)
-        lista = []
-        for entidad in entidades:
-            lista.append(ConversorJson.entidad_resumida_a_diccionario(entidad))
-        return json.dumps(lista, ensure_ascii=False).encode("utf-8")
+        """Solo se ejecuta si no estaba en la caché."""
+        return json.dumps(await repositorio.obtener_nombres(), ensure_ascii=False).encode("utf-8")
 
-    contenido = await cache.obtener("nombres", preparar_json)
+    contenido = await peticion.app.state.cache.obtener("nombres", preparar_json)
     return Response(content=contenido, media_type="application/json",
                     headers={"Cache-Control": CABECERA_CACHE_NAVEGADOR})
 
@@ -186,53 +209,89 @@ async def obtener_vecindario(
     id_entidad: str = ParametroDeRuta(max_length=100),
     umbral: float | None = Query(None, ge=0, le=1),
 ) -> Response:
-    """Los datos EN BRUTO alrededor de una entidad (ver
-    RepositorioDatos.obtener_vecindario). Con ellos el navegador construye
-    el subgrafo; el servidor no calcula nada más.
+    """Las entidades (en bruto) y las relaciones derivadas alrededor de una
+    entidad, cada relación con su relevancia ya asignada (ver
+    RepositorioDatos.obtener_vecindario). Con ellos el navegador construye el
+    subgrafo.
 
     FastAPI comprueba que el umbral está entre 0 y 1 (si no, responde 422).
     Si no se indica, se usa el de la configuración. El máximo de entidades
     lo pone el servidor (maxEntidadesVecindario) y no se puede cambiar desde
-    la petición, para que nadie pueda pedir la base de datos entera (RNF-13).
+    la petición (RNF-13).
 
-    Para que el servidor trabaje lo mínimo con muchos usuarios a la vez:
-     - El umbral se redondea HACIA ABAJO a 2 decimales (el deslizador va de
-       0,05 en 0,05). Así 0,3 y 0,3000001 piden el mismo vecindario y nadie
-       puede saltarse la caché pidiendo umbrales casi iguales. Tiene que ser
-       hacia abajo: con un umbral menor el vecindario es igual o más grande,
-       así que sigue conteniendo todo lo necesario (redondeando hacia arriba
-       podrían faltar relaciones). La respuesta indica el umbral usado.
-     - La respuesta se busca primero en la caché (CacheRespuestas).
-     - Lleva Cache-Control para que el navegador la reutilice.
+    Para que el servidor trabaje lo mínimo:
+     - El umbral se redondea HACIA ABAJO a 2 decimales: así 0,3 y 0,3000001
+       son la misma petición. Tiene que ser hacia abajo: con un umbral menor
+       el vecindario es igual o más grande y sigue sirviendo.
+     - El vecindario se guarda en la caché del servidor (CacheRespuestas).
+       Si se reutiliza de la caché, no se ha asignado nada nuevo: la
+       respuesta dice 0 asignadas y todas las del recorrido reutilizadas.
+     - NO se guarda en la caché del NAVEGADOR (Cache-Control: no-store), para
+       que las estadísticas de asignación de cada petición sean las suyas.
+    En el registro del servidor se apunta cuántas relevancias se asignaron y
+    cuántas se reutilizaron.
     """
     configuracion = peticion.app.state.configuracion
     repositorio = peticion.app.state.repositorio
-    cache = peticion.app.state.cache
 
     umbral_pedido = configuracion.get_umbral_por_defecto()
     if umbral is not None:
         umbral_pedido = umbral
     umbral_usado = redondear_hacia_abajo(umbral_pedido)
     max_entidades = configuracion.get_max_entidades_vecindario()
+    # Una lista para que la función de dentro pueda cambiarla: dice si en
+    # esta petición se ha recorrido de verdad o se ha reutilizado la caché.
+    recorrido_ahora = [False]
 
-    async def preparar_json() -> bytes:
-        """Recorre el vecindario y lo convierte a JSON. Solo se ejecuta si
-        no estaba en la caché.
-        """
-        entidad = await repositorio.obtener_entidad(id_entidad)
-        if entidad is None:
-            raise HTTPException(status_code=404, detail="No existe la entidad " + id_entidad)
-        vecindario = await repositorio.obtener_vecindario(id_entidad, umbral_usado, max_entidades)
-        tipos = await repositorio.obtener_tipos_relacion()
-        diccionario = ConversorJson.vecindario_a_diccionario(id_entidad, umbral_usado, vecindario, tipos)
-        # Se guarda ya convertido a texto JSON: así, cuando se reutiliza, el
-        # servidor ni siquiera tiene que volver a convertirlo.
-        return json.dumps(diccionario, ensure_ascii=False).encode("utf-8")
+    async def preparar() -> dict[str, Any]:
+        """Recorre el vecindario. Solo se ejecuta si no estaba en la caché."""
+        try:
+            vecindario = await repositorio.obtener_vecindario(id_entidad, umbral_usado, max_entidades)
+        except EntidadNoEncontrada as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        recorrido_ahora[0] = True
+        return ConversorJson.vecindario_a_diccionario(id_entidad, umbral_usado, vecindario)
 
     clave = "vecindario|" + id_entidad + "|" + str(umbral_usado)
-    contenido = await cache.obtener(clave, preparar_json)
+    guardado = await peticion.app.state.cache.obtener(clave, preparar)
+    respuesta = dict(guardado)
+    if not recorrido_ahora[0]:
+        consultadas = guardado["relevanciasAsignadas"] + guardado["relevanciasReutilizadas"]
+        respuesta["relevanciasAsignadas"] = 0
+        respuesta["relevanciasReutilizadas"] = consultadas
+    registro.info("Vecindario de %s (umbral %s): %d relevancias asignadas y %d reutilizadas%s.",
+                  id_entidad, umbral_usado, respuesta["relevanciasAsignadas"],
+                  respuesta["relevanciasReutilizadas"], texto_cache(recorrido_ahora[0]))
+    contenido = json.dumps(respuesta, ensure_ascii=False).encode("utf-8")
+    return Response(content=contenido, media_type="application/json", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/detalle/{id_entidad}")
+async def obtener_detalle(peticion: Request, id_entidad: str = ParametroDeRuta(max_length=100)) -> Response:
+    """En bruto, lo que se muestra al seleccionar una entidad: eventos
+    (nacimiento, muerte, residencia y los demás), imágenes, fuentes externas
+    y ubicación (ver RepositorioDatos.obtener_detalle).
+    """
+    repositorio = peticion.app.state.repositorio
+
+    async def preparar_json() -> bytes:
+        """Solo se ejecuta si no estaba en la caché."""
+        try:
+            detalle = await repositorio.obtener_detalle(id_entidad)
+        except EntidadNoEncontrada as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        return json.dumps(detalle, ensure_ascii=False).encode("utf-8")
+
+    contenido = await peticion.app.state.cache.obtener("detalle|" + id_entidad, preparar_json)
     return Response(content=contenido, media_type="application/json",
                     headers={"Cache-Control": CABECERA_CACHE_NAVEGADOR})
+
+
+def texto_cache(recorrido_ahora: bool) -> str:
+    """Para el registro: si el vecindario salió de la caché, se dice."""
+    if recorrido_ahora:
+        return ""
+    return " (de la caché)"
 
 
 def redondear_hacia_abajo(umbral: float) -> float:

@@ -21,6 +21,9 @@ import { EstadoCarga } from './EstadoCarga.js';
  * Requisitos: RF-01 a RF-07 (búsqueda), RF-13 (umbral), RF-14 y RF-15 (aviso
  * de carga y de error), RF-27 (vista inicial), RF-28 y RF-29 (información),
  * RF-30 (navegar), RF-31 (volver), RF-32 y RF-33 (filtros).
+ *
+ * Desde el incremento 3b, al seleccionar una entidad también pide su
+ * detalle (eventos, imágenes y fuentes) sin bloquear la vista.
  */
 export class ControladorExploracion {
   #filtro;
@@ -34,6 +37,7 @@ export class ControladorExploracion {
   #idSolicitado;
   #umbral;
   #numeroCarga;
+  #idDetalle;
 
   /**
    * @param {GestorSubgrafos} gestor
@@ -52,6 +56,7 @@ export class ControladorExploracion {
     this.#estado = EstadoCarga.INACTIVO;
     this.#idSolicitado = null;
     this.#numeroCarga = 0;
+    this.#idDetalle = null;
   }
 
   /**
@@ -238,6 +243,7 @@ export class ControladorExploracion {
     }
     this.#escena.resaltarNodo(nodo.getEntidad().getId());
     this.#interfaz.mostrarEntidad(nodo.getEntidad(), nodo, this.#subgrafoActual);
+    this.#cargarDetalle(nodo.getEntidad().getId());
   }
 
   /**
@@ -250,6 +256,8 @@ export class ControladorExploracion {
       return;
     }
     this.#escena.resaltarRelacion(relacion.getId());
+    // Si se estaba esperando el detalle de una entidad, ya no interesa.
+    this.#idDetalle = null;
     this.#interfaz.mostrarRelacion(relacion, this.#subgrafoActual);
   }
 
@@ -303,6 +311,33 @@ export class ControladorExploracion {
     this.#interfaz.mostrarEntidad(entidadCentral, subgrafo.getNodo(entidadCentral.getId()), subgrafo);
     this.#interfaz.setHabilitadoVolver(this.#historial.puedeVolver());
     this.#cambiarEstado(EstadoCarga.LISTO);
+    this.#cargarDetalle(entidadCentral.getId());
+  }
+
+  /**
+   * (Privado) Pide el detalle de una entidad (eventos, imágenes, fuentes) y
+   * se lo da a la interfaz cuando llega. NO se espera (no tiene await quien
+   * lo llama): mientras tanto la vista 3D sigue funcionando y el panel
+   * muestra «Cargando…». Si cuando llega el usuario ya ha seleccionado otra
+   * cosa, se ignora. Si falla, el panel muestra un aviso (el resto sigue).
+   *
+   * @param {string} idEntidad
+   * @returns {Promise<void>}
+   */
+  async #cargarDetalle(idEntidad) {
+    this.#idDetalle = idEntidad;
+    let detalle = null;
+    try {
+      detalle = await this.#gestor.obtenerDetalle(idEntidad);
+    } catch (error) {
+      if (this.#idDetalle === idEntidad) {
+        this.#interfaz.mostrarErrorDetalle(idEntidad, error.message);
+      }
+      return;
+    }
+    if (this.#idDetalle === idEntidad) {
+      this.#interfaz.mostrarDetalle(idEntidad, detalle);
+    }
   }
 
   /**
@@ -323,8 +358,9 @@ export class ControladorExploracion {
    *     nodos:      [{ tipo, cantidad, activo }],
    *     relaciones: [{ tipo, cantidad, activo, visibles }]
    *   }
-   * cantidad: cuántos hay en el subgrafo; activo: si su casilla está
-   * marcada; visibles: cuántas relaciones de ese tipo se ven ahora.
+   * cantidad: cuántos hay en el subgrafo; activo: si ese tipo se muestra
+   * (no está ocultado en la leyenda); visibles: cuántas relaciones de ese
+   * tipo se ven ahora.
    *
    * @returns {Object}
    */

@@ -18,9 +18,9 @@ import { ObraDeArte } from '../src/modelo/ObraDeArte.js';
  * @returns {Object} entidades, nodos, tipos y relaciones de prueba.
  */
 function crearElementosDelFiltro() {
-  const persona = new Persona({ id: "P", nombre: "Pintora" });
-  const obra = new ObraDeArte({ id: "A", nombre: "Cuadro" });
-  const organizacion = new Organizacion({ id: "O", nombre: "Museo" });
+  const persona = new Persona({ id: "P", propiedades: { name: "Pintora" } });
+  const obra = new ObraDeArte({ id: "A", propiedades: { name_es: "Cuadro" } });
+  const organizacion = new Organizacion({ id: "O", propiedades: { name_es: "Museo" } });
   const autorDe = new TipoRelacion("autor_de", "Autor de", "#ff0000");
   const conserva = new TipoRelacion("conserva", "Conserva", "#00ff00");
   return {

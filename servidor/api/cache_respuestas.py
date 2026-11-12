@@ -50,12 +50,13 @@ class CacheRespuestas:
         # sin pedirse; al final, lo último que se ha pedido.
         self.__entradas: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
-    async def obtener(self, clave: str, calcular: Callable[[], Awaitable[bytes]]) -> bytes:
-        """Devuelve el JSON guardado con esa clave. Si no está (o ha caducado),
-        llama a calcular() para obtenerlo y lo guarda.
+    async def obtener(self, clave: str, calcular: Callable[[], Awaitable[Any]]) -> Any:
+        """Devuelve la respuesta guardada con esa clave (el texto JSON ya
+        preparado o, para los vecindarios, el diccionario). Si no está (o ha
+        caducado), llama a calcular() para obtenerla y la guarda.
 
-        clave: identifica la respuesta, por ejemplo "vecindario|p01|0.3".
-        calcular: función asíncrona que prepara la respuesta y devuelve su JSON.
+        clave: identifica la respuesta, por ejemplo "vecindario|n1|0.3".
+        calcular: función asíncrona que prepara la respuesta.
         """
         entrada = self.__buscar_vigente(clave)
         if entrada is None:

@@ -69,7 +69,7 @@ prueba("Fábrica 3D: las tres geometrías son distintas", function () {
 });
 
 prueba("NodoVisual: la malla apunta a su NodoVisual y la etiqueta sigue a la visibilidad", function () {
-  const visual = new FabricaNodosVisuales().crear(crearNodo(new Persona({ id: "p", nombre: "Pepa" }), 0.5));
+  const visual = new FabricaNodosVisuales().crear(crearNodo(new Persona({ id: "p", propiedades: { name: "Pepa" } }), 0.5));
   const malla = visual.getMalla();
   comprobar(malla.userData.visual === visual, "userData.visual debe ser el NodoVisual");
   const etiqueta = malla.children[0];

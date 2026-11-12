@@ -3,9 +3,9 @@ import { TipoEntidad } from '../modelo/TipoEntidad.js';
 /**
  * FiltroVisualizacion
  *
- * Qué tipos de nodo y de relación quiere ver el usuario. Lo cambian las
- * casillas de la leyenda y lo aplica EscenaGrafo, que oculta o muestra cada
- * nodo y cada línea. No pide nada al servidor ni recalcula el subgrafo:
+ * Qué tipos de nodo y de relación quiere ver el usuario. Lo cambia el
+ * usuario pulsando los tipos de la leyenda y lo aplica EscenaGrafo, que
+ * oculta o muestra cada nodo y cada línea. No pide nada al servidor ni recalcula el subgrafo:
  * solo decide qué se ve.
  *
  * Reglas:

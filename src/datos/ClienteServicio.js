@@ -1,17 +1,26 @@
+import { Entidad } from '../modelo/Entidad.js';
+import { Periodo } from '../modelo/Periodo.js';
+import { Evento } from '../modelo/Evento.js';
+import { Imagen } from '../modelo/Imagen.js';
+import { FuenteExterna } from '../modelo/FuenteExterna.js';
+import { DetalleEntidad } from '../modelo/DetalleEntidad.js';
+import { FabricaEntidades } from './FabricaEntidades.js';
+
 /**
  * ClienteServicio
  *
- * Lo único del navegador que sabe que existe un servidor. Desde el
- * incremento 3 SOLO pide datos a la API de Python y devuelve el JSON tal
- * cual: no construye nada. Quien convierte el JSON en objetos del modelo es
- * RepositorioVecindario, y quien construye el subgrafo es ConstructorSubgrafo.
+ * Lo único del navegador que sabe que existe un servidor. Pide los datos a
+ * la API de Python. Los vecindarios los devuelve tal cual (los convierte
+ * RepositorioVecindario); el detalle de una entidad, ya convertido en un
+ * DetalleEntidad.
  *
- * Solo hay tres peticiones:
- *  - la configuración y el índice de nombres, UNA vez al abrir la página;
- *  - un vecindario cada vez que cambia la entidad central (o baja el umbral).
+ * Peticiones:
+ *  - la configuración, los tipos y el índice de nombres, UNA vez al abrir la página;
+ *  - un vecindario cada vez que cambia la entidad central (o baja el umbral);
+ *  - el detalle de una entidad al seleccionarla.
  *
  * Requisitos: RNF-17 (el acceso a los datos está separado del resto),
- * RNF-13 (los parámetros van codificados en la URL).
+ * RNF-13 (los parámetros van codificados en la URL), RF-39 (tipos).
  */
 export class ClienteServicio {
   #urlBase;
@@ -30,16 +39,27 @@ export class ClienteServicio {
   }
 
   /**
-   * @returns {Promise<Object>} { umbralPorDefecto, maxNodos, entidadInicial }
+   * @returns {Promise<Object>} { umbralPorDefecto, maxNodos, entidadInicial,
+   *   idioma, nombresTipos, etiquetasEntidad }
    */
   async obtenerConfiguracion() {
     return await this.#pedir("/configuracion");
   }
 
   /**
-   * El índice para el buscador: todas las entidades, solo con id, nombre y tipo.
+   * Los tipos de relación que hay en los datos, con sus padres (RF-39).
    *
-   * @returns {Promise<Object[]>} [{ id, nombre, tipo }]
+   * @returns {Promise<Object[]>} [{ id, padres }]
+   */
+  async obtenerTipos() {
+    return await this.#pedir("/tipos");
+  }
+
+  /**
+   * El índice para el buscador: todas las entidades, con sus etiquetas y
+   * sus propiedades de nombre, en bruto.
+   *
+   * @returns {Promise<Object[]>} [{ id, etiquetas, propiedades }]
    */
   async obtenerNombres() {
     return await this.#pedir("/nombres");
@@ -50,7 +70,8 @@ export class ClienteServicio {
    *
    * @param {string} idEntidad - id de la entidad central.
    * @param {number} umbral - entre 0 y 1.
-   * @returns {Promise<Object>} { idCentral, umbral, recortado, entidades, relaciones, tiposRelacion }
+   * @returns {Promise<Object>} { idCentral, umbral, recortado, entidades, relaciones,
+   *   relevanciasAsignadas, relevanciasReutilizadas }
    */
   async obtenerVecindario(idEntidad, umbral) {
     // URLSearchParams escribe los parámetros con el formato correcto para
@@ -61,6 +82,79 @@ export class ClienteServicio {
     parametros.set("umbral", String(umbral));
     const ruta = "/vecindario/" + encodeURIComponent(idEntidad) + "?" + parametros.toString();
     return await this.#pedir(ruta);
+  }
+
+  /**
+   * El detalle de una entidad (eventos, imágenes, fuentes y ubicación).
+   *
+   * @param {string} idEntidad
+   * @param {Object} contexto - { idioma, etiquetasEntidad } (para los nombres).
+   * @returns {Promise<DetalleEntidad>}
+   */
+  async obtenerDetalle(idEntidad, contexto) {
+    const json = await this.#pedir("/detalle/" + encodeURIComponent(idEntidad));
+    return ClienteServicio.convertirDetalle(json, contexto);
+  }
+
+  /**
+   * Convierte el JSON de /api/detalle en un DetalleEntidad. Es estático (no
+   * usa la red) para poder probarlo sin servidor. Los nombres de los lugares
+   * y de los participantes se eligen en el idioma del contexto.
+   *
+   * @param {Object} json - { id, eventos, imagenes, fuentes, ubicacion }
+   * @param {Object} contexto - { idioma, etiquetasEntidad }
+   * @returns {DetalleEntidad}
+   */
+  static convertirDetalle(json, contexto) {
+    const idioma = contexto.idioma;
+    const eventos = [];
+    for (let i = 0; i < json.eventos.length; i++) {
+      const datos = json.eventos[i];
+      const participantes = [];
+      for (let j = 0; j < datos.participantes.length; j++) {
+        const otra = datos.participantes[j];
+        const entidad = FabricaEntidades.crearDesdeNeo4j(otra.etiquetas, otra.propiedades, otra.id, idioma,
+          contexto.etiquetasEntidad);
+        participantes.push(entidad.getNombre());
+      }
+      eventos.push(new Evento({
+        id: datos.id,
+        tipo: datos.tipo,
+        padres: datos.padres,
+        nombre: Entidad.nombreEnIdioma(datos.propiedades, idioma),
+        rol: datos.rol,
+        periodo: Periodo.desdePropiedades(datos.periodo),
+        lugar: Entidad.nombreEnIdioma(datos.lugar, idioma),
+        fecha: datos.fecha,
+        participantes: participantes,
+        sinRelacion: datos.sinRelacion
+      }));
+    }
+    const imagenes = [];
+    for (let i = 0; i < json.imagenes.length; i++) {
+      const datos = json.imagenes[i];
+      imagenes.push(new Imagen(datos.propiedades.url, datos.propiedades.caption, datos.orden));
+    }
+    const fuentes = [];
+    for (let i = 0; i < json.fuentes.length; i++) {
+      const datos = json.fuentes[i];
+      let actualizada = datos.dateUpdated;
+      if (typeof actualizada !== "string" || actualizada === "") {
+        actualizada = datos.propiedades.lastUpdated;
+      }
+      fuentes.push(new FuenteExterna({
+        nombre: datos.propiedades.name,
+        tipo: datos.tipo,
+        url: datos.propiedades.url,
+        actualizada: actualizada,
+        idExterno: datos.externalId
+      }));
+    }
+    const ubicacion = [];
+    for (let i = 0; i < json.ubicacion.length; i++) {
+      ubicacion.push(Entidad.nombreEnIdioma(json.ubicacion[i], idioma));
+    }
+    return new DetalleEntidad(json.id, eventos, imagenes, fuentes, ubicacion);
   }
 
   /**

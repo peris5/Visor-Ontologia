@@ -2,6 +2,7 @@ import { RepositorioDatos } from './RepositorioDatos.js';
 import { FabricaEntidades } from './FabricaEntidades.js';
 import { TipoRelacion } from '../modelo/TipoRelacion.js';
 import { Relacion } from '../modelo/Relacion.js';
+import { Periodo } from '../modelo/Periodo.js';
 import { PaletaColores } from '../logica/PaletaColores.js';
 
 /**
@@ -9,23 +10,20 @@ import { PaletaColores } from '../logica/PaletaColores.js';
  *
  * Repositorio EN MEMORIA con el vecindario que ha enviado el servidor
  * (GET /api/vecindario/{id}). ConstructorSubgrafo le pide entidades y
- * relaciones como antes, pero ahora ninguna de esas peticiones sale a la
- * red: todos los datos ya están aquí. Así, construir un subgrafo cuesta UNA
- * sola petición al servidor en lugar de una por cada nodo que se expande.
+ * relaciones como antes, pero ninguna de esas peticiones sale a la red:
+ * todos los datos ya están aquí. Así, construir un subgrafo cuesta UNA sola
+ * petición al servidor en lugar de una por cada nodo que se expande.
  *
- * Es casi igual que el RepositorioSimulado del incremento 1 (se ha
- * reaprovechado su código), con dos diferencias:
- *  - lee el JSON del vecindario en lugar de los datos de ejemplo;
- *  - prepara un índice (relacionesPorEntidad), como hacía la versión Python
- *    del incremento 2, para no recorrer todas las relaciones cada vez.
- *
- * Formato del JSON (ver servidor/api/conversor_json.py):
+ * Desde el incremento 3b el vecindario tiene la forma de Neo4j:
  *   {
- *     idCentral, umbral, recortado,
- *     entidades:  [ { id, nombre, tipo, descripcion, atributos } ],
- *     relaciones: [ { id, origen, destino, tipo, valor } ],
- *     tiposRelacion: [ ids de TODOS los tipos de relación de los datos ]
+ *     idCentral, umbral, recortado, relevanciasAsignadas, relevanciasReutilizadas,
+ *     entidades:  [ { id, etiquetas, propiedades } ],              (en bruto)
+ *     relaciones: [ { id, idIntermedio, origen, destino, tipo, padres,
+ *                     valor, roles, periodo, lugar, fecha } ]       (derivadas)
  *   }
+ * y para interpretarlo hace falta el CONTEXTO, que se recibe al arrancar:
+ *   { idioma, nombresTipos, etiquetasEntidad }   (de /api/configuracion)
+ *   { tipos: [ { id, padres } ] }               (de /api/tipos)
  *
  * Requisitos: RNF-17 (acceso a datos separado); RF-20 y RF-39 (da nombre y
  * color a los tipos de relación, que no se conocen de antemano).
@@ -35,11 +33,13 @@ export class RepositorioVecindario extends RepositorioDatos {
   #tipos;
   #relaciones;
   #relacionesPorEntidad;
+  #contexto;
 
   /**
    * @param {Object} datosVecindario - el JSON de /api/vecindario.
+   * @param {Object} contexto - { idioma, nombresTipos, etiquetasEntidad, tipos }.
    */
-  constructor(datosVecindario) {
+  constructor(datosVecindario, contexto) {
     super();
     if (datosVecindario === undefined || datosVecindario === null) {
       throw new Error("El repositorio necesita los datos de un vecindario.");
@@ -47,10 +47,14 @@ export class RepositorioVecindario extends RepositorioDatos {
     if (!Array.isArray(datosVecindario.entidades) || !Array.isArray(datosVecindario.relaciones)) {
       throw new Error("El vecindario debe tener una lista 'entidades' y una lista 'relaciones'.");
     }
+    if (contexto === undefined || contexto === null || contexto.etiquetasEntidad === undefined) {
+      throw new Error("El repositorio necesita el contexto (idioma, nombresTipos, etiquetasEntidad y tipos).");
+    }
+    this.#contexto = contexto;
 
     // El orden importa: las relaciones necesitan las entidades y los tipos.
     this.#entidades = this.#cargarEntidades(datosVecindario.entidades);
-    this.#tipos = this.#descubrirTipos(datosVecindario);
+    this.#tipos = this.#descubrirTipos(datosVecindario.relaciones);
     this.#relaciones = this.#cargarRelaciones(datosVecindario.relaciones);
     this.#relacionesPorEntidad = new Map();
     this.#indexar();
@@ -179,17 +183,18 @@ export class RepositorioVecindario extends RepositorioDatos {
   }
 
   /**
-   * (Privado) Crea las entidades con la fábrica (la subclase según el tipo)
-   * y las guarda por id.
+   * (Privado) Crea las entidades a partir de sus etiquetas y propiedades
+   * (FabricaEntidades.crearDesdeNeo4j) y las guarda por id.
    *
-   * @param {Object[]} listaDeDatos
+   * @param {Object[]} listaDeDatos - [{ id, etiquetas, propiedades }]
    * @returns {Map<string, Entidad>}
    */
   #cargarEntidades(listaDeDatos) {
     const entidades = new Map();
     for (let i = 0; i < listaDeDatos.length; i++) {
-      const datosDeLaEntidad = listaDeDatos[i];
-      const entidad = FabricaEntidades.crearEntidad(datosDeLaEntidad.tipo, datosDeLaEntidad);
+      const datos = listaDeDatos[i];
+      const entidad = FabricaEntidades.crearDesdeNeo4j(datos.etiquetas, datos.propiedades, datos.id,
+        this.#contexto.idioma, this.#contexto.etiquetasEntidad);
       if (entidades.has(entidad.getId())) {
         throw new Error("Hay dos entidades con el mismo id: " + entidad.getId() + ".");
       }
@@ -199,64 +204,56 @@ export class RepositorioVecindario extends RepositorioDatos {
   }
 
   /**
-   * (Privado) Crea UN TipoRelacion por id, con su nombre legible y su color.
+   * (Privado) Crea UN TipoRelacion por id, con su nombre, sus padres y su color.
    *
-   * ¿Por qué se ordenan los ids alfabéticamente antes de darles color?
-   * PaletaColores.asignar da el color 0 al primer id, el 1 al segundo...
-   * Si se usara el orden en que aparecen en las relaciones, ese orden
-   * cambiaría de un vecindario a otro y un mismo tipo saldría de colores
-   * distintos según la entidad. Ordenados, el orden ya no depende del
-   * vecindario.
+   * ¿Por qué los colores se reparten sobre TODOS los tipos (los de
+   * /api/tipos) y ordenados alfabéticamente? PaletaColores.asignar da el
+   * color 0 al primer id, el 1 al segundo... Si se usaran solo los tipos de
+   * este vecindario, o en el orden en que aparecen, un mismo tipo saldría de
+   * colores distintos según la entidad. Con la lista completa y ordenada, un
+   * tipo tiene siempre el mismo color. Si un tipo no estuviera en esa lista
+   * (por ejemplo, porque apareció después), se añade.
    *
-   * Pero ordenar no basta si cada vecindario tiene tipos distintos (con
-   * {autor_de, maestro_de}, maestro_de sería el 2.º; con {maestro_de}, el
-   * 1.º). Por eso el servidor envía en "tiposRelacion" los ids de TODOS los
-   * tipos de los datos, y los colores se reparten sobre esa lista completa:
-   * así un mismo tipo tiene el mismo color en todos los subgrafos.
-   * Si el JSON no trae esa lista, se usan los tipos de sus relaciones.
-   *
-   * @param {Object} datosVecindario
+   * @param {Object[]} listaDeRelaciones
    * @returns {Map<string, TipoRelacion>} ordenado por id.
    */
-  #descubrirTipos(datosVecindario) {
-    // Paso 1: lista de ids de tipo sin repetir.
-    const idsDeTipos = [];
-    if (Array.isArray(datosVecindario.tiposRelacion)) {
-      for (let i = 0; i < datosVecindario.tiposRelacion.length; i++) {
-        RepositorioVecindario.#anadirSinRepetir(idsDeTipos, datosVecindario.tiposRelacion[i]);
+  #descubrirTipos(listaDeRelaciones) {
+    // Paso 1: ids y padres de todos los tipos conocidos y de los de las relaciones.
+    const padresPorId = new Map();
+    if (Array.isArray(this.#contexto.tipos)) {
+      for (let i = 0; i < this.#contexto.tipos.length; i++) {
+        const tipo = this.#contexto.tipos[i];
+        padresPorId.set(tipo.id, tipo.padres);
       }
     }
-    // Por si alguna relación usa un tipo que no estaba en la lista.
-    for (let i = 0; i < datosVecindario.relaciones.length; i++) {
-      RepositorioVecindario.#anadirSinRepetir(idsDeTipos, datosVecindario.relaciones[i].tipo);
+    for (let i = 0; i < listaDeRelaciones.length; i++) {
+      const relacion = listaDeRelaciones[i];
+      if (!padresPorId.has(relacion.tipo)) {
+        padresPorId.set(relacion.tipo, relacion.padres);
+      }
+    }
+    const idsDeTipos = [];
+    for (const idTipo of padresPorId.keys()) {
+      idsDeTipos.push(idTipo);
     }
 
     // Paso 2: orden alfabético. sort() sin función ordena los textos por
-    // sus caracteres, de la "a" a la "z" (ver la explicación de arriba).
+    // sus caracteres, de la "A" a la "z".
     idsDeTipos.sort();
 
     // Paso 3: un color para cada uno y el objeto TipoRelacion.
     const coloresPorId = PaletaColores.asignar(idsDeTipos);
+    const nombresTipos = this.#contexto.nombresTipos;
     const tipos = new Map();
     for (let i = 0; i < idsDeTipos.length; i++) {
       const idTipo = idsDeTipos[i];
-      const nombre = TipoRelacion.nombreDesdeId(idTipo);
-      const color = coloresPorId.get(idTipo);
-      tipos.set(idTipo, new TipoRelacion(idTipo, nombre, color));
+      const nombre = TipoRelacion.nombrar(idTipo, nombresTipos);
+      const padres = padresPorId.get(idTipo);
+      const sinNombreDeFamilia = new TipoRelacion(idTipo, nombre, "", padres);
+      const nombreFamilia = TipoRelacion.nombrar(sinNombreDeFamilia.getFamilia(), nombresTipos);
+      tipos.set(idTipo, new TipoRelacion(idTipo, nombre, coloresPorId.get(idTipo), padres, nombreFamilia));
     }
     return tipos;
-  }
-
-  /**
-   * (Privado) Añade el id a la lista si es un texto y aún no está.
-   *
-   * @param {string[]} lista
-   * @param {string} idTipo
-   */
-  static #anadirSinRepetir(lista, idTipo) {
-    if (typeof idTipo === "string" && idTipo !== "" && !lista.includes(idTipo)) {
-      lista.push(idTipo);
-    }
   }
 
   /**
@@ -276,7 +273,7 @@ export class RepositorioVecindario extends RepositorioDatos {
   /**
    * (Privado) Crea una Relacion comprobando que sus entidades existen.
    *
-   * @param {Object} datos - { id, origen, destino, tipo, valor }
+   * @param {Object} datos - { id, idIntermedio, origen, destino, tipo, valor, roles, periodo, lugar, fecha }
    * @returns {Relacion}
    */
   #crearRelacion(datos) {
@@ -289,6 +286,12 @@ export class RepositorioVecindario extends RepositorioDatos {
     const origen = this.#entidades.get(datos.origen);
     const destino = this.#entidades.get(datos.destino);
     const tipo = this.#tipos.get(datos.tipo);
-    return new Relacion(datos.id, origen, destino, tipo, datos.valor);
+    return new Relacion(datos.id, origen, destino, tipo, datos.valor, {
+      idIntermedio: datos.idIntermedio,
+      roles: datos.roles,
+      periodo: Periodo.desdePropiedades(datos.periodo),
+      lugar: datos.lugar,
+      fecha: datos.fecha
+    });
   }
 }

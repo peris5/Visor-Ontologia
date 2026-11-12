@@ -1,4 +1,4 @@
-# Visor de patrimonio 3D · Incremento 3: exploración interactiva
+# Visor de patrimonio 3D · Incremento 3b: datos con la forma de Neo4j
 
 Trabajo de Fin de Grado. Aplicación web para explorar en 3D una base de datos de conocimiento sobre patrimonio cultural (grupo IRTIC, Universitat de València).
 
@@ -6,66 +6,128 @@ El desarrollo se divide en cuatro incrementos:
 
 1. Modelo y subgrafo (O1): datos simulados, cálculo de la relevancia y construcción del subgrafo. ✔
 2. Visualización 3D (O2): servidor Python, Three.js y disposición con un grafo dirigido por fuerzas. ✔
-3. Exploración (O3): buscador, información de nodos, navegación, historial y filtros. ✔ (este)
+3. Exploración (O3): buscador, información de nodos, navegación, historial y filtros. ✔
+   - **3b** (este): adaptación al diseño de la base de datos real (Neo4j, proyecto REFRACTS): modelo genérico y relevancia asignada bajo demanda. ✔
 4. Datos reales y validación (O4): conexión con la base de datos y pruebas de rendimiento y usabilidad.
 
-## Arquitectura: el navegador calcula, el servidor solo da los datos
+El diseño de la base de datos está en `docs/diseno_bd_refracts.json` (export de arrows.app) y su análisis, en `ANALISIS_BD_NEO4J.md`.
+
+## Arquitectura: el navegador calcula, el servidor da los datos (y asigna la relevancia)
 
 ```
-┌──────────────────── NAVEGADOR (JavaScript + Three.js) ── TODO EL CÁLCULO ────────────────────┐
-│                                                                                              │
+┌──────────────────── NAVEGADOR (JavaScript + Three.js) ── CÁLCULO DEL SUBGRAFO ──────────────┐
 │  Aplicacion ──crea y conecta──▶ ControladorExploracion ◀──avisan── EscenaGrafo (3D)          │
 │                                   │    ◆ FiltroVisualizacion        └ SelectorInteraccion    │
 │                                   │    ◆ HistorialNavegacion  ◀──── InterfazUsuario (2D)     │
-│                                   │                                  buscador, panel,        │
-│                  ┌────────────────┴───────┐                          umbral, leyenda...      │
+│                  ┌────────────────┴───────┐                                                  │
 │                  ▼                        ▼                                                  │
 │              Buscador              GestorSubgrafos ──▶ RepositorioVecindario (en memoria)    │
-│        (índice de nombres)                │           ConstructorSubgrafo, RelevanciaDesdeBD,│
-│                                           │           CalculadorCentralidad, PaletaColores   │
-│                                           ▼                                                  │
+│     (todos los nombres)                   │           ConstructorSubgrafo, RelevanciaDesdeBD,│
+│                                           ▼           CalculadorCentralidad, PaletaColores   │
 │                                    ClienteServicio                                           │
 └───────────────────────────────────────────┼──────────────────────────────────────────────────┘
-                 HTTP + JSON:  configuración y nombres (UNA vez al abrir la página)
-                               un vecindario por entidad (ninguno si el umbral sube)
-┌───────────────────────────────────────────▼─────── SERVIDOR (Python + FastAPI) ── SOLO DATOS ┐
+       HTTP + JSON: configuración, tipos y nombres (UNA vez) · un vecindario por entidad · un detalle al seleccionar
+┌───────────────────────────────────────────▼──────── SERVIDOR (Python + FastAPI) ── DATOS ────┐
 │  app.py (rutas) ─▶ ConversorJson, CacheRespuestas                                            │
 │        ▼                                                                                     │
-│  RepositorioDatos ◀── RepositorioSimulado (datos_ejemplo.json)                               │
-│                   ◀── (incremento 4: base de datos real, con sus credenciales)               │
+│  RepositorioDatos ◀── RepositorioSimulado (datos_ejemplo.json, con la forma de Neo4j)        │
+│        │          ◀── (incremento 4: RepositorioBDConocimiento, Neo4j)                       │
+│        ├─▶ ClasificadorEtiquetas · ProyectorRelaciones (regla genérica)                      │
+│        └─▶ AsignadorRelevancia ─▶ RelevanciaPorTipo (estrategia) + AlmacenRelevancias        │
 └──────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Por qué se ha cambiado el reparto
+- **El servidor** da acceso a los datos (lo que tiene que estar allí: la conexión, las credenciales y las consultas) y, desde el 3b, **asigna y guarda la relevancia** de las relaciones que recorre. Es lo único del cálculo que va en el servidor, porque es lo único que hay que **guardar** en la base de datos.
+- **El navegador** hace el resto: relevancia de los nodos (producto del camino), subgrafo «primero el mejor», poda a 150 nodos, centralidad, colores, búsqueda tolerante a errores, vista 3D e interfaz.
 
-En el incremento 2 el servidor construía el subgrafo entero. Desde este incremento **el servidor solo da acceso a los datos**: lo que obligatoriamente tiene que estar allí (la conexión con la base de datos, sus credenciales y las consultas). **Todo el cálculo lo hace el navegador**: relevancias, construcción del subgrafo «primero el mejor», poda a 150 nodos, centralidad, colores de los tipos de relación y búsqueda tolerante a errores.
+### Por qué el navegador calcula (incremento 3)
 
 - El servidor apenas consume recursos y atiende a más usuarios a la vez (RNF-05).
 - Cambiar el umbral muchas veces no le cuesta nada al servidor: si sube, el navegador recalcula con los datos que ya tiene.
 - Las sugerencias del buscador salen al instante, porque se buscan en memoria (RNF-03).
-- El código de cálculo es el del incremento 1, que vuelve al navegador casi sin cambios.
 
 ### El vecindario y por qué contiene todo lo necesario
 
-Construir el subgrafo en el navegador pidiendo al servidor las relaciones de cada nodo que se expande obligaría a hacer hasta 150 peticiones. Para evitarlo, el servidor entrega **de una sola vez** el *vecindario* de la entidad: el recorrido **en anchura** desde ella siguiendo **solo las relaciones cuyo valor supera el umbral**, en los dos sentidos (`RepositorioDatos.obtener_vecindario`). Con él, el navegador construye el subgrafo igual que en el incremento 1 (`RepositorioVecindario` + `ConstructorSubgrafo`).
+El servidor entrega **de una sola vez** el *vecindario* de la entidad: el recorrido **en anchura** desde ella por las relaciones cuya relevancia **supera el umbral**, en los dos sentidos (`RepositorioDatos.obtener_vecindario`). Con él, el navegador construye el subgrafo (`RepositorioVecindario` + `ConstructorSubgrafo`).
 
-**Por qué es correcto.** La relevancia de un nodo es el producto de las relevancias de su camino, y todos los valores están entre 0 y 1. Un producto de números entre 0 y 1 nunca es mayor que ninguno de sus factores. Por tanto, si un nodo supera el umbral, **todas** las relaciones de su camino lo superan también, y ese camino está dentro del vecindario. El vecindario contiene seguro todo lo que el navegador necesita; el navegador descarta lo que sobra (por ejemplo, un nodo a 0,5 × 0,5 = 0,25 con umbral 0,3).
+**Por qué es correcto.** La relevancia de un nodo es el producto de las relevancias de su camino, y todas están entre 0 y 1. Un producto de números entre 0 y 1 nunca es mayor que ninguno de sus factores. Si un nodo supera el umbral, **todas** las relaciones de su camino lo superan también, y ese camino está dentro del vecindario. Lo que sobra (por ejemplo, un nodo a 0,5 × 0,5 = 0,25 con umbral 0,3), lo descarta el navegador. Por lo mismo, si se pide **la misma entidad con un umbral igual o mayor**, `GestorSubgrafos` no pide nada al servidor.
 
-Por el mismo motivo, si se pide **la misma entidad con un umbral igual o mayor**, el vecindario guardado sigue sirviendo y `GestorSubgrafos` no pide nada al servidor.
+El servidor corta el vecindario en `maxEntidadesVecindario` entidades (2000) y lo marca como `recortado` (el navegador lo avisa en la consola).
 
-Con la base de datos real (incremento 4), el vecindario será **una sola consulta** con caminos de longitud variable filtrados por el valor de la relación. Para que nadie pida la base de datos entera, el servidor lo corta en `maxEntidadesVecindario` entidades (2000) y lo marca como `recortado`. El navegador lo avisa en la consola.
+## Los datos con la forma de Neo4j (incremento 3b)
 
-### Quién llama a quién en el navegador
+### Forma de los datos simulados
 
-- `main.js` → `Aplicacion.main()`: lee `public/config.json`, pide **a la vez** `/api/configuracion` y `/api/nombres` y crea todas las piezas en `crearDependencias` (inyección de dependencias).
-- `Aplicacion` → `ControladorExploracion` (patrón modelo–vista–controlador) ↔ `EscenaGrafo` / `InterfazUsuario`. Las vistas avisan al controlador de lo que hace el usuario; el controlador decide y les pide que muestren cosas.
-- `InterfazUsuario` es una **fachada**: el controlador solo habla con ella, y ella reparte el trabajo entre `PanelBusqueda`, `PanelInformacion`, `ControlUmbral`, `Leyenda`, `IndicadorEstado` y `BarraNavegacion`.
-- `ControladorExploracion` → `GestorSubgrafos` → `ClienteServicio` → API.
-- `ControladorExploracion` → `Buscador` (sin red: busca en el índice de nombres).
+`servidor/datos/datos_ejemplo.json` es un grafo **inventado** con la misma estructura que el diseño de Neo4j:
 
-### Por qué Vite
+```json
+{
+  "jerarquia": { "Painter": "Creator", "Creator": "Person", "Marriage": "Related", "Related": "Relationship", "...": "..." },
+  "nodos":      [ { "id": "n1", "etiquetas": ["Person", "Creator", "Painter"], "propiedades": { "name": "Elena", "lastName": "Ferrando Peris" } } ],
+  "relaciones": [ { "id": "r1", "tipo": "HAS_ROLE_IN", "desde": "n1", "hasta": "n227", "propiedades": { "role": "maestra" } } ]
+}
+```
 
-Con módulos (`import`/`export`) cada clase declara lo que necesita y no hacen falta variables globales ni un `<script>` por clase en un orden concreto. Vite sirve los módulos durante el desarrollo, instala Three.js con npm (versión fija) y, al publicar, junta todo en pocos archivos. Además, su proxy reenvía `/api` al servidor Python, así la página y la API parecen estar en el mismo sitio y el navegador no da errores de CORS.
+- Las entidades **no** se relacionan directamente: lo hacen a través de nodos intermediarios (`Relationship`, `Event` y sus subtipos), con sus periodos (`Period`), lugares (`Ubication`), imágenes (`Image`) y fuentes (`ExternalSource`).
+- Etiquetas, tipos de relación y propiedades son **exactamente** los del diseño, erratas incluidas (`Ubication`, `Employement`, `OCURRED_AT`, `coworking`). No se corrigen porque la aplicación tiene que funcionar con los nombres tal cual estén en la BD real.
+- **Ninguna relación tiene `relevance`**, igual que la BD real.
+- `jerarquia` copia los `IS_A` del diseño. Se supone que en la BD real los subtipos son varias etiquetas en el mismo nodo (`:Event:Creation:Paint`); está pendiente de confirmar.
+- Dos elementos **no están en el diseño** y están marcados con `"_comentario"` como de prueba: el subtipo `Apprenticeship` (aprendizaje, hijo de `Professional`) y la relación directa `STUDENT_OF` entre personas. Sirven para comprobar que el código no depende de una lista fija.
+
+Tiene 120 personas, 25 organizaciones, 60 obras y 15 lugares (ciudad → provincia → país con `IS_IN`), 1462 nodos y 2500 relaciones. Lo genera, con semilla fija, `servidor/datos/generar_datos_ejemplo.py`:
+
+```
+.venv\Scripts\python.exe -m servidor.datos.generar_datos_ejemplo
+```
+
+Escribe también `tests/vecindarioEjemplo.json`, el vecindario completo que usan las pruebas del navegador. La prueba `test_datos_ejemplo.py` comprueba que siempre genera lo mismo, que no hay ninguna `relevance` y que todo existe en el diseño salvo lo marcado como de prueba.
+
+### Clasificación de las etiquetas y regla genérica
+
+La clasificación está en `servidor/configuracion.json`, no en el código (`ClasificadorEtiquetas`):
+
+- **Entidades** (`etiquetasEntidad`): `Person` → persona, `Organization` → organización, `HeritageItem` → obra.
+- **Auxiliares** (`etiquetasAuxiliares`, y su papel en `papelesAuxiliares`): `Period` (periodo), `Ubication` (lugar), `Image` (imagen), `ExternalSource` (fuente).
+- **Intermediarios**: todo lo demás, también cualquier etiqueta nueva.
+
+`ProyectorRelaciones` deriva las relaciones entre entidades con una **regla genérica**, sin ningún nombre de etiqueta ni de relación en el código:
+
+1. **Por intermediario:** si un intermediario está unido (por cualquier relación que no esté en `relacionesIgnoradas`) a dos o más entidades, hay una relación por cada **pareja**. Su tipo es la etiqueta **más específica** del intermediario. Así salen el matrimonio, la mentoría, el empleo, la creación de una obra, la fundación, la exposición o haber ido al mismo evento.
+2. **Directa:** una relación entre dos entidades se toma tal cual (por ejemplo `STUDENT_OF`).
+3. **Límites:** no se aplica a `tiposSinRelacion` (`Birth`, `Death`, `Live`: van al detalle) ni a intermediarios con más de `maxParticipantesIntermediario` (10) entidades, para que un evento grande no cree una maraña.
+4. **Datos:** roles (`role`), periodo, lugar y fecha.
+
+En `servidor/datos/proyector_relaciones.py` hay una consulta Cypher de referencia para el incremento 4 que hace lo mismo sin nombrar ninguna etiqueta.
+
+### Cómo se añade un tipo nuevo
+
+Normalmente, **nada**. Si la BD añade un subtipo de relación o de evento (como `Apprenticeship`), o una relación directa (como `STUDENT_OF`):
+
+- sale solo en `/api/tipos`, en la leyenda y en el grafo;
+- recibe el peso de su padre más cercano (o `pesoPorDefecto`);
+- se nombra automáticamente a partir de su id (`STUDENT_OF` → «Student of»).
+
+Como mucho, se añade en `servidor/configuracion.json` un **peso** (`pesosRelevancia`, subiendo `versionPesos`) y un **nombre** (`nombresTipos`). Un tipo nuevo de **entidad** sí necesita una línea en `etiquetasEntidad`.
+
+### Relevancia asignada bajo demanda y guardada
+
+Las relaciones no tienen relevancia en la BD. Mientras recorre el vecindario, el servidor (`AsignadorRelevancia`) mira cada intermediario (o relación directa) que encuentra:
+
+- si ya tiene `relevance` (manual, o automática con la versión actual de los pesos), la **reutiliza**;
+- si no, la **calcula** con la estrategia `RelevanciaPorTipo` (peso del tipo → del padre más cercano → por defecto) y la **guarda** con `relevance`, `relevanceSource` y `relevanceVersion`.
+
+Así solo se calcula lo que se recorre, y una sola vez. Un valor `"manual"` nunca se sobrescribe. Los pesos de `configuracion.json` son una **propuesta pendiente de validar con el tutor**. Si se cambia uno, hay que subir `versionPesos`: las relevancias automáticas antiguas se recalculan al volver a recorrerlas.
+
+El navegador lee el valor asignado con `RelevanciaDesdeBD`. La barra de abajo muestra cuántas relevancias asignó el servidor en el último vecindario y cuántas reutilizó, y el registro del servidor lo apunta en cada petición.
+
+### El problema de los permisos (RNF-11)
+
+RNF-11 dice que la aplicación accede a la BD **solo con permisos de lectura**, pero guardar la relevancia necesita escribir. Por eso el guardado va detrás de la interfaz `AlmacenRelevancias`:
+
+1. **`AlmacenRelevanciasEnGrafo`** (la que hay ahora) escribe en el propio grafo. Con Neo4j sería un `SET … coalesce(…)` y haría falta permiso de escritura **solo** sobre esas tres propiedades (Neo4j Enterprise lo permite).
+2. Si no se consigue ese permiso, en el incremento 4 se hará otra implementación con un **almacén propio del servidor** (un fichero o una pequeña base de datos), sin cambiar nada más.
+
+Está pendiente de decidir con el tutor (ver `ANALISIS_BD_NEO4J.md` §5).
 
 ## Requisitos
 
@@ -90,21 +152,24 @@ Hacen falta dos terminales:
   .venv\Scripts\activate
   python -m uvicorn servidor.app:app --reload --port 8000
   ```
-  `http://localhost:8000/api/salud` debe responder `{"estado": "ok"}`. La documentación de la API se genera sola en `http://localhost:8000/docs`.
+  `http://localhost:8000/api/salud` debe responder `{"estado": "ok"}`. La documentación de la API se genera sola en `http://localhost:8000/docs`. Si `servidor/configuracion.json` no está completa, el servidor no arranca y dice qué falta.
 - **Terminal 2, la página** (puerto 5173):
   ```
   npm run dev
   ```
   Abre `http://localhost:5173/`.
 
-Para parar cada uno: `Ctrl + C` en su terminal.
+Para parar cada uno: `Ctrl + C` en su terminal. En Windows, la recarga automática (`--reload`) a veces se queda a medias y el servidor sigue con el código anterior. Si algo no cambia, para el servidor y arráncalo de nuevo. Al arrancarlo, además, las relevancias asignadas se borran, porque solo están en memoria.
 
 ## Pruebas
 
-- **Python** (modelo, repositorio, vecindario, configuración, caché y API): `python -m pytest` (con el entorno virtual activado). Están en `servidor/tests/`.
-- **Navegador** (todo el cálculo del subgrafo, buscador, gestor, controlador, filtros, historial, simulación, disposición, nodos, enlaces, leyenda y paneles): con `npm run dev` en marcha, abre `http://localhost:5173/pruebas.html`. Arriba aparece «X de Y pruebas correctas» y debajo cada prueba en verde o en rojo con el motivo. No necesitan el servidor Python: usan **dobles de prueba** (objetos falsos con los mismos métodos) del servidor, de la escena y de la interfaz.
-
-La prueba «Constructor: con los datos de ejemplo da EXACTAMENTE el subgrafo del incremento 2» compara nodo a nodo (relevancia, nivel y centralidad) el subgrafo que calcula el navegador con el que calculaba el servidor Python del incremento 2 (`tests/subgrafoIncremento2.json`).
+- **Python**: `python -m pytest`, con el entorno virtual activado. Están en `servidor/tests/` y cubren:
+  - clasificador, proyector, relevancia por tipo, asignador y almacén;
+  - repositorio, vecindario, datos de ejemplo, configuración, caché y API.
+- **Navegador**: con `npm run dev` en marcha, abre `http://localhost:5173/pruebas.html`.
+  - Cubren el modelo, la fábrica de entidades, los tipos de relación, el cálculo del subgrafo, el buscador, el gestor, el controlador, los filtros, el historial, la vista 3D, la leyenda y los paneles.
+  - Arriba aparece «X de Y pruebas correctas», y debajo cada prueba en verde o en rojo con el motivo.
+  - No necesitan el servidor: usan **dobles de prueba** y `tests/vecindarioEjemplo.json`.
 
 `EscenaGrafo` y `SelectorInteraccion` necesitan WebGL y se comprueban a mano con la lista del final.
 
@@ -115,160 +180,119 @@ npm run build
 python -m uvicorn servidor.app:app --port 8000
 ```
 
-`npm run build` deja la página en `dist/`. Si existe esa carpeta, el servidor Python la sirve en `/` además de la API, así que en el servidor real basta con un solo programa: hace falta Python, pero no Node. La aplicación queda en `http://localhost:8000/`.
-
-En un servidor con varios núcleos se pueden arrancar varios procesos para atender a más usuarios a la vez (cada uno con su propia caché): `python -m uvicorn servidor.app:app --port 8000 --workers 4`. `--workers` no se puede usar junto con `--reload`.
-
-## Rendimiento
-
-En el **servidor** (RNF-01, RNF-05):
-
-1. **Ya no calcula subgrafos**: solo recorre el vecindario y lo envía.
-2. **Índice de relaciones** (`RepositorioSimulado`): las relaciones de cada entidad se agrupan al arrancar, en lugar de recorrer las 1036 cada vez.
-3. **Caché de respuestas** (`CacheRespuestas`, antes `CacheSubgrafos`): cada vecindario y la lista de nombres se preparan y se convierten a JSON una sola vez. Si llegan varias peticiones iguales mientras se prepara, todas esperan al mismo cálculo. Como mucho 200 respuestas, durante 10 minutos.
-4. **Umbral redondeado hacia abajo a 2 decimales**, para que 0,3 y 0,3000001 sean la misma petición. Tiene que ser hacia abajo: con un umbral menor el vecindario es igual o más grande, así que sigue sirviendo.
-5. **Caché del navegador**: las respuestas llevan `Cache-Control: max-age=120`. Durante el desarrollo, si regeneras los datos de ejemplo, reinicia el servidor y recarga con `Ctrl + F5`.
-
-Prueba de carga en un portátil de 4 núcleos (el programa que lanza las peticiones corre en el mismo equipo), 2000 peticiones con 50 a la vez:
-
-| | Peticiones por segundo | Espera mediana |
-|---|---|---|
-| Incremento 2, antes de optimizar (`/api/subgrafo`) | 16–25 | 1,9–3,0 s |
-| Incremento 2, optimizado (`/api/subgrafo`) | 150–200 | 0,17 s |
-| Incremento 3 (`/api/vecindario`, respuestas de unos 150 KB) | unas 220 | 0,13 s |
-
-En el **navegador**, la barra de abajo a la derecha muestra los nodos, las relaciones, los fps, «Estabilizado en X,X s», «Subgrafo calculado en X ms» (sin contar la red) y «Datos recibidos: X KB» (lo que ocupaba el vecindario). Con `p01` y umbral 0,3 se reciben unos 158 KB (el índice de nombres, unos 27 KB, solo al abrir la página) y el subgrafo de 150 nodos se calcula en unos 20 ms la primera vez y en pocos milisegundos al cambiar el umbral.
-
-## Datos de ejemplo
-
-`servidor/datos/datos_ejemplo.json` tiene 378 entidades (131 personas, 22 organizaciones y 225 obras) y 1036 relaciones de 14 tipos, todas inventadas. Las 16 entidades y 27 relaciones del incremento 1 siguen al principio del archivo, con los mismos ids, porque las pruebas dependen de ellas. Las pruebas del navegador usan este mismo archivo (Vite permite importar un JSON).
-
-El resto lo genera `servidor/herramientas/generador_datos_ejemplo.py`, una herramienta de desarrollo que no usa la aplicación:
-
-```
-.venv\Scripts\python.exe -m servidor.herramientas.generador_datos_ejemplo
-```
-
-Usa una semilla fija, así que siempre genera exactamente los mismos datos (la prueba `test_generador_datos_ejemplo.py` lo comprueba). Crea 12 grupos (talleres, academias, círculos y sociedades), cada uno con su maestro, entre 6 y 10 miembros y sus obras, con relaciones fuertes dentro del grupo, para que se vean cúmulos (RF-40), y a veces dos relaciones en el mismo par (RF-38). Añade además 6 museos, 10 mecenas, 8 restauradoras, retratos y parejas, y relaciones débiles entre grupos para que todo quede conectado.
-
-Tamaño del subgrafo de `p01` según el umbral:
-
-| Umbral | Nodos |
-|---|---|
-| 0,3 (por defecto) | 150, el máximo: sirve para la prueba de rendimiento |
-| 0,5 | 86 |
-| 0,7 | 20 |
-
-Como los datos de ejemplo están muy conectados, el vecindario de `p01` con umbral 0,3 contiene las 378 entidades.
-
-## Configuración
-
-- `servidor/configuracion.json` (la de verdad): `origenDatos`, `umbralPorDefecto`, `maxNodos`, `maxEntidadesVecindario` y `entidadInicial`. Si falta o tiene valores no válidos, se usan los valores por defecto (RNF-16). El navegador recibe `umbralPorDefecto`, `maxNodos` y `entidadInicial` en `/api/configuracion`, así que siguen definidos en un solo sitio. Las credenciales de la base de datos real **no** irán aquí, sino en variables de entorno (archivo `.env`, que Git ignora).
-- `public/config.json`: solo `urlServicio` (`"/api"`), para que la página sepa dónde está la API.
-
-## Cómo añadir otra fuente de datos
-
-Crear en `servidor/datos/` una clase nueva que herede de `RepositorioDatos` e implemente sus métodos asíncronos (`buscar_entidades`, `obtener_entidad`, `obtener_relaciones`, `obtener_tipos_relacion` y `obtener_vecindario`) y, si abre conexiones, `cerrar`. Después, en `crear_repositorio` de `servidor/app.py`, crearla cuando `origenDatos` tenga su nombre. El resto del servidor y todo el navegador siguen igual (RNF-17).
+`npm run build` deja la página en `dist/`, y el servidor Python la sirve en `/` además de la API: en el servidor real basta con Python. La aplicación queda en `http://localhost:8000/`.
 
 ## API
 
 | Petición | Respuesta |
 |---|---|
 | `GET /api/salud` | `{"estado": "ok"}` |
-| `GET /api/configuracion` | `{"umbralPorDefecto": 0.3, "maxNodos": 150, "entidadInicial": "p01"}` |
-| `GET /api/nombres` | todas las entidades, solo con `id`, `nombre` y `tipo` (el índice del buscador) |
-| `GET /api/vecindario/{id}?umbral=0.3` | `{"idCentral", "umbral", "recortado", "entidades", "relaciones", "tiposRelacion"}` |
+| `GET /api/configuracion` | `umbralPorDefecto`, `maxNodos`, `entidadInicial`, `idioma`, `nombresTipos`, `etiquetasEntidad` (solo lo que necesita el navegador) |
+| `GET /api/tipos` | **Nueva.** Los tipos de relación de los datos con sus padres: `[{"id": "Marriage", "padres": ["Related", "Relationship"]}]` (RF-39) |
+| `GET /api/nombres` | Todas las entidades con sus etiquetas y sus propiedades de nombre, en bruto (el índice del buscador) |
+| `GET /api/vecindario/{id}?umbral=0.3` | `idCentral`, `umbral`, `recortado`, `entidades` (en bruto), `relaciones` (derivadas, con `valor` = relevancia asignada, `roles`, `periodo`, `lugar`, `fecha`), `relevanciasAsignadas` y `relevanciasReutilizadas` |
+| `GET /api/detalle/{id}` | **Nueva.** En bruto: `eventos` (también nacimiento, defunción y residencia, con rol, periodo, lugar, fecha y participantes), `imagenes` (por `order`), `fuentes` (con `dateUpdated` y `externalId`) y `ubicacion` (con la cadena de `IS_IN`) |
 
-- En `vecindario`, cada entidad va completa (`id`, `nombre`, `tipo`, `descripcion`, `atributos`) y cada relación en bruto: `{"id", "origen", "destino", "tipo": "autor_de", "valor"}`, sin relevancia ni color. `tiposRelacion` lleva los ids de **todos** los tipos de relación de los datos, para que el navegador dé a cada tipo el mismo color en todos los vecindarios.
-- `umbral` entre 0 y 1; si no, **422**. Si no se indica, se usa el de la configuración. Se redondea hacia abajo a 2 decimales y la respuesta dice cuál se ha usado.
-- El máximo de entidades del vecindario lo pone el servidor (`maxEntidadesVecindario`) y no se puede cambiar desde la petición. El id tiene como mucho 100 caracteres (si no, **422**).
-- Entidad inexistente: **404** con `{"detail": "No existe la entidad P99"}`. Cualquier otro error: **500** con un mensaje genérico (el detalle queda en el registro del servidor).
-- `/api/subgrafo` y `/api/entidades` (incremento 2) ya no existen.
+- `umbral` entre 0 y 1; si no, **422**. Si no se indica, se usa el de la configuración. Se redondea hacia abajo a 2 decimales.
+- Entidad inexistente (o un nodo que no es una entidad): **404** con `{"detail": "No existe la entidad X"}`. Cualquier otro error: **500** con un mensaje genérico.
+- El vecindario lleva `Cache-Control: no-store`, para que las estadísticas de cada petición sean las suyas. Se reutiliza de la caché del servidor; en ese caso dice «0 asignadas». El resto de rutas sí se guardan en el navegador dos minutos.
+
+## Rendimiento
+
+En el servidor: índice de relaciones por nodo, caché de respuestas (`CacheRespuestas`), umbral redondeado y, desde el 3b, cada relevancia se calcula una sola vez. Con los datos de ejemplo:
+
+- el vecindario de n1 con umbral 0,3 tarda unos 40 ms en recorrerse;
+- ocupa unos 186 KB;
+- el subgrafo de 150 nodos se calcula en el navegador en unos 15 ms la primera vez y en pocos milisegundos al cambiar el umbral.
+
+## Configuración
+
+- **`servidor/configuracion.json`** (la de verdad):
+  - ajustes generales: `origenDatos`, `umbralPorDefecto`, `maxNodos`, `maxEntidadesVecindario`, `entidadInicial`, `idioma`;
+  - clasificación de etiquetas: `etiquetasEntidad`, `etiquetasAuxiliares`, `papelesAuxiliares`, `tiposSinRelacion`, `relacionesIgnoradas`, `maxParticipantesIntermediario`;
+  - relevancia y nombres: `pesosRelevancia`, `pesoPorDefecto`, `versionPesos` y `nombresTipos`.
+
+  Las credenciales de la base de datos real **no** irán aquí, sino en variables de entorno (archivo `.env`, que Git ignora).
+- **`public/config.json`**: solo `urlServicio` (`"/api"`).
+
+## Cómo añadir otra fuente de datos
+
+Crear en `servidor/datos/` una clase que herede de `RepositorioDatos` (por ejemplo `RepositorioBDConocimiento` para Neo4j, en el incremento 4) e implemente:
+
+- `obtener_tipos`, `obtener_nombres`, `obtener_vecindario` y `obtener_detalle`;
+- `cerrar`, si abre conexiones;
+- su propio `AlmacenRelevancias`.
+
+Después, en `crear_repositorio` de `servidor/app.py`, crearla cuando `origenDatos` tenga su nombre.
 
 ## Carpetas y clases
 
-### Servidor (`servidor/`): solo acceso a datos
+### Servidor (`servidor/`)
 
 | Ruta | Qué es |
 |---|---|
-| `app.py` | Rutas de la API, creación del repositorio al arrancar y página publicada. |
-| `api/conversor_json.py` | **ConversorJson**: convierte entidades, relaciones y vecindarios en diccionarios, en bruto. |
-| `api/cache_respuestas.py` | **CacheRespuestas** (antes `CacheSubgrafos`): guarda las respuestas ya preparadas para no repetir el trabajo (RNF-01). |
-| `modelo/vecindario.py` | **Vecindario** (nueva): entidades y relaciones alrededor de una entidad, y si se ha recortado. |
-| `modelo/` | El resto del modelo: `TipoEntidad`, `Entidad`, `Persona`, `Organizacion`, `ObraDeArte`, `TipoRelacion` (ahora solo con `id`), `Relacion`, `NodoRelevante` y `Subgrafo`. |
-| `datos/` | `RepositorioDatos` (interfaz, con `obtener_vecindario`), `RepositorioSimulado`, `FabricaEntidades` y `datos_ejemplo.json`. |
-| `logica/configuracion.py` | **Configuracion**: lo único que queda en `logica/`. |
-| `herramientas/generador_datos_ejemplo.py` | **GeneradorDatosEjemplo**: genera los datos de ejemplo (no la usa la aplicación). |
-| `tests/` | Pruebas de pytest. |
+| `app.py` | Rutas de la API, configuración comprobada al arrancar, repositorio y página publicada. |
+| `api/conversor_json.py` | **ConversorJson**: forma del JSON (configuración y vecindario). |
+| `api/cache_respuestas.py` | **CacheRespuestas**: guarda las respuestas ya preparadas. |
+| `logica/configuracion.py` | **Configuracion**: lee y comprueba `configuracion.json`. |
+| `logica/clasificador_etiquetas.py` | **ClasificadorEtiquetas** (nueva): entidad, auxiliar o intermediario; etiqueta más específica; padres. |
+| `logica/estrategia_relevancia.py` | **«interface» EstrategiaRelevancia**: vuelve al servidor. |
+| `logica/relevancia_por_tipo.py` | **RelevanciaPorTipo** (nueva): peso del tipo, del padre más cercano o por defecto. |
+| `logica/asignador_relevancia.py` | **AsignadorRelevancia** (nueva): reutiliza o calcula y guarda la relevancia de lo que se recorre. |
+| `datos/repositorio_datos.py` | **«interface» RepositorioDatos** (`obtener_tipos`, `obtener_nombres`, `obtener_vecindario`, `obtener_detalle`) y la excepción `EntidadNoEncontrada`. |
+| `datos/repositorio_simulado.py` | **RepositorioSimulado**: el grafo de ejemplo en memoria. |
+| `datos/proyector_relaciones.py` | **ProyectorRelaciones** (nueva): la regla genérica. |
+| `datos/almacen_relevancias.py` | **«interface» AlmacenRelevancias** (nueva). |
+| `datos/almacen_relevancias_en_grafo.py` | **AlmacenRelevanciasEnGrafo** (nueva): guarda la relevancia en el grafo. |
+| `datos/generar_datos_ejemplo.py` | **GeneradorDatosEjemplo**: genera los datos de ejemplo (no la usa la aplicación). |
+| `modelo/vecindario.py` | **Vecindario**: entidades y relaciones en bruto, si está recortado y las estadísticas de asignación. |
+| `modelo/` (resto) y `datos/fabrica_entidades.py` | Modelo de los incrementos 1 y 2. Desde el 3b ya no lo usa el servidor (ver el resumen del incremento). |
 
-### Navegador (`src/`): todo el cálculo, la vista 3D y la interfaz
+### Navegador (`src/`)
 
 | Ruta | Qué es |
 |---|---|
-| `main.js` | Solo `Aplicacion.main()`. |
-| `aplicacion/Aplicacion.js` | **Nueva.** Crea y conecta todas las piezas, carga la entidad inicial y lleva la barra de rendimiento. |
-| `modelo/` | El modelo del incremento 1 (vuelven `getValor`, `setRelevancia`, `getOtroExtremo`, `eliminarNodo` y `nombreDesdeId`). |
-| `datos/RepositorioDatos.js` | **Vuelve** del incremento 1: interfaz de acceso a los datos. |
-| `datos/RepositorioVecindario.js` | **Nueva.** El vecindario recibido, en memoria; da nombre y color a los tipos de relación. |
-| `datos/ClienteServicio.js` | Solo pide datos: configuración, nombres y vecindarios. |
-| `datos/FabricaEntidades.js` | Crea la subclase de `Entidad` según el tipo. |
-| `logica/EstrategiaRelevancia.js`, `RelevanciaDesdeBD.js` | **Vuelven** del incremento 1: relevancia de relaciones (valor acotado) y de nodos (producto). |
-| `logica/CalculadorCentralidad.js` | **Vuelve**: grado ponderado normalizado (RF-37). |
-| `logica/PaletaColores.js` | **Vuelve**: color automático por tipo de relación (RF-20, RF-39). |
-| `logica/ConstructorSubgrafo.js` | **Vuelve**: búsqueda «primero el mejor», umbral, poda y centralidad (RF-08 a RF-12). |
-| `logica/GestorSubgrafos.js` | **Nueva.** Pide el vecindario solo cuando hace falta y construye el subgrafo. |
-| `logica/Buscador.js` | **Nueva.** Búsqueda sin mayúsculas ni tildes y tolerante a erratas (distancia de Levenshtein). |
-| `logica/EstadoCarga.js` | **Nueva.** Enumeración: `INACTIVO`, `CARGANDO`, `LISTO`, `ERROR`. |
-| `logica/HistorialNavegacion.js` | **Nueva.** Pila de entidades visitadas para «Volver» (RF-31). |
-| `logica/FiltroVisualizacion.js` | **Nueva.** Qué tipos de nodo y de relación se ven (RF-32, RF-33). |
-| `logica/ControladorExploracion.js` | **Nueva.** El controlador: coordina búsqueda, carga, navegación, umbral, filtros y selección. |
-| `vista3d/SelectorInteraccion.js` | **Nueva.** Clic, doble clic, toques y etiqueta flotante con un rayo (Raycaster) (RF-28 a RF-30, RF-41). |
-| `vista3d/EscenaGrafo.js` | Escena 3D; ahora también aplica filtros y resalta relaciones. |
-| `vista3d/SimulacionFuerzas.js`, `CalculadorDisposicion.js`, `NodoVisual.js` (`NodoPersona`, `NodoOrganizacion`, `NodoObra`), `FabricaNodosVisuales.js`, `EnlaceVisual.js` | La vista 3D del incremento 2, sin cambios de comportamiento. |
-| `interfaz/InterfazUsuario.js` | **Nueva.** Fachada de la interfaz 2D. |
-| `interfaz/PanelBusqueda.js` | **Nueva.** Buscador con sugerencias, teclado y patrón «combobox» (RF-01 a RF-07). |
-| `interfaz/PanelInformacion.js` | **Nueva.** Información de la entidad o relación seleccionada (RF-28 a RF-30). |
-| `interfaz/ControlUmbral.js` | **Nueva.** Deslizador del umbral (RF-13). |
-| `interfaz/IndicadorEstado.js` | **Nueva.** «Cargando…» y avisos de error (RF-14, RF-15). |
-| `interfaz/BarraNavegacion.js` | **Nueva.** «← Volver», «Vista inicial» y sus atajos (RF-27, RF-31). |
-| `interfaz/Leyenda.js` | Ahora **interactiva**: casillas para filtrar, «Todas» y «Ninguna». |
-| `interfaz/ComponenteUI.js` | Clase abstracta de los componentes 2D. |
-| `estilos.css` | Estilos de las dos páginas. |
-
-### Pruebas del navegador (`tests/`)
-
-`miniPruebas.js` (mini sistema de pruebas), `ejecutarPruebas.js` (importa y ejecuta todas), `utilidadesPruebas.js` (datos de ejemplo y un vecindario calculado como en el servidor), `subgrafoIncremento2.json` (el subgrafo de referencia del incremento 2) y un archivo `pruebas*.js` por tema.
+| `aplicacion/Aplicacion.js` | Crea y conecta todo; prepara el **contexto** (idioma, nombres de tipos, etiquetas de entidad y tipos) y el índice del buscador; barra de rendimiento. |
+| `modelo/Entidad.js`, `Persona.js`, `Organizacion.js`, `ObraDeArte.js` | Entidades creadas desde propiedades en bruto: nombres en tres idiomas (persona: nombre y apellidos), subtipos y atributos desconocidos. |
+| `modelo/TipoRelacion.js` | Con padres, familia y nombre (traducido o automático). |
+| `modelo/Relacion.js` | Con relevancia asignada, intermediario, roles, periodo, lugar y fecha. |
+| `modelo/Periodo.js`, `Evento.js`, `Imagen.js`, `FuenteExterna.js`, `DetalleEntidad.js` | **Nuevas**: el detalle de una entidad. |
+| `modelo/NodoRelevante.js`, `Subgrafo.js`, `TipoEntidad.js` | Sin cambios. |
+| `datos/FabricaEntidades.js` | `crearDesdeNeo4j`: la clase sale de las etiquetas con la tabla `etiquetasEntidad`. |
+| `datos/RepositorioVecindario.js` | El vecindario en memoria; tipos con nombre, padres, familia y color estable. |
+| `datos/ClienteServicio.js` | Configuración, tipos, nombres, vecindarios y detalle (`convertirDetalle`). |
+| `logica/` | `RelevanciaDesdeBD` (lee el valor asignado), `ConstructorSubgrafo`, `CalculadorCentralidad`, `PaletaColores`, `GestorSubgrafos` (y el detalle), `Buscador` (todos los nombres), `ControladorExploracion` (pide el detalle sin bloquear), `FiltroVisualizacion`, `HistorialNavegacion`, `EstadoCarga`. |
+| `vista3d/` | La vista 3D; la etiqueta de una relación incluye los roles. |
+| `interfaz/` | `PanelInformacion` (subtipos, detalle, imágenes, fuentes, roles), `Leyenda` (agrupada por familias) y el resto de componentes del incremento 3. |
 
 ## Uso
 
-- **Buscar**: escribe en el buscador (basta con 2 letras; da igual escribir con o sin tildes y se toleran erratas). Con las flechas te mueves por las sugerencias, con Intro eliges y con Escape cierras. El desplegable de al lado filtra por tipo.
-- **Ver información**: haz clic en un nodo o en una línea. Pasando el puntero se ve su nombre.
-- **Navegar**: doble clic en un nodo (o dos toques en una pantalla táctil), o «Explorar su red» en el panel. «← Volver» (o `Alt + ←`) regresa a la entidad anterior.
-- **Filtrar**: con las casillas de la leyenda. La entidad central nunca desaparece. Los filtros se mantienen al cambiar de entidad o de umbral (pendiente de confirmar con el tutor).
-- **Cámara**: arrastra para girar y usa la rueda para acercar. «Vista inicial» (o la tecla `Inicio`) recoloca la cámara.
+- **Buscar**: escribe en el buscador (basta con 2 letras; vale cualquiera de los nombres: castellano, valenciano, inglés o apellidos; se toleran erratas). Flechas, Intro y Escape.
+- **Ver información**: clic en un nodo (su información y, al momento, su detalle) o en una línea (tipo, roles, periodo, lugar). Pasando el puntero se ve su nombre.
+- **Navegar**: doble clic en un nodo o «Explorar su red». «← Volver» (o `Alt + ←`) regresa.
+- **Filtrar**: pulsa un tipo en la leyenda para ocultarlo (sale apagado y tachado) o volver a mostrarlo; están agrupados por familia. «Todas» y «Ninguna» cambian todas las relaciones a la vez.
+- **Cámara**: arrastra para girar, rueda para acercar, «Vista inicial» (o `Inicio`).
 
-## Lista de comprobación del incremento 3 (a mano)
+## Lista de comprobación del incremento 3b (a mano)
 
-Con los dos servidores en marcha y `http://localhost:5173/` abierto:
+Arranca el servidor Python **de nuevo** (para empezar sin ninguna relevancia asignada), con `npm run dev` en marcha, y abre `http://localhost:5173/`:
 
-- [ ] Para la misma entidad y umbral, el grafo es igual que en el incremento 2: mismos nodos y relaciones (150 y 350 para Elena Montsalvat con 0,30). Los colores de los tipos de relación cambian, porque ahora se reparten por orden alfabético.
-- [ ] Al **subir** el umbral, el grafo se recalcula sin ninguna petición nueva (pestaña *Red* de las herramientas del navegador, F12, filtrando por `vecindario`). Al **bajarlo**, sí hay una petición.
-- [ ] Una errata encuentra la entidad (por ejemplo «sanchiz» o «belloc»). También sin tildes y en mayúsculas («HORTOLA»). Las sugerencias salen al instante.
-- [ ] El filtro de tipo del buscador funciona. Una búsqueda sin resultados («zzqx») lo indica. El buscador se usa solo con el teclado (Tab, flechas, Intro y Escape).
-- [ ] Al elegir una sugerencia se ve «Cargando…» y se carga su grafo.
-- [ ] Al pasar el puntero se ve el nombre del nodo, o el tipo y los extremos de la relación, y el cursor cambia a una mano.
-- [ ] Clic en un nodo → su información. Clic en una relación → su tipo y extremos. Arrastrar para girar **no** selecciona nada.
-- [ ] Doble clic o «Explorar su red» cambia de centro. «Volver» regresa y está deshabilitado al principio.
-- [ ] Las casillas de la leyenda, «Ninguna» y «Todas» funcionan, y la central nunca desaparece. Un tipo de relación cuyas relaciones quedan ocultas por los nodos sale atenuado.
-- [ ] Los filtros se mantienen al cambiar el umbral o de entidad.
-- [ ] «Vista inicial» y los atajos de teclado (`Alt + ←`, `Inicio`) funcionan.
-- [ ] Con el servidor parado, aparece el aviso de error sin romper la página. Al abrirla sin servidor, sale un aviso en el centro.
-- [ ] Con la ventana estrecha (menos de 700 px), todo sigue siendo usable: la leyenda se pliega tras su botón y el panel de información va abajo.
-- [ ] Los fps se mantienen por encima de 30 y la barra muestra el tiempo de cálculo y los KB recibidos.
+- [ ] La leyenda muestra tipos como «Matrimonio», «Mentoría» y «Pintura», agrupados por familia («Parentesco», «Relación profesional», «Creación»…). También salen «Apprenticeship» y «Student of», que no estaban en el diseño.
+- [ ] La primera vez que se abre la entidad inicial, la barra muestra «Relevancias asignadas: 320 · reutilizadas: 0». Al volver a abrirla, todas reutilizadas («asignadas: 0»). El registro del servidor lo apunta igual.
+  - Como los datos de ejemplo están todos conectados, en la primera visita se asignan las de todo el grafo, y después cualquier otra entidad las reutiliza.
+- [ ] Al poner el umbral en 0,6 desaparecen de la leyenda las relaciones de empleo y de co-participación en eventos (Trabajo, Boda, Exposición, Evento), **sin petición nueva** (F12 → *Red*).
+- [ ] El panel de una persona (por ejemplo Elena Ferrando Peris) muestra lo siguiente: «Persona · Pintor/a · Creador/a», nacimiento y defunción (fecha y lugar), eventos y relaciones, imágenes y fuentes («Fuente: … (Libro), actualizada el …»).
+  - Las imágenes son direcciones inventadas: se ve su texto alternativo.
+- [ ] El panel de una relación muestra roles y periodo: «Elena Ferrando Peris (maestra) → … (discípulo)», 1893–1903, el lugar y la relevancia «asignada según el tipo de relación».
+- [ ] Al pasar el puntero por una relación, la etiqueta incluye los roles.
+- [ ] Buscar «Museu» (valenciano) o «Workshop» (inglés) encuentra las organizaciones, y buscar por un apellido («Ferrando») encuentra a la persona.
+- [ ] Ningún evento grande crea una maraña: los dos congresos (14 asistentes) y la exposición de 12 obras no crean relaciones.
 
-Y de la vista 3D del incremento 2:
+Y del incremento 3 (sigue igual):
 
-- [ ] El grafo se mueve unos segundos y se queda quieto («Estabilizado en X,X s»).
-- [ ] La entidad central está en el centro, y los nodos más relevantes, más cerca de ella. Los más conectados son más grandes.
-- [ ] Personas = esferas azules, organizaciones = cubos naranjas, obras = octaedros verdes.
-- [ ] Entre dos entidades con varias relaciones se ven varias curvas separadas (Elena Montsalvat y Joaquín Albereda: «Maestro de» y «Colaborador de»).
+- [ ] Al **subir** el umbral no hay petición nueva; al **bajarlo**, sí.
+- [ ] Erratas («sanchiz», «belloc»), sin tildes y en mayúsculas («HORTOLA»). Búsqueda sin resultados («zzqx»). Buscador solo con teclado.
+- [ ] Clic, arrastre (no selecciona), doble clic, «Volver», filtros (la central nunca desaparece), «Vista inicial» y atajos.
+- [ ] Con el servidor parado, aviso de error sin romper la página.
+- [ ] Ventana estrecha (menos de 700 px) usable. Los fps se mantienen por encima de 30.
+- [ ] Entre dos entidades con varias relaciones se ven curvas separadas (Elena Ferrando Peris y su primer discípulo: «Matrimonio» y «Colaboración»).

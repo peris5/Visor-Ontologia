@@ -1,62 +1,63 @@
-"""«interface» RepositorioDatos (traducción de src/datos/RepositorioDatos.js)."""
+"""«interface» RepositorioDatos: todo el acceso a la base de datos."""
 from abc import ABC, abstractmethod
+from typing import Any
 
-from servidor.modelo.entidad import Entidad
-from servidor.modelo.relacion import Relacion
-from servidor.modelo.tipo_entidad import TipoEntidad
-from servidor.modelo.tipo_relacion import TipoRelacion
 from servidor.modelo.vecindario import Vecindario
+
+
+class EntidadNoEncontrada(LookupError):
+    """Se pide algo de una entidad que no existe (la API responde 404)."""
 
 
 class RepositorioDatos(ABC):
     """Todo el acceso a los datos pasa por aquí. El resto de la aplicación no
     sabe si los datos vienen de un archivo de ejemplo (RepositorioSimulado) o
-    de la base de datos real (incremento 4): basta con cambiar la implementación.
+    de la base de datos Neo4j real (RepositorioBDConocimiento, incremento 4):
+    basta con cambiar la implementación.
+
+    Desde el incremento 3b los datos tienen la forma de Neo4j: nodos con
+    etiquetas y propiedades, y las entidades unidas a través de nodos
+    intermediarios. Cada implementación DERIVA las relaciones entre entidades
+    (en la simulada, ProyectorRelaciones; en Neo4j, consultas Cypher) y asigna
+    la relevancia a las que recorre (AsignadorRelevancia).
 
     Los métodos son asíncronos (async def) porque la base de datos real
-    responderá a través de la red y tardará un tiempo. Mientras espera, el
-    servidor puede atender otras peticiones.
+    responderá a través de la red. Mientras espera, el servidor puede
+    atender otras peticiones.
 
-    Para añadir otra fuente de datos basta con crear una clase nueva que
-    herede de esta e implemente sus métodos.
-
-    Requisitos: RNF-17.
+    Requisitos: RNF-17, RF-09, RF-39.
     """
 
     @abstractmethod
-    async def buscar_entidades(self, texto: str, tipo: TipoEntidad | None,
-                               limite: int | None) -> list[Entidad]:
-        """Busca entidades cuyo nombre contenga el texto.
-        tipo: None para todos. limite: máximo de resultados, o None para sin límite.
+    async def obtener_tipos(self) -> list[dict[str, Any]]:
+        """Los tipos de relación que hay en los datos, con sus padres:
+        [{"id": "Marriage", "padres": ["Related", "Relationship"]}] (RF-39).
+        Se calculan a partir de los datos: un tipo nuevo sale aquí solo.
         """
 
     @abstractmethod
-    async def obtener_entidad(self, identificador: str) -> Entidad | None:
-        """La entidad, o None si no existe."""
-
-    @abstractmethod
-    async def obtener_relaciones(self, id_entidad: str) -> list[Relacion]:
-        """Relaciones en las que participa la entidad, sea como origen o como destino."""
-
-    @abstractmethod
-    async def obtener_tipos_relacion(self) -> list[TipoRelacion]:
-        """Todos los tipos de relación conocidos."""
+    async def obtener_nombres(self) -> list[dict[str, Any]]:
+        """Todas las entidades, solo con sus propiedades de nombre:
+        [{"id", "etiquetas", "propiedades"}] (el índice del buscador).
+        """
 
     @abstractmethod
     async def obtener_vecindario(self, id_entidad: str, umbral: float, max_entidades: int) -> Vecindario:
-        """Todas las entidades y relaciones a las que se llega desde la
-        entidad siguiendo SOLO relaciones cuyo valor supera el umbral (en los
-        dos sentidos), con un máximo de max_entidades entidades.
+        """Recorrido en anchura desde la entidad por las relaciones derivadas
+        cuya relevancia (asignada por el camino si faltaba) supera el umbral,
+        con un máximo de max_entidades entidades.
 
-        Con esto el navegador construye el subgrafo sin hacer una petición
-        por cada nodo que expande.
+        Con Neo4j será una consulta con caminos de longitud variable filtrados
+        por la relevancia (y la asignación de las que falten).
 
-        Con la base de datos real (incremento 4) será UNA sola consulta, con
-        caminos de longitud variable filtrados por el valor de la relación.
-        Por eso es un método del repositorio: cada base de datos lo hará a su
-        manera, y el resto del servidor no tiene que saber cómo.
+        Lanza EntidadNoEncontrada si la entidad no existe.
+        """
 
-        Lanza ValueError si la entidad no existe.
+    @abstractmethod
+    async def obtener_detalle(self, id_entidad: str) -> dict[str, Any]:
+        """En bruto, lo que se muestra al seleccionar una entidad: sus eventos
+        (también nacimiento, muerte y residencia), imágenes, fuentes externas
+        y ubicación. Lanza EntidadNoEncontrada si no existe.
         """
 
     async def cerrar(self) -> None:

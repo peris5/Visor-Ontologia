@@ -6,13 +6,34 @@ import { Persona } from '../src/modelo/Persona.js';
 import { Organizacion } from '../src/modelo/Organizacion.js';
 import { ObraDeArte } from '../src/modelo/ObraDeArte.js';
 import { TipoEntidad } from '../src/modelo/TipoEntidad.js';
-import { DATOS_EJEMPLO, vecindarioDesdeDatos } from './utilidadesPruebas.js';
+import { VECINDARIO_EJEMPLO, CONTEXTO_PRUEBAS } from './utilidadesPruebas.js';
 
 /*
- * Pruebas de RepositorioVecindario (src/datos/). Incluyen las de
- * RepositorioSimulado del incremento 1 (es casi la misma clase), adaptadas
- * al formato del JSON de /api/vecindario.
+ * Pruebas de RepositorioVecindario (src/datos/) con el formato de
+ * /api/vecindario desde el incremento 3b (entidades en bruto de Neo4j y
+ * relaciones derivadas). Incluyen las de RepositorioSimulado del incremento 1.
  */
+
+/**
+ * El contexto de las pruebas: idioma, nombres de los tipos, etiquetas de
+ * entidad y los tipos que hay en los datos (con sus padres).
+ *
+ * @returns {Object}
+ */
+function crearContexto() {
+  return {
+    idioma: "es",
+    nombresTipos: { Mentorship: "Mentoría", Paint: "Pintura", Creation: "Creación", Exposition: "Exposición" },
+    etiquetasEntidad: { Person: "PERSONA", Organization: "ORGANIZACION", HeritageItem: "OBRA_DE_ARTE" },
+    tipos: [
+      { id: "Mentorship", padres: ["Relationship"] },
+      { id: "Paint", padres: ["Creation", "Event"] },
+      { id: "Exposition", padres: ["Event"] },
+      { id: "Marriage", padres: ["Related", "Relationship"] },
+      { id: "STUDENT_OF", padres: [] }
+    ]
+  };
+}
 
 /**
  * Un vecindario pequeño con el formato de /api/vecindario.
@@ -24,34 +45,45 @@ function crearVecindarioDePrueba() {
     idCentral: "A",
     umbral: 0.3,
     recortado: false,
+    relevanciasAsignadas: 3,
+    relevanciasReutilizadas: 1,
     entidades: [
-      { id: "A", tipo: "PERSONA", nombre: "Ana", descripcion: "Pintora", atributos: { nacionalidad: "Española" } },
-      { id: "B", tipo: "PERSONA", nombre: "Bruno", descripcion: "", atributos: {} },
-      { id: "C", tipo: "OBRA_DE_ARTE", nombre: "Cuadro azul", descripcion: "", atributos: { tecnica: "Óleo" } },
-      { id: "D", tipo: "ORGANIZACION", nombre: "Academia", descripcion: "", atributos: {} }
+      { id: "A", etiquetas: ["Person", "Creator", "Painter"], propiedades: { name: "Ana", lastName: "Roig Peris" } },
+      { id: "B", etiquetas: ["Person"], propiedades: { name: "Bruno" } },
+      { id: "C", etiquetas: ["HeritageItem"], propiedades: { name_es: "Cuadro azul", name_ca: "Quadre blau",
+        dimensions: "10 × 20 cm" } },
+      { id: "D", etiquetas: ["Organization"], propiedades: { name_es: "Academia", name_en: "Academy" } }
     ],
     relaciones: [
-      { id: "r1", origen: "A", destino: "B", tipo: "maestro_de", valor: 0.9 },
-      { id: "r2", origen: "B", destino: "C", tipo: "autor_de", valor: 0.7 },
-      { id: "r3", origen: "C", destino: "A", tipo: "autor_de", valor: 0.4 },
-      { id: "r4", origen: "A", destino: "D", tipo: "miembro_de", valor: 0.5 }
-    ],
-    tiposRelacion: ["maestro_de", "autor_de", "miembro_de", "conserva"]
+      { id: "m1|A|B", idIntermedio: "m1", origen: "A", destino: "B", tipo: "Mentorship", padres: ["Relationship"],
+        valor: 0.85, roles: { A: "maestra", B: "aprendiz" },
+        periodo: { from: "1902", to: "1908", description: "" }, lugar: "Valencia", fecha: null },
+      { id: "p1|B|C", idIntermedio: "p1", origen: "B", destino: "C", tipo: "Paint", padres: ["Creation", "Event"],
+        valor: 0.9, roles: { B: "autor" }, periodo: null, lugar: null, fecha: "1910" },
+      { id: "p2|A|C", idIntermedio: "p2", origen: "A", destino: "C", tipo: "Paint", padres: ["Creation", "Event"],
+        valor: 0.9, roles: {}, periodo: null, lugar: null, fecha: null },
+      { id: "e1|C|D", idIntermedio: "e1", origen: "C", destino: "D", tipo: "Exposition", padres: ["Event"],
+        valor: 0.5, roles: {}, periodo: null, lugar: null, fecha: null }
+    ]
   };
 }
 
 /**
- * @param {Relacion[]} relaciones
+ * @param {RepositorioVecindario} repositorio
  * @param {string} idRelacion
- * @returns {boolean}
+ * @returns {Promise<Relacion|null>}
  */
-function contieneRelacionConId(relaciones, idRelacion) {
-  for (let i = 0; i < relaciones.length; i++) {
-    if (relaciones[i].getId() === idRelacion) {
-      return true;
+async function buscarRelacion(repositorio, idRelacion) {
+  const tipos = ["A", "B", "C", "D"];
+  for (let i = 0; i < tipos.length; i++) {
+    const relaciones = await repositorio.obtenerRelaciones(tipos[i]);
+    for (let j = 0; j < relaciones.length; j++) {
+      if (relaciones[j].getId() === idRelacion) {
+        return relaciones[j];
+      }
     }
   }
-  return false;
+  return null;
 }
 
 /**
@@ -69,119 +101,112 @@ async function buscarTipo(repositorio, idTipo) {
   return null;
 }
 
-prueba("RepositorioVecindario: convierte el JSON en entidades del tipo correcto", async function () {
-  const repositorio = new RepositorioVecindario(crearVecindarioDePrueba());
+prueba("RepositorioVecindario: crea entidades del tipo correcto a partir de sus etiquetas", async function () {
+  const repositorio = new RepositorioVecindario(crearVecindarioDePrueba(), crearContexto());
   const ana = await repositorio.obtenerEntidad("A");
   comprobar(ana instanceof Persona, "A debería ser una Persona");
   comprobar((await repositorio.obtenerEntidad("C")) instanceof ObraDeArte, "C debería ser una ObraDeArte");
   comprobar((await repositorio.obtenerEntidad("D")) instanceof Organizacion, "D debería ser una Organizacion");
-  comprobarIgual(ana.getNombre(), "Ana", "nombre de A");
-  comprobarIgual(ana.getDescripcion(), "Pintora", "descripción de A");
-  comprobarIgual(ana.getAtributos().get("nacionalidad"), "Española", "atributo de A");
+  comprobarIgual(ana.getNombre(), "Ana Roig Peris", "nombre de A");
+  comprobarIgual(ana.getSubtipos().join(","), "Creator,Painter", "subtipos de A");
+  comprobarIgual((await repositorio.obtenerEntidad("C")).getDimensiones(), "10 × 20 cm", "dimensiones de C");
+  comprobarIgual((await repositorio.obtenerEntidad("D")).getNombre(), "Academia", "nombre de D");
 });
 
 prueba("RepositorioVecindario: obtenerRelaciones devuelve las relaciones en los dos sentidos", async function () {
-  const repositorio = new RepositorioVecindario(crearVecindarioDePrueba());
-  const relaciones = await repositorio.obtenerRelaciones("A");
-  comprobarIgual(relaciones.length, 3, "número de relaciones de A");
-  comprobar(contieneRelacionConId(relaciones, "r1"), "debe incluir r1 (A es el origen)");
-  comprobar(contieneRelacionConId(relaciones, "r3"), "debe incluir r3 (A es el destino)");
-  comprobar(contieneRelacionConId(relaciones, "r4"), "debe incluir r4 (A es el origen)");
+  const repositorio = new RepositorioVecindario(crearVecindarioDePrueba(), crearContexto());
+  const relaciones = await repositorio.obtenerRelaciones("C");
+  comprobarIgual(relaciones.length, 3, "número de relaciones de C");
+  const copia = await repositorio.obtenerRelaciones("C");
+  copia.pop();
+  comprobarIgual((await repositorio.obtenerRelaciones("C")).length, 3, "cambiar la lista devuelta no cambia el repositorio");
 });
 
-prueba("RepositorioVecindario: cambiar la lista devuelta no cambia el repositorio", async function () {
-  const repositorio = new RepositorioVecindario(crearVecindarioDePrueba());
-  const relaciones = await repositorio.obtenerRelaciones("A");
-  relaciones.pop();
-  comprobarIgual((await repositorio.obtenerRelaciones("A")).length, 3, "siguen siendo 3");
+prueba("RepositorioVecindario: las relaciones llevan valor, roles, periodo, lugar y fecha", async function () {
+  const repositorio = new RepositorioVecindario(crearVecindarioDePrueba(), crearContexto());
+  const mentoria = await buscarRelacion(repositorio, "m1|A|B");
+  comprobarIgual(mentoria.getValor(), 0.85, "valor (la relevancia asignada)");
+  comprobarIgual(mentoria.getIdIntermedio(), "m1", "id del intermediario");
+  comprobarIgual(mentoria.getRol(mentoria.getOrigen()), "maestra", "rol del origen");
+  comprobarIgual(mentoria.getRol(mentoria.getDestino()), "aprendiz", "rol del destino");
+  comprobarIgual(mentoria.getPeriodo().getTexto(), "1902–1908", "periodo");
+  comprobarIgual(mentoria.getLugar(), "Valencia", "lugar");
+  const pintura = await buscarRelacion(repositorio, "p1|B|C");
+  comprobarIgual(pintura.getFecha(), "1910", "fecha");
+  comprobarIgual(pintura.getPeriodo(), null, "sin periodo");
+  comprobarIgual(pintura.getRol(pintura.getDestino()), "", "la obra no tiene rol");
 });
 
-prueba("RepositorioVecindario: un solo TipoRelacion por id, con nombre y color", async function () {
-  const repositorio = new RepositorioVecindario(crearVecindarioDePrueba());
-  const deB = await repositorio.obtenerRelaciones("B");
-  const deC = await repositorio.obtenerRelaciones("C");
-  let r2 = null;
-  let r3 = null;
-  for (let i = 0; i < deC.length; i++) {
-    if (deC[i].getId() === "r2") {
-      r2 = deC[i];
-    }
-    if (deC[i].getId() === "r3") {
-      r3 = deC[i];
-    }
-  }
-  comprobar(r2.getTipo() === r3.getTipo(), "r2 y r3 (autor_de) deben compartir el mismo objeto TipoRelacion");
-  comprobar(deB[0].getTipo() !== r2.getTipo(), "tipos distintos son objetos distintos");
-  comprobarIgual(r2.getTipo().getNombre(), "Autor de", "nombre legible");
-  comprobar(/^#[0-9a-f]{6}$/.test(r2.getTipo().getColor()), "color con formato #rrggbb: " + r2.getTipo().getColor());
+prueba("RepositorioVecindario: un solo TipoRelacion por id, con nombre, padres y familia", async function () {
+  const repositorio = new RepositorioVecindario(crearVecindarioDePrueba(), crearContexto());
+  const p1 = await buscarRelacion(repositorio, "p1|B|C");
+  const p2 = await buscarRelacion(repositorio, "p2|A|C");
+  comprobar(p1.getTipo() === p2.getTipo(), "las dos pinturas comparten el mismo objeto TipoRelacion");
+  comprobarIgual(p1.getTipo().getNombre(), "Pintura", "nombre traducido");
+  comprobarIgual(p1.getTipo().getPadres().join(","), "Creation,Event", "padres");
+  comprobarIgual(p1.getTipo().getFamilia(), "Creation", "familia");
+  comprobarIgual(p1.getTipo().getNombreFamilia(), "Creación", "nombre de la familia");
+  comprobar(/^#[0-9a-f]{6}$/.test(p1.getTipo().getColor()), "color con formato #rrggbb");
 });
 
-prueba("RepositorioVecindario: los colores se reparten con los ids en orden alfabético", async function () {
-  const repositorio = new RepositorioVecindario(crearVecindarioDePrueba());
-  // Orden alfabético de tiposRelacion: autor_de, conserva, maestro_de, miembro_de.
-  comprobarIgual((await buscarTipo(repositorio, "autor_de")).getColor(), PaletaColores.colorPara(0), "autor_de, el 1.º");
-  comprobarIgual((await buscarTipo(repositorio, "maestro_de")).getColor(), PaletaColores.colorPara(2), "maestro_de, el 3.º");
-  comprobarIgual((await buscarTipo(repositorio, "miembro_de")).getColor(), PaletaColores.colorPara(3), "miembro_de, el 4.º");
+prueba("RepositorioVecindario: los colores se reparten sobre todos los tipos en orden alfabético", async function () {
+  const repositorio = new RepositorioVecindario(crearVecindarioDePrueba(), crearContexto());
+  // Orden alfabético de los tipos del contexto: Exposition, Marriage, Mentorship, Paint, STUDENT_OF.
+  comprobarIgual((await buscarTipo(repositorio, "Exposition")).getColor(), PaletaColores.colorPara(0), "Exposition, el 1.º");
+  comprobarIgual((await buscarTipo(repositorio, "Mentorship")).getColor(), PaletaColores.colorPara(2), "Mentorship, el 3.º");
+  comprobarIgual((await buscarTipo(repositorio, "Paint")).getColor(), PaletaColores.colorPara(3), "Paint, el 4.º");
 });
 
 prueba("RepositorioVecindario: mismo color para el mismo tipo en dos vecindarios distintos", async function () {
-  const primero = new RepositorioVecindario(crearVecindarioDePrueba());
-  // Otro vecindario con otras entidades y relaciones, en otro orden, y en el
-  // que maestro_de no es el primer tipo que aparece.
+  const primero = new RepositorioVecindario(crearVecindarioDePrueba(), crearContexto());
   const segundo = new RepositorioVecindario({
-    idCentral: "X",
-    umbral: 0.5,
-    recortado: false,
+    idCentral: "X", umbral: 0.5, recortado: false,
     entidades: [
-      { id: "X", tipo: "ORGANIZACION", nombre: "Museo", descripcion: "", atributos: {} },
-      { id: "Y", tipo: "PERSONA", nombre: "Yago", descripcion: "", atributos: {} }
+      { id: "X", etiquetas: ["Person"], propiedades: { name: "Xavi" } },
+      { id: "Y", etiquetas: ["Person"], propiedades: { name: "Yago" } }
     ],
     relaciones: [
-      { id: "r9", origen: "X", destino: "Y", tipo: "conserva", valor: 0.8 },
-      { id: "r8", origen: "Y", destino: "X", tipo: "maestro_de", valor: 0.6 }
-    ],
-    tiposRelacion: ["conserva", "miembro_de", "autor_de", "maestro_de"]
-  });
-  const tipos = ["maestro_de", "autor_de", "conserva", "miembro_de"];
+      { id: "s|X|Y", idIntermedio: "s", origen: "X", destino: "Y", tipo: "STUDENT_OF", padres: [], valor: 0.5,
+        roles: {}, periodo: null, lugar: null, fecha: null },
+      { id: "m9|X|Y", idIntermedio: "m9", origen: "X", destino: "Y", tipo: "Mentorship", padres: ["Relationship"],
+        valor: 0.85, roles: {}, periodo: null, lugar: null, fecha: null }
+    ]
+  }, crearContexto());
+  const tipos = ["Mentorship", "Paint", "Exposition", "STUDENT_OF"];
   for (let i = 0; i < tipos.length; i++) {
-    const enElPrimero = await buscarTipo(primero, tipos[i]);
-    const enElSegundo = await buscarTipo(segundo, tipos[i]);
-    comprobarIgual(enElSegundo.getColor(), enElPrimero.getColor(), "color de " + tipos[i]);
+    comprobarIgual((await buscarTipo(segundo, tipos[i])).getColor(), (await buscarTipo(primero, tipos[i])).getColor(),
+      "color de " + tipos[i]);
   }
 });
 
-prueba("RepositorioVecindario: sin la lista tiposRelacion usa los tipos de sus relaciones", async function () {
+prueba("RepositorioVecindario: un tipo nuevo (sin nombre en la configuración) tiene nombre automático", async function () {
   const datos = crearVecindarioDePrueba();
-  delete datos.tiposRelacion;
-  const repositorio = new RepositorioVecindario(datos);
-  const tipos = await repositorio.obtenerTiposRelacion();
-  comprobarIgual(tipos.length, 3, "autor_de, maestro_de y miembro_de");
-  comprobarIgual(tipos[0].getId(), "autor_de", "ordenados por id");
+  datos.relaciones.push({ id: "c1|A|D", idIntermedio: "c1", origen: "A", destino: "D", tipo: "Apprenticeship",
+    padres: ["Professional", "Relationship"], valor: 0.55, roles: {}, periodo: null, lugar: null, fecha: null });
+  const repositorio = new RepositorioVecindario(datos, crearContexto());
+  const tipo = await buscarTipo(repositorio, "Apprenticeship");
+  comprobarIgual(tipo.getNombre(), "Apprenticeship", "nombre automático");
+  comprobarIgual(tipo.getFamilia(), "Professional", "familia");
+  comprobarIgual(tipo.getNombreFamilia(), "Professional", "nombre automático de la familia");
 });
 
 prueba("RepositorioVecindario: obtenerEntidad con un id inexistente devuelve null", async function () {
-  const repositorio = new RepositorioVecindario(crearVecindarioDePrueba());
+  const repositorio = new RepositorioVecindario(crearVecindarioDePrueba(), crearContexto());
   comprobarIgual(await repositorio.obtenerEntidad("no_existe"), null, "entidad inexistente");
 });
 
 prueba("RepositorioVecindario: todos los métodos devuelven una Promise", async function () {
-  const repositorio = new RepositorioVecindario(crearVecindarioDePrueba());
-  const resultadoBuscar = repositorio.buscarEntidades("a", null, 10);
-  const resultadoObtener = repositorio.obtenerEntidad("A");
-  const resultadoRelaciones = repositorio.obtenerRelaciones("A");
-  const resultadoTipos = repositorio.obtenerTiposRelacion();
-  comprobar(resultadoBuscar instanceof Promise, "buscarEntidades debe devolver una Promise");
-  comprobar(resultadoObtener instanceof Promise, "obtenerEntidad debe devolver una Promise");
-  comprobar(resultadoRelaciones instanceof Promise, "obtenerRelaciones debe devolver una Promise");
-  comprobar(resultadoTipos instanceof Promise, "obtenerTiposRelacion debe devolver una Promise");
-  await resultadoBuscar;
-  await resultadoObtener;
-  await resultadoRelaciones;
-  await resultadoTipos;
+  const repositorio = new RepositorioVecindario(crearVecindarioDePrueba(), crearContexto());
+  const resultados = [repositorio.buscarEntidades("a", null, 10), repositorio.obtenerEntidad("A"),
+    repositorio.obtenerRelaciones("A"), repositorio.obtenerTiposRelacion()];
+  for (let i = 0; i < resultados.length; i++) {
+    comprobar(resultados[i] instanceof Promise, "el método " + i + " debe devolver una Promise");
+    await resultados[i];
+  }
 });
 
 prueba("RepositorioVecindario: buscarEntidades filtra por subcadena, tipo y límite", async function () {
-  const repositorio = new RepositorioVecindario(crearVecindarioDePrueba());
+  const repositorio = new RepositorioVecindario(crearVecindarioDePrueba(), crearContexto());
   comprobarIgual((await repositorio.buscarEntidades("U", null, null)).length, 2, "nombres con 'u' (Bruno, Cuadro azul)");
   comprobarIgual((await repositorio.buscarEntidades("", TipoEntidad.PERSONA, null)).length, 2, "número de personas");
   comprobarIgual((await repositorio.buscarEntidades("", null, 1)).length, 1, "con límite 1");
@@ -189,10 +214,11 @@ prueba("RepositorioVecindario: buscarEntidades filtra por subcadena, tipo y lím
 
 prueba("RepositorioVecindario: una relación con una entidad que no está da error", function () {
   const datos = crearVecindarioDePrueba();
-  datos.relaciones.push({ id: "r9", origen: "A", destino: "Z", tipo: "maestro_de", valor: 0.5 });
+  datos.relaciones.push({ id: "z|A|Z", idIntermedio: "z", origen: "A", destino: "Z", tipo: "Paint", padres: [],
+    valor: 0.5, roles: {}, periodo: null, lugar: null, fecha: null });
   let huboError = false;
   try {
-    new RepositorioVecindario(datos);
+    new RepositorioVecindario(datos, crearContexto());
   } catch (error) {
     huboError = true;
   }
@@ -208,13 +234,20 @@ prueba("RepositorioVecindario: la interfaz RepositorioDatos no está implementad
     huboError = true;
   }
   comprobar(huboError, "obtenerEntidad de la interfaz debería fallar");
-  comprobar(new RepositorioVecindario(crearVecindarioDePrueba()) instanceof RepositorioDatos, "implementa RepositorioDatos");
+  comprobar(new RepositorioVecindario(crearVecindarioDePrueba(), crearContexto()) instanceof RepositorioDatos,
+    "implementa RepositorioDatos");
 });
 
-prueba("RepositorioVecindario: los datos de ejemplo se cargan sin errores", async function () {
-  const repositorio = new RepositorioVecindario(vecindarioDesdeDatos(DATOS_EJEMPLO, "p01", 0));
+prueba("RepositorioVecindario: el vecindario que envía el servidor se carga sin errores", async function () {
+  const repositorio = new RepositorioVecindario(VECINDARIO_EJEMPLO, CONTEXTO_PRUEBAS);
   const todas = await repositorio.buscarEntidades("", null, null);
+  comprobarIgual(todas.length, VECINDARIO_EJEMPLO.entidades.length, "número de entidades");
+  const nombres = [];
   const tipos = await repositorio.obtenerTiposRelacion();
-  comprobarIgual(todas.length, DATOS_EJEMPLO.entidades.length, "número de entidades");
-  comprobar(tipos.length >= 5, "debe haber al menos 5 tipos de relación");
+  for (let i = 0; i < tipos.length; i++) {
+    nombres.push(tipos[i].getNombre());
+  }
+  comprobar(nombres.includes("Matrimonio"), "Matrimonio");
+  comprobar(nombres.includes("Apprenticeship"), "Apprenticeship (tipo de prueba, nombre automático)");
+  comprobar(nombres.includes("Student of"), "Student of (relación directa de prueba)");
 });

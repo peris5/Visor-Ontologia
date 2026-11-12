@@ -27,8 +27,8 @@ import { ObraDeArte } from '../src/modelo/ObraDeArte.js';
  * @returns {Subgrafo}
  */
 function crearSubgrafoDe(id, umbral) {
-  const central = new Persona({ id: id, nombre: "Persona " + id });
-  const obra = new ObraDeArte({ id: "obra-" + id, nombre: "Obra de " + id });
+  const central = new Persona({ id: id, propiedades: { name: "Persona " + id } });
+  const obra = new ObraDeArte({ id: "obra-" + id, propiedades: { name_es: "Obra de " + id } });
   const subgrafo = new Subgrafo(central, umbral);
   subgrafo.agregarNodo(new NodoRelevante(obra, 0.8, 1));
   subgrafo.agregarRelacion(new Relacion("r-" + id, central, obra, new TipoRelacion("autor_de", "Autor de", "#ff0000"), 0.8));
@@ -45,6 +45,23 @@ class GestorFalso {
     this.peticiones = [];
     this.manual = false;
     this.pendientes = [];
+    this.detallesPedidos = [];
+    this.detalleFalla = false;
+  }
+
+  obtenerDetalle(idEntidad) {
+    this.detallesPedidos.push(idEntidad);
+    const falla = this.detalleFalla;
+    // Contesta en la siguiente vuelta del temporizador, como una petición de verdad.
+    return new Promise(function (resolver, rechazar) {
+      setTimeout(function () {
+        if (falla) {
+          rechazar(new Error("sin detalle"));
+        } else {
+          resolver({ idEntidad: idEntidad });
+        }
+      }, 0);
+    });
   }
 
   obtenerSubgrafo(idEntidad, umbral) {
@@ -143,6 +160,16 @@ class InterfazFalsa {
     this.habilitadoVolver = null;
     this.umbral = null;
     this.leyendas = [];
+    this.detalles = [];
+    this.erroresDetalle = [];
+  }
+
+  mostrarDetalle(idEntidad, detalle) {
+    this.detalles.push(idEntidad);
+  }
+
+  mostrarErrorDetalle(idEntidad, mensaje) {
+    this.erroresDetalle.push(idEntidad + ": " + mensaje);
   }
 
   mostrarEntidad(entidad, nodo, subgrafo) {
@@ -332,4 +359,44 @@ prueba("Controlador: seleccionar un nodo o una relación los resalta y muestra s
   comprobarIgual(p.interfaz.relacionesMostradas.join(","), "r-A", "información de la relación");
   p.controlador.restablecerVista();
   comprobarIgual(p.escena.camaraRestablecida, 1, "vista inicial");
+});
+
+/**
+ * Espera a que terminen las promesas pendientes (el detalle se pide sin await).
+ *
+ * @returns {Promise<void>}
+ */
+function esperarUnMomento() {
+  return new Promise(function (resolver) {
+    setTimeout(resolver, 0);
+  });
+}
+
+prueba("Controlador: al cargar y al seleccionar un nodo pide su detalle y se lo da a la interfaz", async function () {
+  const p = crearControladorDePrueba();
+  await p.controlador.iniciar("A");
+  await esperarUnMomento();
+  comprobarIgual(p.gestor.detallesPedidos.join(","), "A", "detalle de la central");
+  comprobarIgual(p.interfaz.detalles.join(","), "A", "mostrado en el panel");
+  p.controlador.seleccionarNodo(p.controlador.getSubgrafoActual().getNodo("obra-A"));
+  await esperarUnMomento();
+  comprobarIgual(p.interfaz.detalles.join(","), "A,obra-A", "detalle del nodo seleccionado");
+});
+
+prueba("Controlador: si el detalle falla, aviso en el panel y el grafo sigue", async function () {
+  const p = crearControladorDePrueba();
+  p.gestor.detalleFalla = true;
+  await p.controlador.iniciar("A");
+  await esperarUnMomento();
+  comprobarIgual(p.interfaz.erroresDetalle.join(","), "A: sin detalle", "aviso");
+  comprobarIgual(p.controlador.getEstado(), EstadoCarga.LISTO, "el estado no cambia");
+});
+
+prueba("Controlador: un detalle que llega cuando ya se ha seleccionado otra cosa se ignora", async function () {
+  const p = crearControladorDePrueba();
+  await p.controlador.iniciar("A");
+  // Antes de que llegue el detalle de A, se selecciona una relación.
+  p.controlador.seleccionarRelacion(p.controlador.getSubgrafoActual().getRelaciones()[0]);
+  await esperarUnMomento();
+  comprobarIgual(p.interfaz.detalles.length, 0, "no se muestra");
 });

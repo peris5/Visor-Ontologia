@@ -113,3 +113,40 @@ prueba("ClienteServicio: ya no tiene los métodos del incremento 2", function ()
   comprobar(typeof cliente.buscarEntidades === "undefined", "buscarEntidades");
   comprobar(typeof ClienteServicio.convertirSubgrafo === "undefined", "convertirSubgrafo");
 });
+
+prueba("ClienteServicio: obtenerTipos pide su ruta", async function () {
+  await conFetchFalso(200, "[{\"id\":\"Marriage\",\"padres\":[\"Related\"]}]", async function (urlsPedidas) {
+    const tipos = await new ClienteServicio("/api").obtenerTipos();
+    comprobarIgual(urlsPedidas[0], "/api/tipos", "URL");
+    comprobarIgual(tipos[0].id, "Marriage", "devuelve el JSON tal cual");
+  });
+});
+
+prueba("ClienteServicio: convertirDetalle crea eventos, imágenes, fuentes y ubicación", function () {
+  const contexto = { idioma: "ca", etiquetasEntidad: { Person: "PERSONA", Organization: "ORGANIZACION" } };
+  const detalle = ClienteServicio.convertirDetalle({
+    id: "n1",
+    eventos: [{
+      id: "e1", tipo: "Birth", padres: ["Event"], sinRelacion: true, rol: null,
+      propiedades: { name_es: "Nacimiento de Ana", name_ca: "Naixement d'Ana" },
+      periodo: { from: "1861", to: "1861", description: "" },
+      lugar: { name_es: "Játiva", name_ca: "Xàtiva" }, fecha: "1861",
+      participantes: [{ id: "n9", etiquetas: ["Organization"], propiedades: { name_ca: "Museu" } }]
+    }],
+    imagenes: [{ id: "i1", propiedades: { url: "https://example.org/imagenes/i1.jpg", caption: "Ana" }, orden: 1 }],
+    fuentes: [{ id: "f1", etiquetas: ["ExternalSource", "Book"], tipo: "Book",
+      propiedades: { name: "Diccionario", url: "", lastUpdated: "1998-01-01" }, dateUpdated: null, externalId: "REF-1" }],
+    ubicacion: [{ name_es: "Valencia", name_ca: "València" }, { name_es: "España", name_ca: "Espanya" }]
+  }, contexto);
+  const evento = detalle.getEventos()[0];
+  comprobarIgual(evento.getTipo(), "Birth", "tipo del evento");
+  comprobarIgual(evento.getNombre(), "Naixement d'Ana", "nombre en el idioma del contexto");
+  comprobarIgual(evento.getLugar(), "Xàtiva", "lugar en el idioma del contexto");
+  comprobarIgual(evento.getCuando(), "1861", "cuándo");
+  comprobarIgual(evento.getParticipantes().join(","), "Museu", "participantes");
+  comprobar(evento.esSinRelacion(), "nacimiento: sin relación");
+  comprobarIgual(detalle.getImagenes()[0].getPie(), "Ana", "imagen");
+  comprobarIgual(detalle.getFuentes()[0].getTipo(), "Book", "subtipo de la fuente");
+  comprobarIgual(detalle.getFuentes()[0].getActualizada(), "1998-01-01", "sin dateUpdated, la de la fuente");
+  comprobarIgual(detalle.getUbicacion().join(", "), "València, Espanya", "ubicación");
+});

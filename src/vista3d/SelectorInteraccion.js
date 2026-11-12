@@ -242,7 +242,8 @@ export class SelectorInteraccion {
     } else {
       const relacion = visual.getRelacion();
       texto = relacion.getTipo().getNombre() + ": " +
-        relacion.getOrigen().getNombre() + " → " + relacion.getDestino().getNombre();
+        SelectorInteraccion.#conRol(relacion, relacion.getOrigen()) + " → " +
+        SelectorInteraccion.#conRol(relacion, relacion.getDestino());
     }
     // textContent (y no innerHTML) para que un nombre nunca se interprete como HTML.
     this.#etiqueta.textContent = texto;
@@ -252,6 +253,21 @@ export class SelectorInteraccion {
     this.#etiqueta.style.left = (evento.clientX - rectangulo.left + 14) + "px";
     this.#etiqueta.style.top = (evento.clientY - rectangulo.top + 14) + "px";
     this.#etiqueta.hidden = false;
+  }
+
+  /**
+   * (Privado) «Nombre (rol)», o solo el nombre si no tiene rol.
+   *
+   * @param {Relacion} relacion
+   * @param {Entidad} entidad
+   * @returns {string}
+   */
+  static #conRol(relacion, entidad) {
+    const rol = relacion.getRol(entidad);
+    if (rol === "") {
+      return entidad.getNombre();
+    }
+    return entidad.getNombre() + " (" + rol + ")";
   }
 
   /**

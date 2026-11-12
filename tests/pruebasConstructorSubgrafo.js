@@ -2,14 +2,15 @@ import { prueba, comprobar, comprobarIgual, redondear } from './miniPruebas.js';
 import { ConstructorSubgrafo } from '../src/logica/ConstructorSubgrafo.js';
 import { RelevanciaDesdeBD } from '../src/logica/RelevanciaDesdeBD.js';
 import { RepositorioVecindario } from '../src/datos/RepositorioVecindario.js';
-import { DATOS_EJEMPLO, vecindarioDesdeDatos } from './utilidadesPruebas.js';
-import subgrafoIncremento2 from './subgrafoIncremento2.json';
+import { VECINDARIO_EJEMPLO, CONTEXTO_PRUEBAS, vecindarioDesdeDatos } from './utilidadesPruebas.js';
 
 /*
  * Pruebas de ConstructorSubgrafo (src/logica/), recuperadas del incremento 1
  * (los mismos casos y valores que tenían en Python). Como RepositorioSimulado
  * ya no está en el navegador, los datos se le dan con un RepositorioVecindario
- * que contiene todos los datos (vecindarioDesdeDatos).
+ * que contiene todos los datos (vecindarioDesdeDatos). Los «datos de
+ * ejemplo» son el vecindario completo que genera el servidor
+ * (VECINDARIO_EJEMPLO), con las relevancias que asignó según el tipo.
  *
  * Mini grafo de prueba (valores de cada relación entre paréntesis):
  *
@@ -61,7 +62,7 @@ function crearDatosPruebaConstructor() {
  * @returns {ConstructorSubgrafo}
  */
 function crearConstructorDePrueba(datos, umbral, maxNodos) {
-  const repositorio = new RepositorioVecindario(vecindarioDesdeDatos(datos, "", 0));
+  const repositorio = new RepositorioVecindario(vecindarioDesdeDatos(datos), CONTEXTO_PRUEBAS);
   const estrategia = new RelevanciaDesdeBD();
   return new ConstructorSubgrafo(repositorio, estrategia, umbral, maxNodos);
 }
@@ -127,12 +128,12 @@ prueba("Constructor: ningún nodo ni relación queda por debajo del umbral", asy
   const umbrales = [0.1, 0.3, 0.5, 0.7];
   for (let u = 0; u < umbrales.length; u++) {
     const umbral = umbrales[u];
-    const constructor = crearConstructorDePrueba(DATOS_EJEMPLO, umbral, 150);
-    const subgrafo = await constructor.construir("p01");
+    const constructor = crearConstructorDePrueba(VECINDARIO_EJEMPLO, umbral, 150);
+    const subgrafo = await constructor.construir("n1");
     const nodos = subgrafo.getNodos();
     for (let i = 0; i < nodos.length; i++) {
       const nodo = nodos[i];
-      const esLaCentral = nodo.getEntidad().getId() === "p01";
+      const esLaCentral = nodo.getEntidad().getId() === "n1";
       if (!esLaCentral) {
         comprobar(nodo.getRelevancia() > umbral, "nodo " + nodo.getEntidad().getId() + " por debajo del umbral " + umbral);
       }
@@ -145,8 +146,8 @@ prueba("Constructor: ningún nodo ni relación queda por debajo del umbral", asy
 });
 
 prueba("Constructor: las relaciones solo unen nodos del subgrafo", async function () {
-  const constructor = crearConstructorDePrueba(DATOS_EJEMPLO, 0.3, 150);
-  const subgrafo = await constructor.construir("p01");
+  const constructor = crearConstructorDePrueba(VECINDARIO_EJEMPLO, 0.3, 150);
+  const subgrafo = await constructor.construir("n1");
   const relaciones = subgrafo.getRelaciones();
   for (let i = 0; i < relaciones.length; i++) {
     const relacion = relaciones[i];
@@ -173,11 +174,11 @@ prueba("Constructor: se conservan las relaciones múltiples entre un par", async
 });
 
 prueba("Constructor: nunca más de maxNodos y se conservan los más relevantes", async function () {
-  const completo = await crearConstructorDePrueba(DATOS_EJEMPLO, 0.1, 150).construir("p01");
+  const completo = await crearConstructorDePrueba(VECINDARIO_EJEMPLO, 0.1, 150).construir("n1");
   const maximos = [1, 2, 3, 5, 8];
   for (let m = 0; m < maximos.length; m++) {
     const maxNodos = maximos[m];
-    const limitado = await crearConstructorDePrueba(DATOS_EJEMPLO, 0.1, maxNodos).construir("p01");
+    const limitado = await crearConstructorDePrueba(VECINDARIO_EJEMPLO, 0.1, maxNodos).construir("n1");
     comprobar(limitado.getNumeroNodos() <= maxNodos, "con maxNodos " + maxNodos + " hay " + limitado.getNumeroNodos() + " nodos");
 
     // La relevancia más baja que se ha quedado dentro...
@@ -212,7 +213,7 @@ prueba("Constructor: al subir el umbral el subgrafo no crece", async function ()
   let relacionesAnteriores = Infinity;
   for (let paso = 0; paso <= 20; paso++) {
     const umbral = paso * 0.05;
-    const subgrafo = await crearConstructorDePrueba(DATOS_EJEMPLO, umbral, 150).construir("p01");
+    const subgrafo = await crearConstructorDePrueba(VECINDARIO_EJEMPLO, umbral, 150).construir("n1");
     const numeroDeNodos = subgrafo.getNumeroNodos();
     const numeroDeRelaciones = subgrafo.getRelaciones().length;
     comprobar(numeroDeNodos <= nodosAnteriores, "con umbral " + umbral + " hay más nodos que con el anterior");
@@ -223,7 +224,7 @@ prueba("Constructor: al subir el umbral el subgrafo no crece", async function ()
 });
 
 prueba("Constructor: los datos de ejemplo tienen caminos de 3 o más saltos", async function () {
-  const subgrafo = await crearConstructorDePrueba(DATOS_EJEMPLO, 0.3, 150).construir("p01");
+  const subgrafo = await crearConstructorDePrueba(VECINDARIO_EJEMPLO, 0.3, 150).construir("n1");
   const nodos = subgrafo.getNodos();
   let nivelMaximo = 0;
   for (let i = 0; i < nodos.length; i++) {
@@ -272,26 +273,4 @@ prueba("Constructor: setUmbral rechaza valores no válidos", function () {
   comprobarIgual(constructor.getUmbral(), 0.3, "el umbral no debe cambiar tras los errores");
   constructor.setUmbral(0.5);
   comprobarIgual(constructor.getUmbral(), 0.5, "un umbral válido sí se acepta");
-});
-
-prueba("Constructor: con los datos de ejemplo da EXACTAMENTE el subgrafo del incremento 2", async function () {
-  // subgrafoIncremento2.json se generó con el ConstructorSubgrafo de Python
-  // del incremento 2 (p01, umbral 0.3, 150 nodos) antes de borrarlo.
-  const subgrafo = await crearConstructorDePrueba(DATOS_EJEMPLO, 0.3, 150).construir("p01");
-  const esperado = subgrafoIncremento2.nodos;
-  comprobarIgual(subgrafo.getNumeroNodos(), esperado.length, "número de nodos");
-  const nodos = subgrafo.getNodos();
-  for (let i = 0; i < esperado.length; i++) {
-    // Cada nodo esperado es [id, relevancia, nivel, centralidad], en el orden en que entró.
-    const idEsperado = esperado[i][0];
-    comprobarIgual(nodos[i].getEntidad().getId(), idEsperado, "nodo número " + i);
-    comprobarIgual(redondear(nodos[i].getRelevancia()), redondear(esperado[i][1]), "relevancia de " + idEsperado);
-    comprobarIgual(nodos[i].getNivel(), esperado[i][2], "nivel de " + idEsperado);
-    comprobarIgual(redondear(nodos[i].getCentralidad()), redondear(esperado[i][3]), "centralidad de " + idEsperado);
-  }
-  const relaciones = subgrafo.getRelaciones();
-  comprobarIgual(relaciones.length, subgrafoIncremento2.relaciones.length, "número de relaciones");
-  for (let i = 0; i < relaciones.length; i++) {
-    comprobarIgual(relaciones[i].getId(), subgrafoIncremento2.relaciones[i], "relación número " + i);
-  }
 });

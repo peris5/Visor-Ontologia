@@ -21,9 +21,9 @@ import { FabricaEntidades } from '../src/datos/FabricaEntidades.js';
  * @returns {Object} { persona, organizacion, obra, tipo }
  */
 function crearElementosDePruebaModelo() {
-  const persona = new Persona({ id: "per1", nombre: "Persona de prueba", nacionalidad: "Española" });
-  const organizacion = new Organizacion({ id: "org1", nombre: "Organización de prueba", sede: "Ciudad" });
-  const obra = new ObraDeArte({ id: "obr1", nombre: "Obra de prueba", tecnica: "Óleo" });
+  const persona = new Persona({ id: "per1", propiedades: { name: "Persona", lastName: "de Prueba" } });
+  const organizacion = new Organizacion({ id: "org1", propiedades: { name_es: "Organización de prueba" } });
+  const obra = new ObraDeArte({ id: "obr1", propiedades: { name_es: "Obra de prueba", dimensions: "10 × 20 cm" } });
   const tipo = new TipoRelacion("autor_de", "Autor de", "#ff0000");
   return { persona: persona, organizacion: organizacion, obra: obra, tipo: tipo };
 }
@@ -45,11 +45,18 @@ prueba("Modelo: getTipo de cada subclase", function () {
   comprobarIgual(elementos.obra.getTipo(), TipoEntidad.OBRA_DE_ARTE, "ObraDeArte.getTipo()");
 });
 
-prueba("Modelo: getAtributos añade los campos propios de cada subclase", function () {
+prueba("Modelo: getAtributos solo tiene lo que existe (las dimensiones de una obra)", function () {
   const elementos = crearElementosDePruebaModelo();
-  comprobarIgual(elementos.persona.getAtributos().get("nacionalidad"), "Española", "nacionalidad de la persona");
-  comprobarIgual(elementos.organizacion.getAtributos().get("sede"), "Ciudad", "sede de la organización");
-  comprobarIgual(elementos.obra.getAtributos().get("tecnica"), "Óleo", "técnica de la obra");
+  comprobarIgual(elementos.obra.getAtributos().get("dimensiones"), "10 × 20 cm", "dimensiones de la obra");
+  comprobarIgual(elementos.persona.getAtributos().size, 0, "la persona no tiene atributos: el nombre no lo es");
+  comprobarIgual(elementos.organizacion.getAtributos().size, 0, "la organización tampoco");
+});
+
+prueba("Modelo: Persona usa nombre y apellidos", function () {
+  const elementos = crearElementosDePruebaModelo();
+  comprobarIgual(elementos.persona.getNombre(), "Persona de Prueba", "nombre completo");
+  comprobarIgual(elementos.persona.getNombrePropio(), "Persona", "nombre propio");
+  comprobarIgual(elementos.persona.getApellidos(), "de Prueba", "apellidos");
 });
 
 prueba("Modelo: getOtroExtremo devuelve la otra entidad en los dos sentidos", function () {

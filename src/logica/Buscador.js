@@ -11,6 +11,11 @@
  *  - a erratas de hasta distanciaMaxima letras ("picaso" encuentra
  *    "Pablo Picasso").
  *
+ * Desde el incremento 3b cada entidad puede tener VARIOS nombres (en
+ * castellano, valenciano e inglés; nombre y apellidos por separado): se
+ * busca en todos, así «Museu» y «Museo» encuentran la misma organización.
+ * Las sugerencias muestran el nombre en el idioma configurado.
+ *
  * Requisitos: RF-01 (buscar por nombre), RF-02 (sugerencias mientras se
  * escribe), RF-03 (filtro por tipo), RF-04 (sin distinguir mayúsculas ni
  * tildes), RF-05 (tolerante a erratas), RF-06 (sin resultados), RNF-03
@@ -26,7 +31,9 @@ export class Buscador {
   #distanciaMaxima;
 
   /**
-   * @param {Object[]} nombres - [{ id, nombre, tipo }] (el JSON de /api/nombres).
+   * @param {Object[]} nombres - [{ id, nombre, tipo, nombresAlternativos }]:
+   *   nombre es el que se muestra; nombresAlternativos (opcional), los demás
+   *   en los que también se busca. Los prepara Aplicacion a partir de /api/nombres.
    */
   constructor(nombres) {
     if (!Array.isArray(nombres)) {
@@ -42,11 +49,21 @@ export class Buscador {
     this.#indice = [];
     for (let i = 0; i < nombres.length; i++) {
       const entrada = nombres[i];
+      const normalizados = [this.#normalizar(entrada.nombre)];
+      if (Array.isArray(entrada.nombresAlternativos)) {
+        for (let j = 0; j < entrada.nombresAlternativos.length; j++) {
+          const alternativo = this.#normalizar(entrada.nombresAlternativos[j]);
+          if (alternativo !== "" && !normalizados.includes(alternativo)) {
+            normalizados.push(alternativo);
+          }
+        }
+      }
       this.#indice.push({
         id: entrada.id,
         nombre: entrada.nombre,
         tipo: entrada.tipo,
-        nombreNormalizado: this.#normalizar(entrada.nombre)
+        nombreNormalizado: normalizados[0],
+        normalizados: normalizados
       });
     }
   }
@@ -164,7 +181,7 @@ export class Buscador {
     for (let i = 0; i < this.#indice.length; i++) {
       const entrada = this.#indice[i];
       const esDeOtroTipo = hayFiltroDeTipo && entrada.tipo !== tipo;
-      if (!esDeOtroTipo && this.#coincide(textoNormalizado, entrada.nombreNormalizado)) {
+      if (!esDeOtroTipo && this.#coincideAlguno(textoNormalizado, entrada.normalizados)) {
         encontrados.push(entrada);
       }
     }
@@ -219,6 +236,40 @@ export class Buscador {
       }
     }
     return resultado.trim();
+  }
+
+  /**
+   * (Privado) ¿Coincide alguno de los nombres de la entidad?
+   *
+   * @param {string} textoNormalizado
+   * @param {string[]} normalizados
+   * @returns {boolean}
+   */
+  #coincideAlguno(textoNormalizado, normalizados) {
+    for (let i = 0; i < normalizados.length; i++) {
+      if (this.#coincide(textoNormalizado, normalizados[i])) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * (Privado) La mejor (la menor) puntuación de los nombres de la entidad.
+   *
+   * @param {string} textoNormalizado
+   * @param {string[]} normalizados
+   * @returns {number}
+   */
+  #puntuarMejor(textoNormalizado, normalizados) {
+    let mejor = this.#puntuar(textoNormalizado, normalizados[0]);
+    for (let i = 1; i < normalizados.length; i++) {
+      const puntuacion = this.#puntuar(textoNormalizado, normalizados[i]);
+      if (puntuacion < mejor) {
+        mejor = puntuacion;
+      }
+    }
+    return mejor;
   }
 
   /**
@@ -329,7 +380,7 @@ export class Buscador {
       const entrada = resultados[i];
       conPuntuacion.push({
         entrada: entrada,
-        puntuacion: this.#puntuar(textoNormalizado, entrada.nombreNormalizado)
+        puntuacion: this.#puntuarMejor(textoNormalizado, entrada.normalizados)
       });
     }
     conPuntuacion.sort(Buscador.#compararPorCoincidencia);

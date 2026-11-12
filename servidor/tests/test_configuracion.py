@@ -1,4 +1,5 @@
 """Pruebas de Configuracion (las de tests/pruebasConfiguracion.js del incremento 1)."""
+import json
 from pathlib import Path
 
 import pytest
@@ -56,3 +57,36 @@ def test_cargar_sin_un_objeto_da_error() -> None:
     configuracion = Configuracion()
     with pytest.raises(ValueError):
         configuracion.cargar(None)
+
+
+def test_comprobar_acepta_el_archivo_de_verdad() -> None:
+    configuracion = Configuracion()
+    configuracion.cargar_archivo(ARCHIVO_CONFIGURACION)
+    configuracion.comprobar()
+    assert configuracion.get_idioma() == "es"
+    assert configuracion.get_etiquetas_entidad()["HeritageItem"] == "OBRA_DE_ARTE"
+    assert configuracion.get_max_participantes_intermediario() == 10
+    assert configuracion.get_version_pesos() == 1
+    assert configuracion.get_papeles_auxiliares()["Period"] == "periodo"
+
+
+def test_comprobar_dice_que_falta() -> None:
+    configuracion = Configuracion()
+    configuracion.cargar({"umbralPorDefecto": 0.3})
+    with pytest.raises(ValueError) as error:
+        configuracion.comprobar()
+    assert "etiquetasEntidad" in str(error.value)
+    assert "pesosRelevancia" in str(error.value)
+
+
+def test_comprobar_rechaza_un_peso_fuera_de_rango() -> None:
+    configuracion = Configuracion()
+    configuracion.cargar_archivo(ARCHIVO_CONFIGURACION)
+    datos = {}
+    with open(ARCHIVO_CONFIGURACION, encoding="utf-8") as archivo:
+        datos = json.load(archivo)
+    datos["pesosRelevancia"]["Marriage"] = 1.5
+    configuracion.cargar(datos)
+    with pytest.raises(ValueError) as error:
+        configuracion.comprobar()
+    assert "Marriage" in str(error.value)

@@ -17,6 +17,8 @@
  */
 import { ejecutarPruebas } from './miniPruebas.js';
 import './pruebasModelo.js';
+import './pruebasFabricaEntidades.js';
+import './pruebasTipoRelacion.js';
 import './pruebasRelevancia.js';
 import './pruebasCentralidad.js';
 import './pruebasPaletaColores.js';

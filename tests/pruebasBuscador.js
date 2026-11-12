@@ -137,3 +137,17 @@ prueba("Buscador: distanciaEdicion", function () {
   comprobarIgual(buscador.distanciaEdicion("kitten", "sitting"), 3, "kitten / sitting");
   comprobarIgual(buscador.distanciaEdicion("igual", "igual"), 0, "iguales");
 });
+
+prueba("Buscador: encuentra por el nombre en otro idioma y por el apellido", function () {
+  const buscador = new Buscador([
+    { id: "o1", nombre: "Museo del Mar", tipo: TipoEntidad.ORGANIZACION,
+      nombresAlternativos: ["Museo del Mar", "Museu de la Mar", "Sea Museum"] },
+    { id: "p1", nombre: "Elena Ferrando Peris", tipo: TipoEntidad.PERSONA,
+      nombresAlternativos: ["Elena Ferrando Peris", "Elena", "Ferrando Peris"] }
+  ]);
+  comprobarIgual(ids(buscador.sugerir("museu de la mar", "")).join(","), "o1", "en valenciano");
+  comprobarIgual(ids(buscador.sugerir("sea museum", "")).join(","), "o1", "en inglés");
+  comprobarIgual(buscador.sugerir("sea museum", "")[0].nombre, "Museo del Mar", "se muestra el nombre del idioma configurado");
+  comprobarIgual(ids(buscador.sugerir("peris", "")).join(","), "p1", "por el apellido");
+  comprobarIgual(ids(buscador.sugerir("ferrando peris", "")).join(","), "p1", "por los apellidos completos");
+});

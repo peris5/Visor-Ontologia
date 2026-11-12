@@ -21,6 +21,11 @@ import { ConstructorSubgrafo } from './ConstructorSubgrafo.js';
  *
  * Por eso subir el umbral muchas veces no le cuesta nada al servidor.
  *
+ * Desde el incremento 3b también guarda las estadísticas de asignación de
+ * relevancias del último vecindario (cuántas asignó el servidor y cuántas
+ * reutilizó) y da el detalle de una entidad (guardándolo para no pedirlo dos
+ * veces).
+ *
  * Requisitos: RF-08 a RF-13 (el subgrafo se calcula en el cliente), RNF-05
  * (el servidor trabaja lo mínimo).
  */
@@ -33,14 +38,19 @@ export class GestorSubgrafos {
   #umbralGuardado;
   #milisegundosUltimoCalculo;
   #bytesVecindario;
+  #contexto;
+  #estadisticas;
+  #detalles;
 
   /**
    * @param {ClienteServicio} cliente - quien pide los datos al servidor
    *   (en las pruebas, un doble que cuenta las peticiones).
    * @param {EstrategiaRelevancia} estrategia
    * @param {number} maxNodos - máximo de nodos del subgrafo (de /api/configuracion).
+   * @param {Object} contexto - { idioma, nombresTipos, etiquetasEntidad, tipos }
+   *   para interpretar los vecindarios (ver RepositorioVecindario).
    */
-  constructor(cliente, estrategia, maxNodos) {
+  constructor(cliente, estrategia, maxNodos, contexto) {
     this.#cliente = cliente;
     this.#estrategia = estrategia;
     this.#maxNodos = maxNodos;
@@ -49,6 +59,9 @@ export class GestorSubgrafos {
     this.#umbralGuardado = null;
     this.#milisegundosUltimoCalculo = 0;
     this.#bytesVecindario = 0;
+    this.#contexto = contexto;
+    this.#estadisticas = { asignadas: 0, reutilizadas: 0 };
+    this.#detalles = new Map();
   }
 
   /**
@@ -70,7 +83,7 @@ export class GestorSubgrafos {
     // Se usa la variable local "vecindario" y no la guardada porque, mientras
     // se esperaba al servidor, otra petición podría haber guardado otra.
     const inicio = performance.now();
-    const repositorio = new RepositorioVecindario(vecindario);
+    const repositorio = new RepositorioVecindario(vecindario, this.#contexto);
     const constructor = new ConstructorSubgrafo(repositorio, this.#estrategia, umbral, this.#maxNodos);
     const subgrafo = await constructor.construir(idEntidad);
     this.#milisegundosUltimoCalculo = performance.now() - inicio;
@@ -95,6 +108,32 @@ export class GestorSubgrafos {
    */
   getBytesVecindario() {
     return this.#bytesVecindario;
+  }
+
+  /**
+   * Cuántas relevancias asignó el servidor y cuántas reutilizó en el último
+   * vecindario que se pidió (para la barra de rendimiento).
+   *
+   * @returns {Object} { asignadas, reutilizadas }
+   */
+  getEstadisticasAsignacion() {
+    return { asignadas: this.#estadisticas.asignadas, reutilizadas: this.#estadisticas.reutilizadas };
+  }
+
+  /**
+   * El detalle de una entidad. Se pide al servidor solo la primera vez; las
+   * siguientes se reutiliza.
+   *
+   * @param {string} idEntidad
+   * @returns {Promise<DetalleEntidad>}
+   */
+  async obtenerDetalle(idEntidad) {
+    if (this.#detalles.has(idEntidad)) {
+      return this.#detalles.get(idEntidad);
+    }
+    const detalle = await this.#cliente.obtenerDetalle(idEntidad, this.#contexto);
+    this.#detalles.set(idEntidad, detalle);
+    return detalle;
   }
 
   /**
@@ -139,6 +178,10 @@ export class GestorSubgrafos {
     this.#idGuardado = idEntidad;
     this.#umbralGuardado = umbralDelVecindario;
     this.#bytesVecindario = this.#cliente.getBytesUltimaRespuesta();
+    this.#estadisticas = {
+      asignadas: GestorSubgrafos.#numero(vecindario.relevanciasAsignadas),
+      reutilizadas: GestorSubgrafos.#numero(vecindario.relevanciasReutilizadas)
+    };
 
     if (vecindario.recortado === true) {
       // El servidor ha llegado a su máximo de entidades: el subgrafo podría
@@ -146,5 +189,18 @@ export class GestorSubgrafos {
       console.warn("El vecindario de " + idEntidad + " (umbral " + umbralDelVecindario +
         ") ha llegado recortado: el servidor ha alcanzado su máximo de entidades.");
     }
+  }
+
+  /**
+   * (Privado) El valor si es un número; si no, 0.
+   *
+   * @param {*} valor
+   * @returns {number}
+   */
+  static #numero(valor) {
+    if (typeof valor === "number") {
+      return valor;
+    }
+    return 0;
   }
 }

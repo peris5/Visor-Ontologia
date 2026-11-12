@@ -122,11 +122,6 @@ export class BarraNavegacion extends ComponenteUI {
       return false;
     }
     const etiqueta = elemento.tagName;
-    // Las casillas de la leyenda también son <input>, pero en ellas no se
-    // escribe: allí los atajos sí funcionan.
-    if (etiqueta === "INPUT" && elemento.type === "checkbox") {
-      return false;
-    }
     return etiqueta === "INPUT" || etiqueta === "SELECT" || etiqueta === "TEXTAREA";
   }
 }
