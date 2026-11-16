@@ -1,5 +1,6 @@
 import { RepositorioVecindario } from '../datos/RepositorioVecindario.js';
 import { ConstructorSubgrafo } from './ConstructorSubgrafo.js';
+import { AjustadorUmbral } from './AjustadorUmbral.js';
 
 /**
  * GestorSubgrafos
@@ -20,6 +21,9 @@ import { ConstructorSubgrafo } from './ConstructorSubgrafo.js';
  * umbrales), así que hay que pedir otro.
  *
  * Por eso subir el umbral muchas veces no le cuesta nada al servidor.
+ *
+ * Al abrir una entidad, obtenerSubgrafoAjustado elige además el umbral
+ * para que salgan más o menos los mismos nodos (AjustadorUmbral).
  *
  * Desde el incremento 3b también guarda las estadísticas de asignación de
  * relevancias del último vecindario (cuántas asignó el servidor y cuántas
@@ -88,6 +92,71 @@ export class GestorSubgrafos {
     const subgrafo = await constructor.construir(idEntidad);
     this.#milisegundosUltimoCalculo = performance.now() - inicio;
     return subgrafo;
+  }
+
+  /**
+   * El subgrafo de una entidad con el umbral que da más o menos los nodos
+   * que quiere el ajustador (ver AjustadorUmbral). El umbral elegido se lee
+   * con subgrafo.getUmbral().
+   *
+   * Primero pide el vecindario con umbralDePartida (el de la configuración).
+   * Si con TODO ese vecindario no se llega al objetivo (una entidad poco
+   * conectada), pide otro con el umbral mínimo del deslizador y vuelve a
+   * elegir. Así las entidades muy conectadas no traen un vecindario enorme
+   * que no se va a usar.
+   *
+   * @param {string} idEntidad
+   * @param {AjustadorUmbral} ajustador
+   * @param {number} umbralDePartida - entre 0 y 1.
+   * @returns {Promise<Subgrafo>}
+   */
+  async obtenerSubgrafoAjustado(idEntidad, ajustador, umbralDePartida) {
+    let eleccion = await this.#elegirUmbral(idEntidad, ajustador, umbralDePartida);
+    const faltanNodos = eleccion.nodosDelVecindario < ajustador.getNodosObjetivo();
+    if (faltanNodos && eleccion.umbralDelVecindario > AjustadorUmbral.MINIMO) {
+      eleccion = await this.#elegirUmbral(idEntidad, ajustador, AjustadorUmbral.MINIMO);
+    }
+    return this.obtenerSubgrafo(idEntidad, eleccion.umbral);
+  }
+
+  /**
+   * (Privado) Pide el vecindario si hace falta, calcula la relevancia de
+   * TODOS sus nodos (un subgrafo sin máximo con el umbral del vecindario) y
+   * le pide al ajustador el umbral.
+   *
+   * @param {string} idEntidad
+   * @param {AjustadorUmbral} ajustador
+   * @param {number} umbralPedido
+   * @returns {Promise<Object>} { umbral, nodosDelVecindario, umbralDelVecindario }
+   */
+  async #elegirUmbral(idEntidad, ajustador, umbralPedido) {
+    if (this.#necesitaPedir(idEntidad, umbralPedido)) {
+      const recibido = await this.#cliente.obtenerVecindario(idEntidad, umbralPedido);
+      this.#guardar(idEntidad, umbralPedido, recibido);
+    }
+    // Se copian a variables locales por si otra petición guarda otro
+    // vecindario mientras se construye (ver obtenerSubgrafo).
+    const vecindario = this.#vecindarioGuardado;
+    const umbralDelVecindario = this.#umbralGuardado;
+
+    const repositorio = new RepositorioVecindario(vecindario, this.#contexto);
+    const sinMaximo = Math.max(1, vecindario.entidades.length);
+    const constructor = new ConstructorSubgrafo(repositorio, this.#estrategia, umbralDelVecindario, sinMaximo);
+    const completo = await constructor.construir(idEntidad);
+
+    const relevancias = [];
+    const nodos = completo.getNodos();
+    for (let i = 0; i < nodos.length; i++) {
+      if (nodos[i].getEntidad().getId() !== idEntidad) {
+        relevancias.push(nodos[i].getRelevancia());
+      }
+    }
+    const eleccion = ajustador.elegir(relevancias, umbralDelVecindario, this.#maxNodos);
+    return {
+      umbral: eleccion.umbral,
+      nodosDelVecindario: completo.getNumeroNodos(),
+      umbralDelVecindario: umbralDelVecindario
+    };
   }
 
   /**

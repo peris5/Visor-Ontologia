@@ -1,0 +1,191 @@
+@startuml er_bd
+' ============================================================================
+' Diagrama entidad-relación de la base de datos REFRACTS (Neo4j), tal como la
+' usa el Visor de patrimonio 3D en el incremento 4.
+'
+' Fuente: docs/diseno_bd_refracts.json y ANALISIS_BD_NEO4J.md (§1 y §4).
+' Cada entidad del diagrama es una etiqueta de Neo4j; cada relación, un tipo
+' de relación de Neo4j (sus propiedades van entre llaves). Los nombres se
+' escriben tal cual están en la BD, con sus erratas.
+'
+' «Entidad» e «Intermediario» no son etiquetas de la BD: agrupan lo común
+' para no repetir relaciones. Los subtipos (IS_A) que no tienen relaciones
+' propias se listan dentro de su supertipo.
+'
+' Novedad del incremento 4: los intermediarios guardan la relevancia que
+' asigna el servidor (relevance, relevanceSource, relevanceVersion).
+' ============================================================================
+
+title Diagrama entidad-relación de la base de datos (Neo4j) · incremento 4
+
+hide circle
+hide empty members
+skinparam linetype ortho
+skinparam shadowing false
+skinparam roundcorner 0
+skinparam nodesep 60
+skinparam ranksep 80
+skinparam class {
+  BackgroundColor<<entidad>> #E8F0FE
+  BorderColor<<entidad>> #2F5FA7
+  BackgroundColor<<intermediario>> #FFF4E0
+  BorderColor<<intermediario>> #8A5A12
+  BackgroundColor<<auxiliar>> #EEF6EE
+  BorderColor<<auxiliar>> #1F6B4F
+  BackgroundColor<<agrupacion>> #FFFFFF
+  BorderColor<<agrupacion>> #777777
+  BorderStyle<<agrupacion>> dashed
+}
+
+' ------------------------------------------------------------------ Entidades
+entity "«Entidad»" as Entidad <<agrupacion>> {
+  * elementId : string
+}
+
+entity "Person" as Person <<entidad>> {
+  name : string
+  lastName : string
+  ..
+  <i>subtipos: Creator (Painter, Designer)</i>
+}
+
+entity "Organization" as Organization <<entidad>> {
+  name_es : string
+  name_ca : string
+  name_en : string
+}
+
+entity "HeritageItem" as HeritageItem <<entidad>> {
+  name_es : string
+  name_ca : string
+  name_en : string
+  dimensions : string
+}
+
+' ------------------------------------------------------------ Intermediarios
+entity "«Intermediario»" as Intermediario <<agrupacion>> {
+  * elementId : string
+  --
+  <b>relevance</b> : float [0, 1]
+  <b>relevanceSource</b> : "auto" | "manual"
+  <b>relevanceVersion</b> : int
+}
+
+entity "Relationship" as Relationship <<intermediario>> {
+  ..
+  <i>subtipos: Related (Marriage, Filiation),</i>
+  <i>Professional (Employement, coworking),</i>
+  <i>Friendship, Mentorship</i>
+}
+
+entity "Event" as Event <<intermediario>> {
+  name_es : string
+  name_ca : string
+  name_en : string
+  ..
+  <i>otros subtipos: Work, Wedding,</i>
+  <i>Birth, Death, Live</i>
+}
+
+entity "Creation" as Creation <<intermediario>> {
+  ..
+  <i>subtipos: Paint, Design</i>
+}
+entity "Fund" as Fund <<intermediario>>
+entity "Exposition" as Exposition <<intermediario>>
+
+' -------------------------------------------------------------- Auxiliares
+entity "Period" as Period <<auxiliar>> {
+  * elementId : string
+  --
+  from : date
+  to : date
+  description : string
+}
+
+entity "Ubication" as Ubication <<auxiliar>> {
+  * elementId : string
+  --
+  name_es : string
+  name_ca : string
+  name_en : string
+  adminLevel : int
+  coordinates : point
+}
+
+entity "Image" as Image <<auxiliar>> {
+  * elementId : string
+  --
+  url : string
+  caption : string
+}
+
+entity "ExternalSource" as ExternalSource <<auxiliar>> {
+  * elementId : string
+  --
+  name : string
+  url : string
+  lastUpdated : date
+  isAutomated : boolean
+  ..
+  <i>subtipos: Book (ISBN, Editorial, Published),</i>
+  <i>API, Web (scrapable)</i>
+}
+
+' ------------------------------------------- Generalizaciones (IS_A)
+Entidad <|-- Person
+Entidad <|-- Organization
+Entidad <|-- HeritageItem
+
+Intermediario <|-- Relationship
+Intermediario <|-- Event
+Event <|-- Creation
+Event <|-- Fund
+Event <|-- Exposition
+
+' ------------------------------------------------------------- Relaciones
+' Participación de las entidades en los intermediarios
+Person }|--o{ Relationship : HAS_ROLE_IN\n{role}
+Person }o--o{ Event : PARTICIPATES_IN\n{role}
+Creation }o--|{ HeritageItem : PRODUCED / CREATE
+Fund }o--|| Organization : CREATE
+Exposition }o--|{ HeritageItem : IS_EXPOSED
+
+' Contexto de los intermediarios
+Intermediario }o--o| Organization : OCURRED_AT\n{date}
+Intermediario }o--o| Ubication : TOOK_PLACE_AT\n{date}
+Intermediario }o--o| Period : OCURRED_DURING
+Intermediario }o--o{ Intermediario : PROMPTED /\nTRIGGERED /\nLED_TO
+
+' Lugares
+Organization }o--o| Ubication : LOCATED_IN
+Ubication }o--o| Ubication : IS_IN
+
+' Imágenes y fuentes
+Entidad }o--o{ Image : HAS_IMAGE\n{order}
+Event }o--o{ Image : HAS_IMAGE\n{order}
+Entidad }o--o{ ExternalSource : HAS_EXTERNAL_SOURCE\n{dateUpdated, externalId}
+Intermediario }o--o{ ExternalSource : HAS_EXTERNAL_SOURCE\n{dateUpdated, externalId}
+
+note bottom of Intermediario
+  <b>Incremento 4.</b> La primera vez que el servidor recorre un
+  intermediario, le asigna la relevancia (RelevanciaPorTipo) y la
+  guarda con SET en estas tres propiedades. Se reutiliza si es
+  "manual" o si relevanceVersion es la versionPesos actual.
+  Todas las parejas de entidades que une comparten ese valor.
+end note
+
+legend right
+  <b>Leyenda</b>
+  Azul: entidad (nodo del grafo 3D)
+  Naranja: intermediario (de él salen las relaciones
+  derivadas y en él se guarda la relevancia)
+  Verde: auxiliar (va al detalle: cuándo, dónde,
+  imágenes y fuentes)
+  Blanco «…»: agrupación, no es una etiqueta de la BD
+  Triángulo: subtipo (IS_A en la BD)
+  * elementId: identificador de Neo4j (no hay propiedad id)
+  Birth, Death y Live no crean relaciones (tiposSinRelacion)
+endlegend
+
+@enduml

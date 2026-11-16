@@ -26,6 +26,7 @@ class ConversorJson:
         return {
             "umbralPorDefecto": configuracion.get_umbral_por_defecto(),
             "maxNodos": configuracion.get_max_nodos(),
+            "nodosObjetivo": configuracion.get_nodos_objetivo(),
             "entidadInicial": configuracion.get_entidad_inicial(),
             "idioma": configuracion.get_idioma(),
             "nombresTipos": configuracion.get_nombres_tipos(),

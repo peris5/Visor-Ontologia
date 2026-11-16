@@ -246,6 +246,49 @@ body {
   border-radius: 0;
 }
 
+/* Barras de desplazamiento de los paneles laterales (y de las sugerencias):
+   finas, cuadradas y del color de los bordes; se aclaran al pasar el ratón.
+   scrollbar-color/width es el estándar (Firefox, Chrome 121+); las reglas
+   ::-webkit-scrollbar cubren Chrome, Edge y Safari más antiguos. */
+.pagina-visor .leyenda,
+.pagina-visor .panel-informacion,
+.pagina-visor .lista-sugerencias {
+  scrollbar-width: thin;
+  scrollbar-color: var(--visor-borde-control) var(--visor-panel);
+}
+
+.pagina-visor .leyenda::-webkit-scrollbar,
+.pagina-visor .panel-informacion::-webkit-scrollbar,
+.pagina-visor .lista-sugerencias::-webkit-scrollbar {
+  width: 8px;
+}
+
+.pagina-visor .leyenda::-webkit-scrollbar-track,
+.pagina-visor .panel-informacion::-webkit-scrollbar-track,
+.pagina-visor .lista-sugerencias::-webkit-scrollbar-track {
+  background: var(--visor-panel);
+  border-left: 1px solid var(--visor-borde);
+}
+
+.pagina-visor .leyenda::-webkit-scrollbar-thumb,
+.pagina-visor .panel-informacion::-webkit-scrollbar-thumb,
+.pagina-visor .lista-sugerencias::-webkit-scrollbar-thumb {
+  background: var(--visor-borde-control);
+  border-radius: 0;
+}
+
+.pagina-visor .leyenda::-webkit-scrollbar-thumb:hover,
+.pagina-visor .panel-informacion::-webkit-scrollbar-thumb:hover,
+.pagina-visor .lista-sugerencias::-webkit-scrollbar-thumb:hover {
+  background: var(--visor-texto-suave);
+}
+
+.pagina-visor .leyenda:hover,
+.pagina-visor .panel-informacion:hover,
+.pagina-visor .lista-sugerencias:hover {
+  scrollbar-color: var(--visor-texto-suave) var(--visor-panel);
+}
+
 /* Barra superior: título, buscador, umbral y navegación */
 .barra-superior {
   display: flex;
@@ -400,6 +443,39 @@ body {
 .pagina-visor input[type="range"] {
   width: 100%;
   accent-color: var(--visor-acento);
+}
+
+/* Disposición: tres botones pegados; el elegido, resaltado */
+.control-disposicion {
+  display: grid;
+  gap: 2px;
+}
+
+.etiqueta-disposicion {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--visor-texto-suave);
+}
+
+.disposicion-botones {
+  display: flex;
+}
+
+/* Los botones van pegados: se solapa el borde para que no salga doble. */
+.disposicion-botones button + button {
+  margin-left: -1px;
+}
+
+.pagina-visor .disposicion-botones button[aria-pressed="true"] {
+  background: var(--visor-acento);
+  border-color: var(--visor-acento);
+  color: var(--visor-fondo);
+  font-weight: 600;
+}
+
+.ayuda-disposicion {
+  font-size: 0.78rem;
+  color: var(--visor-texto-suave);
 }
 
 /* Navegación */

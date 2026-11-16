@@ -64,6 +64,18 @@ class GestorFalso {
     });
   }
 
+  /**
+   * Como el de verdad, devuelve el subgrafo con el umbral que ha «elegido»
+   * (aquí, siempre 0,55) y lo apunta en ajustados.
+   */
+  obtenerSubgrafoAjustado(idEntidad, ajustador, umbralDePartida) {
+    if (this.ajustados === undefined) {
+      this.ajustados = [];
+    }
+    this.ajustados.push({ id: idEntidad, objetivo: ajustador.getNodosObjetivo(), umbralDePartida: umbralDePartida });
+    return Promise.resolve(crearSubgrafoDe(idEntidad, 0.55));
+  }
+
   obtenerSubgrafo(idEntidad, umbral) {
     this.peticiones.push({ id: idEntidad, umbral: umbral });
     if (this.manual) {
@@ -145,6 +157,10 @@ class EscenaFalsa {
   restablecerCamara() {
     this.camaraRestablecida = this.camaraRestablecida + 1;
   }
+
+  setModoDisposicion(modo) {
+    this.modoDisposicion = modo;
+  }
 }
 
 /**
@@ -202,6 +218,10 @@ class InterfazFalsa {
 
   actualizarLeyenda(datos) {
     this.leyendas.push(datos);
+  }
+
+  setModoDisposicion(modo) {
+    this.modoDisposicion = modo;
   }
 }
 
@@ -399,4 +419,45 @@ prueba("Controlador: un detalle que llega cuando ya se ha seleccionado otra cosa
   p.controlador.seleccionarRelacion(p.controlador.getSubgrafoActual().getRelaciones()[0]);
   await esperarUnMomento();
   comprobarIgual(p.interfaz.detalles.length, 0, "no se muestra");
+});
+
+prueba("Controlador: cambiarDisposicion cambia el modo en la escena y en la interfaz, sin pedir nada", async function () {
+  const p = crearControladorDePrueba();
+  await p.controlador.iniciar("A");
+  const peticiones = p.gestor.peticiones.length;
+  p.controlador.cambiarDisposicion("POR_GRUPOS");
+  comprobarIgual(p.escena.modoDisposicion, "POR_GRUPOS", "escena");
+  comprobarIgual(p.interfaz.modoDisposicion, "POR_GRUPOS", "interfaz");
+  comprobarIgual(p.gestor.peticiones.length, peticiones, "no pide ningún subgrafo");
+});
+
+prueba("Controlador: con nodosObjetivo, cada entidad nueva se abre con el umbral ajustado y se pone en el deslizador", async function () {
+  const gestor = new GestorFalso();
+  const interfaz = new InterfazFalsa();
+  const controlador = new ControladorExploracion(gestor, new BuscadorFalso(), 0.3, 40);
+  controlador.conectar(new EscenaFalsa(), interfaz);
+
+  await controlador.iniciar("A");
+  comprobarIgual(gestor.ajustados.length, 1, "al iniciar, ajusta");
+  comprobarIgual(gestor.ajustados[0].objetivo, 40, "con el objetivo de la configuración");
+  comprobarIgual(gestor.ajustados[0].umbralDePartida, 0.3, "partiendo del umbral de la configuración");
+  comprobarIgual(interfaz.umbral, 0.55, "el umbral elegido, en el deslizador");
+
+  // Mover el deslizador NO ajusta: se respeta lo que ha elegido el usuario.
+  await controlador.cambiarUmbral(0.7);
+  comprobarIgual(gestor.ajustados.length, 1, "cambiar el umbral no ajusta");
+  comprobarIgual(gestor.peticiones[gestor.peticiones.length - 1].umbral, 0.7, "pide con el umbral del usuario");
+
+  await controlador.navegarA("B");
+  comprobarIgual(gestor.ajustados.length, 2, "otra entidad: ajusta otra vez");
+  comprobarIgual(gestor.ajustados[1].umbralDePartida, 0.3, "partiendo otra vez del de la configuración");
+  await controlador.volver();
+  comprobarIgual(gestor.ajustados.length, 3, "al volver también ajusta");
+});
+
+prueba("Controlador: sin nodosObjetivo no ajusta (como antes)", async function () {
+  const p = crearControladorDePrueba();
+  await p.controlador.iniciar("A");
+  comprobar(p.gestor.ajustados === undefined, "no llama a obtenerSubgrafoAjustado");
+  comprobarIgual(p.gestor.peticiones[0].umbral, 0.3, "usa el umbral de la configuración");
 });

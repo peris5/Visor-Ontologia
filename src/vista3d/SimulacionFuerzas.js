@@ -10,7 +10,11 @@
  *     que tira de ellas hasta una longitud de reposo. Las relaciones más
  *     relevantes tienen muelles más cortos y más fuertes, así que sus
  *     entidades acaban juntas y se forman grupos (cúmulos, RF-40).
- *  3. RESTRICCIÓN RADIAL: después de moverse, cada nodo se vuelve a colocar
+ *  3. ATRACCIÓN HACIA UNA DIRECCIÓN (solo en el modo «Por grupos»): cada nodo que tiene una dirección objetivo es empujado hacia
+ *     el punto de esa dirección que está a su distancia del centro. Como la
+ *     distancia la fija el paso 4, el efecto es que el nodo GIRA hacia su
+ *     zona sin acercarse ni alejarse del centro.
+ *  4. RESTRICCIÓN RADIAL: después de moverse, cada nodo se vuelve a colocar
  *     exactamente a su distancia del centro, que depende solo de su
  *     relevancia. Así LA DISTANCIA AL CENTRO SE LEE COMO RELEVANCIA (RF-17), y
  *     las fuerzas solo deciden en qué punto de esa esfera queda cada nodo.
@@ -36,6 +40,7 @@ export class SimulacionFuerzas {
     radioMinimo: 6,
     radioVariable: 40,
     rozamiento: 0.4,
+    atraccionObjetivo: 0.08,
     pasos: 300
   });
 
@@ -51,6 +56,8 @@ export class SimulacionFuerzas {
   #muelles;
   // id de la entidad → posición en #nodos, para encontrar un nodo al momento.
   #indicePorId;
+  // id de la entidad → dirección (longitud 1) hacia la que se empuja el nodo.
+  #direccionesObjetivo;
 
   /**
    * @param {Object} [parametros] - opcional: sustituye algunos de
@@ -71,6 +78,7 @@ export class SimulacionFuerzas {
     this.#nodos = [];
     this.#muelles = [];
     this.#indicePorId = new Map();
+    this.#direccionesObjetivo = new Map();
   }
 
   /**
@@ -104,6 +112,7 @@ export class SimulacionFuerzas {
 
     this.#aplicarRepulsion();
     this.#aplicarMuelles();
+    this.#aplicarAtraccionObjetivo();
     this.#mover();
     this.#pasos = this.#pasos + 1;
     return true;
@@ -145,6 +154,22 @@ export class SimulacionFuerzas {
    */
   distanciaSegunRelevancia(relevancia) {
     return this.#parametros.radioMinimo + (1 - relevancia) * this.#parametros.radioVariable;
+  }
+
+  /**
+   * Cambia las direcciones hacia las que se empuja cada nodo (ver
+   * CalculadorDisposicion.direccionesObjetivo). Con un mapa vacío o null,
+   * ningún nodo tiene dirección (modo libre).
+   *
+   * @param {Map<string, {x:number, y:number, z:number}>|null} direcciones
+   */
+  setDireccionesObjetivo(direcciones) {
+    this.#direccionesObjetivo = new Map();
+    if (direcciones !== null && direcciones !== undefined) {
+      for (const id of direcciones.keys()) {
+        this.#direccionesObjetivo.set(id, direcciones.get(id));
+      }
+    }
   }
 
   /**
@@ -334,6 +359,29 @@ export class SimulacionFuerzas {
         nodoA.vx = nodoA.vx + dx * k * (1 - reparto);
         nodoA.vy = nodoA.vy + dy * k * (1 - reparto);
         nodoA.vz = nodoA.vz + dz * k * (1 - reparto);
+      }
+    }
+  }
+
+  /**
+   * (Privado) Atracción hacia la dirección objetivo: cada nodo que la tiene
+   * se empuja hacia el punto "dirección · radio" (su zona, a su misma
+   * distancia del centro):
+   *
+   *    velocidad += (objetivo − posición) · atraccionObjetivo · alfa
+   *
+   * Cuanto más lejos está de su zona, más fuerte el empujón. No cambia la
+   * distancia al centro: de eso se encarga la restricción radial (#mover).
+   */
+  #aplicarAtraccionObjetivo() {
+    const fuerza = this.#parametros.atraccionObjetivo * this.#alfa;
+    for (let i = 0; i < this.#nodos.length; i++) {
+      const nodo = this.#nodos[i];
+      if (!nodo.fijo && this.#direccionesObjetivo.has(nodo.id)) {
+        const direccion = this.#direccionesObjetivo.get(nodo.id);
+        nodo.vx = nodo.vx + (direccion.x * nodo.radio - nodo.x) * fuerza;
+        nodo.vy = nodo.vy + (direccion.y * nodo.radio - nodo.y) * fuerza;
+        nodo.vz = nodo.vz + (direccion.z * nodo.radio - nodo.z) * fuerza;
       }
     }
   }

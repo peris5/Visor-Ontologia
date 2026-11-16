@@ -1,0 +1,176 @@
+@startuml er_app
+' ============================================================================
+' Diagrama entidad-relación del modelo de datos de la APLICACIÓN (Visor de
+' patrimonio 3D), incremento 4.
+'
+' Es el modelo con el que trabaja el visor (src/modelo), no el de Neo4j:
+' las entidades se relacionan DIRECTAMENTE mediante relaciones derivadas
+' (el servidor las saca de los nodos intermediarios) y cada relación trae la
+' relevancia que el servidor asignó y guardó en la base de datos.
+'
+' Los atributos son los campos de las clases; los identificadores van con *.
+' ============================================================================
+
+title Diagrama entidad-relación de la aplicación · incremento 4
+
+hide circle
+hide empty members
+skinparam linetype ortho
+skinparam shadowing false
+skinparam roundcorner 0
+skinparam nodesep 70
+skinparam ranksep 80
+skinparam class {
+  BackgroundColor<<grafo>> #E8F0FE
+  BorderColor<<grafo>> #2F5FA7
+  BackgroundColor<<detalle>> #EEF6EE
+  BorderColor<<detalle>> #1F6B4F
+  BackgroundColor<<vista>> #FFF4E0
+  BorderColor<<vista>> #8A5A12
+}
+
+' -------------------------------------------- Lo que se dibuja en el grafo
+entity "Entidad" as Entidad <<grafo>> {
+  * id : string
+  --
+  nombres : Map<idioma, texto>
+  idioma : "es" | "ca" | "en"
+  subtipos : string[]
+  atributos : Map<propiedad, valor>
+}
+
+entity "Persona" as Persona <<grafo>> {
+  nombrePropio : string
+  apellidos : string
+}
+
+entity "Organizacion" as Organizacion <<grafo>> {
+}
+
+entity "ObraDeArte" as ObraDeArte <<grafo>> {
+  dimensiones : string
+}
+
+entity "Relacion" as Relacion <<grafo>> {
+  * id : string
+  --
+  valor : float [0, 1]
+  relevancia : float [0, 1]
+  idIntermedio : string
+  roles : Map<idEntidad, rol>
+  lugar : string
+  fecha : string
+}
+
+entity "TipoRelacion" as TipoRelacion <<grafo>> {
+  * id : string
+  --
+  nombre : string
+  color : "#rrggbb"
+  nombreFamilia : string
+}
+
+entity "Periodo" as Periodo <<detalle>> {
+  desde : string
+  hasta : string
+  descripcion : string
+}
+
+' ------------------------------------------- Lo que se calcula en el visor
+entity "Subgrafo" as Subgrafo <<vista>> {
+  umbral : float [0, 1]
+}
+
+entity "NodoRelevante" as NodoRelevante <<vista>> {
+  relevancia : float [0, 1]
+  nivel : int
+  centralidad : float [0, 1]
+}
+
+' ------------------------------- Lo que se pide al seleccionar una entidad
+entity "DetalleEntidad" as DetalleEntidad <<detalle>> {
+  ubicacion : string[]
+}
+
+entity "Evento" as Evento <<detalle>> {
+  * id : string
+  --
+  tipo : string
+  padres : string[]
+  nombre : string
+  rol : string
+  lugar : string
+  fecha : string
+  participantes : string[]
+  sinRelacion : boolean
+}
+
+entity "Imagen" as Imagen <<detalle>> {
+  url : string
+  pie : string
+  orden : int
+}
+
+entity "FuenteExterna" as FuenteExterna <<detalle>> {
+  nombre : string
+  tipo : string
+  url : string
+  actualizada : string
+  idExterno : string
+}
+
+' ------------------------------------------------------- Especialización
+Entidad <|-- Persona
+Entidad <|-- Organizacion
+Entidad <|-- ObraDeArte
+
+' ------------------------------------------------------------ Relaciones
+Entidad ||--o{ Relacion : une (origen y destino:\ndos entidades por relación)
+Relacion }o--|| TipoRelacion : es de tipo
+TipoRelacion }o--o| TipoRelacion : tiene por padre
+Relacion }o--o| Periodo : ocurre durante
+
+Subgrafo }o--|| Entidad : tiene por central
+Subgrafo ||--|{ NodoRelevante : contiene
+NodoRelevante }o--|| Entidad : representa
+Subgrafo }o--o{ Relacion : contiene
+
+Entidad ||--o| DetalleEntidad : tiene
+DetalleEntidad ||--o{ Evento : incluye
+DetalleEntidad ||--o{ Imagen : incluye
+DetalleEntidad ||--o{ FuenteExterna : cita
+Evento }o--o| Periodo : ocurre durante
+
+note right of Relacion
+  Relación DERIVADA: en Neo4j las entidades se unen
+  a través de un intermediario (idIntermedio).
+  <b>Incremento 4:</b> valor = relevancia que el servidor
+  asignó por tipo y guardó en la BD la primera vez;
+  relevancia = la que usa el visor (RelevanciaDesdeBD).
+  Todas las relaciones con el mismo idIntermedio
+  comparten valor.
+end note
+
+note bottom of NodoRelevante
+  relevancia = producto de las relevancias
+  del mejor camino desde la central (1 en ella).
+  Solo entran los que superan el umbral,
+  como mucho maxNodos.
+end note
+
+note bottom of TipoRelacion
+  Jerarquía leída de la BD (IS_A):
+  Marriage → Related → Relationship.
+  Un tipo sin peso usa el de su padre.
+end note
+
+legend right
+  <b>Leyenda</b>
+  Azul: datos del grafo (llegan con el vecindario)
+  Naranja: lo que calcula el visor (subgrafo)
+  Verde: detalle (se pide al seleccionar la entidad)
+  Triángulo: especialización
+  * identificador
+endlegend
+
+@enduml

@@ -1,6 +1,7 @@
 import { FiltroVisualizacion } from './FiltroVisualizacion.js';
 import { HistorialNavegacion } from './HistorialNavegacion.js';
 import { EstadoCarga } from './EstadoCarga.js';
+import { AjustadorUmbral } from './AjustadorUmbral.js';
 
 /**
  * ControladorExploracion
@@ -38,16 +39,26 @@ export class ControladorExploracion {
   #umbral;
   #numeroCarga;
   #idDetalle;
+  #umbralDePartida;
+  #ajustador;
 
   /**
    * @param {GestorSubgrafos} gestor
    * @param {Buscador} buscador
    * @param {number} umbralInicial - entre 0 y 1 (de /api/configuracion).
+   * @param {number} nodosObjetivo - opcional (de /api/configuracion). Si se
+   *   indica, cada entidad nueva se abre con el umbral que da más o menos
+   *   ese número de nodos (AjustadorUmbral). Si no, siempre con el umbral actual.
    */
-  constructor(gestor, buscador, umbralInicial) {
+  constructor(gestor, buscador, umbralInicial, nodosObjetivo) {
     this.#gestor = gestor;
     this.#buscador = buscador;
     this.#umbral = umbralInicial;
+    this.#umbralDePartida = umbralInicial;
+    this.#ajustador = null;
+    if (nodosObjetivo !== undefined && nodosObjetivo !== null) {
+      this.#ajustador = new AjustadorUmbral(nodosObjetivo);
+    }
     this.#filtro = new FiltroVisualizacion();
     this.#historial = new HistorialNavegacion();
     this.#escena = null;
@@ -87,7 +98,7 @@ export class ControladorExploracion {
       this.#interfaz.mostrarError("No hay ninguna entidad inicial configurada. Búscala con el buscador.");
       return;
     }
-    await this.#cargarSubgrafo(idEntidadInicial);
+    await this.#cargarSubgrafo(idEntidadInicial, true);
   }
 
   /**
@@ -156,7 +167,7 @@ export class ControladorExploracion {
     if (idActual !== null) {
       this.#historial.registrar(idActual);
     }
-    await this.#cargarSubgrafo(id);
+    await this.#cargarSubgrafo(id, true);
   }
 
   /**
@@ -170,7 +181,7 @@ export class ControladorExploracion {
       return;
     }
     this.#interfaz.setHabilitadoVolver(this.#historial.puedeVolver());
-    await this.#cargarSubgrafo(idAnterior);
+    await this.#cargarSubgrafo(idAnterior, true);
   }
 
   /**
@@ -191,7 +202,8 @@ export class ControladorExploracion {
       id = this.#idSolicitado;
     }
     if (id !== null) {
-      await this.#cargarSubgrafo(id);
+      // El usuario ha elegido el umbral: no se ajusta.
+      await this.#cargarSubgrafo(id, false);
     }
   }
 
@@ -262,6 +274,18 @@ export class ControladorExploracion {
   }
 
   /**
+   * Cambia cómo se reparten los nodos en el espacio (libre, por tipo o por
+   * grupos). No pide nada al servidor ni cambia el subgrafo: solo la escena.
+   * El modo se mantiene al cambiar de entidad o de umbral.
+   *
+   * @param {string} modo - un valor de ModoDisposicion.
+   */
+  cambiarDisposicion(modo) {
+    this.#escena.setModoDisposicion(modo);
+    this.#interfaz.setModoDisposicion(modo);
+  }
+
+  /**
    * Vuelve a la vista inicial de la cámara (RF-27).
    */
   restablecerVista() {
@@ -279,18 +303,28 @@ export class ControladorExploracion {
    *
    * Si falla, se muestra el error y SE MANTIENE el grafo anterior.
    *
+   * Con ajustar (al abrir una entidad: inicio, navegar y volver), si hay
+   * ajustador, el umbral se elige para que salgan más o menos los mismos
+   * nodos y se pone en el deslizador. Al mover el deslizador no se ajusta.
+   *
    * @param {string} id
+   * @param {boolean} ajustar
    * @returns {Promise<void>}
    */
-  async #cargarSubgrafo(id) {
+  async #cargarSubgrafo(id, ajustar) {
     this.#idSolicitado = id;
     this.#cambiarEstado(EstadoCarga.CARGANDO);
     this.#numeroCarga = this.#numeroCarga + 1;
     const numeroDeEstaCarga = this.#numeroCarga;
+    const conAjuste = ajustar && this.#ajustador !== null;
 
     let subgrafo = null;
     try {
-      subgrafo = await this.#gestor.obtenerSubgrafo(id, this.#umbral);
+      if (conAjuste) {
+        subgrafo = await this.#gestor.obtenerSubgrafoAjustado(id, this.#ajustador, this.#umbralDePartida);
+      } else {
+        subgrafo = await this.#gestor.obtenerSubgrafo(id, this.#umbral);
+      }
     } catch (error) {
       if (numeroDeEstaCarga !== this.#numeroCarga) {
         return;
@@ -303,6 +337,10 @@ export class ControladorExploracion {
 
     if (numeroDeEstaCarga !== this.#numeroCarga) {
       return;
+    }
+    if (conAjuste) {
+      this.#umbral = subgrafo.getUmbral();
+      this.#interfaz.setUmbral(this.#umbral);
     }
     this.#subgrafoActual = subgrafo;
     this.#escena.mostrarSubgrafo(subgrafo);

@@ -1,0 +1,226 @@
+@startuml secuencia_general
+' ============================================================================
+' Diagrama de secuencia general del Visor de patrimonio 3D (incremento 4).
+' Desde que el usuario elige una entidad en el buscador hasta que se dibuja
+' su subgrafo en 3D.
+'
+' Se dibuja como si ya estuviera conectado a Neo4j (incremento 4): el
+' repositorio del servidor es una implementación de RepositorioDatos que
+' consulta la base de datos. Los nombres de los métodos son los del código
+' actual (incremento 3b); lo que hoy hace RepositorioSimulado en memoria,
+' en el incremento 4 lo hará la consulta a Neo4j indicada en las notas.
+' ============================================================================
+
+title Diagrama de secuencia general del Visor de patrimonio 3D
+
+skinparam shadowing false
+skinparam roundcorner 0
+skinparam sequenceMessageAlign left
+skinparam responseMessageBelowArrow true
+skinparam ParticipantPadding 6
+skinparam BoxPadding 8
+
+actor Usuario
+box "Navegador (JavaScript)" #F4F7FB
+  participant ":InterfazUsuario" as UI
+  participant ":ControladorExploracion" as CTRL
+  participant ":GestorSubgrafos" as GES
+  participant ":ClienteServicio" as CLI
+  participant ":ConstructorSubgrafo" as CONS
+  participant ":EscenaGrafo" as ESC
+end box
+box "Servidor (Python)" #FBF6EE
+  participant "API (FastAPI)" as API
+  participant ":RepositorioDatos" as REPO
+  participant ":AsignadorRelevancia" as ASIG
+end box
+database "Neo4j /\ndatos simulados" as BD
+
+== Elegir la entidad ==
+
+Usuario -> UI : escribe en el buscador y elige una sugerencia
+note right of UI
+  PanelBusqueda (dentro de InterfazUsuario):
+  ~#onSeleccionar(entrada) pone el nombre en el
+  campo y cierra la lista de sugerencias
+end note
+UI -> CTRL : seleccionarEntidad(id)
+activate CTRL
+CTRL -> CTRL : navegarA(id)
+note right of CTRL
+  Si es la entidad actual, o ya se está
+  cargando, no hace nada. Si no, apunta la
+  actual en HistorialNavegacion.registrar(idActual)
+end note
+CTRL -> CTRL : ~#cargarSubgrafo(id, ajustar = true)
+CTRL -> UI : mostrarEstado(CARGANDO)
+
+== Obtener el subgrafo (con el umbral ajustado a nodosObjetivo) ==
+
+CTRL -> GES : obtenerSubgrafoAjustado(id, ajustador, umbralDePartida)
+activate GES
+GES -> GES : ~#elegirUmbral(id, ajustador, umbralDePartida)
+GES -> GES : ~#necesitaPedir(id, umbral)
+
+alt vecindario ya guardado (misma entidad y umbral >= el del vecindario guardado)
+  note over GES
+    No se pide nada al servidor: se reutiliza
+    ~#vecindarioGuardado (subir el umbral es gratis)
+  end note
+else no está guardado (otra entidad o umbral menor)
+  GES -> CLI : obtenerVecindario(id, umbral)
+  activate CLI
+  CLI -> API : GET /api/vecindario/{id}?umbral=u
+  activate API
+  API -> API : redondear_hacia_abajo(umbral)
+  note right of API
+    CacheRespuestas.obtener(clave, preparar):
+    si el mismo vecindario está en la caché del
+    servidor, se devuelve sin recorrer nada
+    (0 asignadas, todas reutilizadas)
+  end note
+  API -> REPO : obtener_vecindario(id_entidad, umbral, max_entidades)
+  activate REPO
+  REPO -> BD : ¿existe la entidad? (__comprobar_entidad)
+  BD --> REPO : etiquetas del nodo
+
+  loop recorrido en anchura: por cada entidad de la cola
+    REPO -> BD : relaciones de la entidad (ProyectorRelaciones.relaciones_de)
+    note right of BD
+      Incremento 4: consulta Cypher
+      (entidad)-[]-(intermediario)-[]-(otra entidad)
+    end note
+    BD --> REPO : relaciones derivadas (con idIntermedio y tipo)
+
+    loop por cada relación (__valor_de, una vez por intermediario)
+      REPO -> ASIG : obtener(id_elemento, tipo)
+      activate ASIG
+      ASIG -> BD : AlmacenRelevancias.leer(id_elemento)
+      note right of BD
+        Lee las propiedades relevance,
+        relevanceSource y relevanceVersion
+        del intermediario
+      end note
+      BD --> ASIG : guardada (o None)
+
+      alt relevancia guardada y válida (manual, o automática de la versionPesos actual)
+        ASIG -> ASIG : reutilizadas + 1
+      else falta (o es automática de otra versión)
+        ASIG -> ASIG : RelevanciaPorTipo.calcular_relevancia(tipo)
+        note right of ASIG
+          Peso del tipo; si no tiene, el de su padre
+          más cercano en la jerarquía; si no, 0,5
+        end note
+        ASIG -> BD : AlmacenRelevancias.guardar(id_elemento, valor, version)
+        note right of BD
+          SET relevance = valor,
+          relevanceSource = "auto",
+          relevanceVersion = version
+        end note
+        ASIG -> ASIG : asignadas + 1
+      end
+      ASIG --> REPO : valor
+      deactivate ASIG
+
+      opt valor > umbral
+        REPO -> REPO : guarda la relación y encola la otra entidad\n(si no se ha llegado a max_entidades; si no, recortado = True)
+      end
+    end
+  end
+
+  REPO --> API : Vecindario(entidades, relaciones, recortado,\nasignadas, reutilizadas)
+  deactivate REPO
+  API -> API : ConversorJson.vecindario_a_diccionario(...)
+  API --> CLI : 200 JSON { idCentral, umbral, recortado, entidades,\nrelaciones, relevanciasAsignadas, relevanciasReutilizadas }
+  deactivate API
+  CLI --> GES : vecindario
+  deactivate CLI
+  GES -> GES : ~#guardar(id, umbral, vecindario)
+end
+
+GES -> GES : new RepositorioVecindario(vecindario, contexto)
+GES -> CONS : new ConstructorSubgrafo(repositorio, estrategia,\numbralDelVecindario, sin máximo)
+GES -> CONS : construir(id)
+activate CONS
+CONS --> GES : subgrafo completo (relevancia de todos los nodos)
+deactivate CONS
+GES -> GES : AjustadorUmbral.elegir(relevancias, umbralDelVecindario, maxNodos)
+note right of GES
+  Elige el valor del deslizador (de 0,05 en 0,05)
+  que da un número de nodos más cercano a nodosObjetivo
+end note
+
+opt con todo el vecindario no se llega a nodosObjetivo y umbralDelVecindario > 0,05
+  GES -> GES : ~#elegirUmbral(id, ajustador, 0,05)
+  note right of GES
+    Igual que arriba: como el umbral es menor,
+    ~#necesitaPedir da true y se pide otro vecindario
+  end note
+end
+
+GES -> GES : obtenerSubgrafo(id, umbralElegido)
+note right of GES
+  ~#necesitaPedir da false (umbral >= el del vecindario
+  guardado): no hay petición nueva
+end note
+GES -> CONS : new ConstructorSubgrafo(repositorio, estrategia,\numbralElegido, maxNodos)
+GES -> CONS : construir(id)
+activate CONS
+CONS -> CONS : ~#expandir(nodoCentral, subgrafo, umbral)
+loop búsqueda «primero el mejor» mientras haya pendientes y nodos < maxNodos
+  CONS -> CONS : ~#sacarElMasRelevante(pendientes)
+  CONS -> CONS : ~#expandir(candidato, subgrafo, umbral)
+  note right of CONS
+    RelevanciaDesdeBD.calcularRelevanciaRelacion(relacion)
+    RelevanciaDesdeBD.calcularRelevanciaNodo(relevanciaPadre, relevanciaRelacion)
+    (producto del camino)
+  end note
+end
+CONS -> CONS : CalculadorCentralidad.calcular(subgrafo)
+CONS --> GES : subgrafo
+deactivate CONS
+GES --> CTRL : subgrafo
+deactivate GES
+
+== Mostrar el subgrafo ==
+
+CTRL -> UI : setUmbral(subgrafo.getUmbral())
+CTRL -> ESC : mostrarSubgrafo(subgrafo)
+activate ESC
+ESC -> ESC : ~#limpiar()
+ESC -> ESC : CalculadorDisposicion.calcular(subgrafo)
+note right of ESC
+  Posiciones iniciales: central en el centro,
+  vecinos en una esfera de Fibonacci
+end note
+ESC -> ESC : ~#crearNodos(subgrafo, posicionesIniciales)
+ESC -> ESC : ~#crearEnlaces(subgrafo)
+ESC -> ESC : SimulacionFuerzas.iniciar(subgrafo, posicionesIniciales)
+ESC -> ESC : ~#aplicarModo()
+note right of ESC
+  POR_GRUPOS: DetectorComunidades.detectar(subgrafo),
+  direccionesObjetivo(...) y ~#crearManchas()
+end note
+ESC -> ESC : resaltarNodo(idCentral)
+ESC -> ESC : restablecerCamara()
+ESC --> CTRL
+deactivate ESC
+
+CTRL -> ESC : aplicarFiltro(filtro)
+CTRL -> UI : actualizarLeyenda(datos)
+CTRL -> UI : mostrarEntidad(entidadCentral, nodo, subgrafo)
+CTRL -> UI : mostrarEstado(LISTO)
+CTRL ->> GES : obtenerDetalle(idEntidad)
+note right of CTRL
+  Desde ~#cargarDetalle(idEntidad), sin await:
+  GET /api/detalle/{id} (eventos, imágenes y fuentes
+  para el panel); la vista 3D no espera por ello
+end note
+deactivate CTRL
+
+loop cada fotograma (requestAnimationFrame)
+  ESC -> ESC : ~#animar() → ~#avanzarSimulacion()\n→ ~#copiarPosicionesDeLaSimulacion()
+end
+ESC --> Usuario : grafo 3D dibujado y estabilizado
+
+@enduml

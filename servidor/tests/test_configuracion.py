@@ -16,6 +16,7 @@ def test_lee_los_valores_indicados() -> None:
         "urlServicio": "https://ejemplo.invalid/api",
         "umbralPorDefecto": 0.5,
         "maxNodos": 40,
+        "nodosObjetivo": 25,
         "maxEntidadesVecindario": 500,
         "entidadInicial": "p02",
     })
@@ -23,6 +24,7 @@ def test_lee_los_valores_indicados() -> None:
     assert configuracion.get_url_servicio() == "https://ejemplo.invalid/api"
     assert configuracion.get_umbral_por_defecto() == 0.5
     assert configuracion.get_max_nodos() == 40
+    assert configuracion.get_nodos_objetivo() == 25
     assert configuracion.get_max_entidades_vecindario() == 500
     assert configuracion.get_entidad_inicial() == "p02"
 
@@ -34,15 +36,17 @@ def test_valores_por_defecto_si_faltan() -> None:
     assert configuracion.get_url_servicio() == ""
     assert configuracion.get_umbral_por_defecto() == 0.3
     assert configuracion.get_max_nodos() == 150
+    assert configuracion.get_nodos_objetivo() == 100
     assert configuracion.get_max_entidades_vecindario() == 2000
     assert configuracion.get_entidad_inicial() == ""
 
 
 def test_valores_por_defecto_si_no_son_validos() -> None:
     configuracion = Configuracion()
-    configuracion.cargar({"umbralPorDefecto": 7, "maxNodos": -3, "maxEntidadesVecindario": "mucho"})
+    configuracion.cargar({"umbralPorDefecto": 7, "maxNodos": -3, "nodosObjetivo": 0, "maxEntidadesVecindario": "mucho"})
     assert configuracion.get_umbral_por_defecto() == 0.3
     assert configuracion.get_max_nodos() == 150
+    assert configuracion.get_nodos_objetivo() == 100
     assert configuracion.get_max_entidades_vecindario() == 2000
 
 

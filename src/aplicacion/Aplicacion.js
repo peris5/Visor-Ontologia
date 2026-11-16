@@ -37,6 +37,7 @@ import { FabricaEntidades } from '../datos/FabricaEntidades.js';
 export class Aplicacion {
   static UMBRAL_POR_DEFECTO = 0.3;
   static MAX_NODOS_POR_DEFECTO = 150;
+  static NODOS_OBJETIVO_POR_DEFECTO = 100;
 
   #controlador;
   #contexto;
@@ -131,7 +132,8 @@ export class Aplicacion {
     // RelevanciaDesdeBD lee la relevancia que ya asignó el servidor.
     this.#gestor = new GestorSubgrafos(this.#cliente, new RelevanciaDesdeBD(), maxNodos, this.#contexto);
     this.#buscador = new Buscador(Aplicacion.#prepararIndice(nombres, this.#contexto));
-    this.#controlador = new ControladorExploracion(this.#gestor, this.#buscador, umbral);
+    const nodosObjetivo = Aplicacion.#leerNodosObjetivo(configuracion, maxNodos);
+    this.#controlador = new ControladorExploracion(this.#gestor, this.#buscador, umbral, nodosObjetivo);
 
     // Las vistas necesitan el controlador (para avisarle de los clics) y el
     // controlador necesita las vistas (para mostrar cosas): primero el
@@ -281,6 +283,26 @@ export class Aplicacion {
       return maximo;
     }
     return Aplicacion.MAX_NODOS_POR_DEFECTO;
+  }
+
+  /**
+   * (Privado) Cuántos nodos, más o menos, se quieren al abrir una entidad
+   * (ver AjustadorUmbral). Si la configuración no trae un entero mayor que
+   * 0, 100. Nunca más que maxNodos (no podrían salir).
+   *
+   * @param {Object} configuracion
+   * @param {number} maxNodos
+   * @returns {number}
+   */
+  static #leerNodosObjetivo(configuracion, maxNodos) {
+    let objetivo = Aplicacion.NODOS_OBJETIVO_POR_DEFECTO;
+    if (Number.isInteger(configuracion.nodosObjetivo) && configuracion.nodosObjetivo > 0) {
+      objetivo = configuracion.nodosObjetivo;
+    }
+    if (objetivo > maxNodos) {
+      return maxNodos;
+    }
+    return objetivo;
   }
 
   /**

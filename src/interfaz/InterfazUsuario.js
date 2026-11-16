@@ -4,6 +4,7 @@ import { ControlUmbral } from './ControlUmbral.js';
 import { Leyenda } from './Leyenda.js';
 import { IndicadorEstado } from './IndicadorEstado.js';
 import { BarraNavegacion } from './BarraNavegacion.js';
+import { ControlDisposicion } from './ControlDisposicion.js';
 import { EstadoCarga } from '../logica/EstadoCarga.js';
 
 /**
@@ -15,11 +16,11 @@ import { EstadoCarga } from '../logica/EstadoCarga.js';
  * que saber cuántos paneles hay ni cómo se llaman, y se pueden cambiar los
  * paneles sin tocar el controlador.
  *
- * Composición (◆): crea y tiene sus seis componentes.
+ * Composición (◆): crea y tiene sus siete componentes.
  *
  * La página (index.html) tiene unas zonas vacías marcadas con data-zona;
  * inicializar() monta cada componente en la suya:
- *   superior: buscador, umbral y navegación · izquierda: leyenda ·
+ *   superior: buscador, umbral, disposición y navegación · izquierda: leyenda ·
  *   derecha: información · estado: aviso de carga y de error.
  *
  * Requisitos: RF-01 a RF-07, RF-13 a RF-15, RF-23, RF-27 a RF-33 (a través
@@ -32,6 +33,7 @@ export class InterfazUsuario {
   #leyenda;
   #indicadorEstado;
   #barraNavegacion;
+  #controlDisposicion;
 
   constructor() {
     this.#panelBusqueda = null;
@@ -40,6 +42,7 @@ export class InterfazUsuario {
     this.#leyenda = null;
     this.#indicadorEstado = null;
     this.#barraNavegacion = null;
+    this.#controlDisposicion = null;
   }
 
   /**
@@ -54,6 +57,7 @@ export class InterfazUsuario {
     this.#panelBusqueda = new PanelBusqueda(controlador);
     this.#controlUmbral = new ControlUmbral(controlador);
     this.#barraNavegacion = new BarraNavegacion(controlador);
+    this.#controlDisposicion = new ControlDisposicion(controlador);
     this.#leyenda = new Leyenda(controlador);
     this.#panelInformacion = new PanelInformacion(controlador, contexto);
     this.#indicadorEstado = new IndicadorEstado(controlador);
@@ -61,6 +65,7 @@ export class InterfazUsuario {
     const superior = InterfazUsuario.#zona(raiz, "superior");
     this.#panelBusqueda.montar(superior);
     this.#controlUmbral.montar(superior);
+    this.#controlDisposicion.montar(superior);
     this.#barraNavegacion.montar(superior);
     this.#leyenda.montar(InterfazUsuario.#zona(raiz, "izquierda"));
     this.#panelInformacion.montar(InterfazUsuario.#zona(raiz, "derecha"));
@@ -145,6 +150,13 @@ export class InterfazUsuario {
    */
   setUmbral(valor) {
     this.#controlUmbral.setValor(valor);
+  }
+
+  /**
+   * @param {string} modo - el modo de disposición elegido (ModoDisposicion).
+   */
+  setModoDisposicion(modo) {
+    this.#controlDisposicion.setModo(modo);
   }
 
   /**

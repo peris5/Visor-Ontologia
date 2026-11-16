@@ -6,6 +6,9 @@ import { SimulacionFuerzas } from './SimulacionFuerzas.js';
 import { FabricaNodosVisuales } from './FabricaNodosVisuales.js';
 import { EnlaceVisual } from './EnlaceVisual.js';
 import { SelectorInteraccion } from './SelectorInteraccion.js';
+import { ModoDisposicion } from './ModoDisposicion.js';
+import { DetectorComunidades } from '../logica/DetectorComunidades.js';
+import { PaletaColores } from '../logica/PaletaColores.js';
 
 /**
  * EscenaGrafo
@@ -21,6 +24,11 @@ import { SelectorInteraccion } from './SelectorInteraccion.js';
  * Desde el incremento 3 también aplica los filtros de la leyenda (oculta o
  * muestra nodos y líneas) y resalta lo que el usuario selecciona.
  *
+ * Y tiene dos modos de disposición (ModoDisposicion): libre y por grupos.
+ * En «Por grupos» busca los grupos con DetectorComunidades, junta a cada
+ * grupo en su zona y dibuja una mancha de color transparente detrás de cada
+ * grupo grande (5 o más entidades).
+ *
  * Requisitos: RF-16 a RF-22 (representación 3D del subgrafo), RF-25 y RF-26
  * (girar y acercar la cámara), RF-27 (vista inicial), RF-28 y RF-29
  * (selección), RF-32 y RF-33 (filtros), RNF-18 (Three.js).
@@ -31,6 +39,14 @@ export class EscenaGrafo {
   static PASOS_POR_FOTOGRAMA = 3;
   // Cuánto se acerca la cámara al encuadre en cada fotograma (0 = nada, 1 = de golpe).
   static SUAVIDAD_CAMARA = 0.08;
+  // Las manchas solo se dibujan en grupos de al menos 5 entidades: con los
+  // pequeños habría tantas que se taparían unas a otras.
+  static MIEMBROS_MINIMOS_MANCHA = 5;
+  // Tamaño de la mancha: la distancia MEDIA de sus nodos al centro del grupo
+  // por este factor, más este margen. Se usa la media y no la del nodo más
+  // alejado para que un solo nodo suelto no haga enorme la mancha.
+  static FACTOR_MANCHA = 1.3;
+  static MARGEN_MANCHA = 1.5;
 
   #escena;
   #camara;
@@ -47,6 +63,12 @@ export class EscenaGrafo {
   #simulacion;
   #fabrica;
   #selector;
+  #detector;
+  #modo;
+  #subgrafo;
+  #grupos;
+  // Manchas de los grupos: { malla, ids } (ids de las entidades del grupo).
+  #manchas;
 
   constructor() {
     this.#nodos = new Map();
@@ -57,6 +79,11 @@ export class EscenaGrafo {
     this.#simulacion = new SimulacionFuerzas();
     this.#fabrica = new FabricaNodosVisuales();
     this.#selector = null;
+    this.#detector = new DetectorComunidades();
+    this.#modo = ModoDisposicion.LIBRE;
+    this.#subgrafo = null;
+    this.#grupos = null;
+    this.#manchas = [];
   }
 
   /**
@@ -111,15 +138,47 @@ export class EscenaGrafo {
   mostrarSubgrafo(subgrafo) {
     this.#limpiar();
     this.#idCentral = subgrafo.getEntidadCentral().getId();
+    this.#subgrafo = subgrafo;
 
     const posicionesIniciales = this.#disposicion.calcular(subgrafo);
     this.#crearNodos(subgrafo, posicionesIniciales);
     this.#crearEnlaces(subgrafo);
     this.#simulacion.iniciar(subgrafo, posicionesIniciales);
+    // El modo elegido se mantiene al cambiar de entidad o de umbral.
+    this.#aplicarModo();
     this.#copiarPosicionesDeLaSimulacion();
 
     this.resaltarNodo(this.#idCentral);
     this.restablecerCamara();
+  }
+
+  /**
+   * Cambia el modo de disposición. Los nodos se mueven poco a poco hasta su
+   * sitio nuevo (se vuelve a poner en marcha la simulación).
+   *
+   * @param {string} modo - un valor de ModoDisposicion.
+   */
+  setModoDisposicion(modo) {
+    this.#modo = modo;
+    if (this.#subgrafo !== null) {
+      this.#aplicarModo();
+      this.#simulacion.reactivar(1);
+    }
+  }
+
+  /**
+   * @returns {string} el modo de disposición actual (ModoDisposicion).
+   */
+  getModoDisposicion() {
+    return this.#modo;
+  }
+
+  /**
+   * @returns {number} cuántos grupos con mancha (5 o más entidades) hay en el modo
+   *   «Por grupos» (0 en los otros modos).
+   */
+  getNumeroGrupos() {
+    return this.#manchas.length;
   }
 
   /**
@@ -417,6 +476,97 @@ export class EscenaGrafo {
     for (let i = 0; i < this.#enlaces.length; i++) {
       this.#enlaces[i].actualizar();
     }
+    this.#actualizarManchas();
+  }
+
+  /**
+   * (Privado) Aplica el modo de disposición al subgrafo actual: calcula los
+   * grupos (si hace falta), la dirección de cada nodo y las manchas.
+   */
+  #aplicarModo() {
+    this.#grupos = null;
+    if (this.#modo === ModoDisposicion.POR_GRUPOS) {
+      this.#grupos = this.#detector.detectar(this.#subgrafo);
+    }
+    const direcciones = this.#disposicion.direccionesObjetivo(this.#subgrafo, this.#modo, this.#grupos);
+    this.#simulacion.setDireccionesObjetivo(direcciones);
+    this.#crearManchas();
+  }
+
+  /**
+   * (Privado) Una esfera transparente detrás de cada grupo de 5 o más
+   * entidades (solo en «Por grupos»), cada una de un color. Se ve como una
+   * mancha que envuelve al grupo. No se puede seleccionar con el ratón.
+   */
+  #crearManchas() {
+    this.#quitarManchas();
+    if (this.#grupos === null) {
+      return;
+    }
+    const idsPorGrupo = [];
+    for (const id of this.#grupos.keys()) {
+      const numero = this.#grupos.get(id);
+      while (idsPorGrupo.length <= numero) {
+        idsPorGrupo.push([]);
+      }
+      idsPorGrupo[numero].push(id);
+    }
+    for (let numero = 0; numero < idsPorGrupo.length; numero++) {
+      if (idsPorGrupo[numero].length >= EscenaGrafo.MIEMBROS_MINIMOS_MANCHA) {
+        const material = new THREE.MeshBasicMaterial({
+          color: PaletaColores.colorPara(numero),
+          transparent: true,
+          opacity: 0.07,
+          // depthWrite false: la mancha no tapa a los nodos que tiene dentro.
+          depthWrite: false
+        });
+        const malla = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), material);
+        this.#grupo.add(malla);
+        this.#manchas.push({ malla: malla, ids: idsPorGrupo[numero] });
+      }
+    }
+  }
+
+  /**
+   * (Privado) Coloca cada mancha en el centro de su grupo y le da un tamaño
+   * según lo separados que están sus nodos (ver FACTOR_MANCHA).
+   */
+  #actualizarManchas() {
+    for (let i = 0; i < this.#manchas.length; i++) {
+      const mancha = this.#manchas[i];
+      const centro = new THREE.Vector3(0, 0, 0);
+      const posiciones = [];
+      for (let j = 0; j < mancha.ids.length; j++) {
+        const posicion = this.#simulacion.getPosicion(mancha.ids[j]);
+        if (posicion !== null) {
+          const vector = new THREE.Vector3(posicion.x, posicion.y, posicion.z);
+          posiciones.push(vector);
+          centro.add(vector);
+        }
+      }
+      if (posiciones.length > 0) {
+        centro.multiplyScalar(1 / posiciones.length);
+        let suma = 0;
+        for (let j = 0; j < posiciones.length; j++) {
+          suma = suma + posiciones[j].distanceTo(centro);
+        }
+        const media = suma / posiciones.length;
+        mancha.malla.position.copy(centro);
+        mancha.malla.scale.setScalar(media * EscenaGrafo.FACTOR_MANCHA + EscenaGrafo.MARGEN_MANCHA);
+      }
+    }
+  }
+
+  /**
+   * (Privado) Quita y libera las manchas de los grupos.
+   */
+  #quitarManchas() {
+    for (let i = 0; i < this.#manchas.length; i++) {
+      this.#grupo.remove(this.#manchas[i].malla);
+      this.#manchas[i].malla.geometry.dispose();
+      this.#manchas[i].malla.material.dispose();
+    }
+    this.#manchas = [];
   }
 
   /**
@@ -478,6 +628,7 @@ export class EscenaGrafo {
     if (this.#selector !== null) {
       this.#selector.ocultarEtiqueta();
     }
+    this.#quitarManchas();
     for (const visual of this.#nodos.values()) {
       this.#grupo.remove(visual.getMalla());
       visual.liberar();

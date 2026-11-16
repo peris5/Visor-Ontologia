@@ -3,6 +3,8 @@
   "origenDatos": "simulado",
   "umbralPorDefecto": 0.3,
   "maxNodos": 150,
+  "_comentarioNodosObjetivo": "Al cargar cada entidad, el navegador elige el umbral inicial para que salgan más o menos estos nodos (nunca más de maxNodos). Después el usuario puede moverlo con el deslizador.",
+  "nodosObjetivo": 30,
   "maxEntidadesVecindario": 2000,
   "entidadInicial": "n1",
   "idioma": "es",

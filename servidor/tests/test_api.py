@@ -30,7 +30,7 @@ def test_salud(cliente: TestClient) -> None:
 
 def test_configuracion_no_envia_lo_que_es_solo_del_servidor(cliente: TestClient) -> None:
     datos = cliente.get("/api/configuracion").json()
-    assert set(datos.keys()) == {"umbralPorDefecto", "maxNodos", "entidadInicial", "idioma", "nombresTipos",
+    assert set(datos.keys()) == {"umbralPorDefecto", "maxNodos", "nodosObjetivo", "entidadInicial", "idioma", "nombresTipos",
                                  "etiquetasEntidad"}
     assert datos["maxNodos"] == 150
     assert datos["entidadInicial"] == "n1"

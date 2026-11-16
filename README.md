@@ -44,6 +44,7 @@ El diseño de la base de datos está en `docs/diseno_bd_refracts.json` (export d
 
 - El servidor apenas consume recursos y atiende a más usuarios a la vez (RNF-05).
 - Cambiar el umbral muchas veces no le cuesta nada al servidor: si sube, el navegador recalcula con los datos que ya tiene.
+- Cada entidad se abre con el umbral que da **más o menos `nodosObjetivo` nodos** (100 por defecto, en `servidor/configuracion.json`): una entidad muy conectada se abre con un umbral alto y una poco conectada, con uno bajo (`AjustadorUmbral`). Después el deslizador se puede mover libremente; al cambiar de entidad se vuelve a ajustar.
 - Las sugerencias del buscador salen al instante, porque se buscan en memoria (RNF-03).
 
 ### El vecindario y por qué contiene todo lo necesario
@@ -187,7 +188,7 @@ python -m uvicorn servidor.app:app --port 8000
 | Petición | Respuesta |
 |---|---|
 | `GET /api/salud` | `{"estado": "ok"}` |
-| `GET /api/configuracion` | `umbralPorDefecto`, `maxNodos`, `entidadInicial`, `idioma`, `nombresTipos`, `etiquetasEntidad` (solo lo que necesita el navegador) |
+| `GET /api/configuracion` | `umbralPorDefecto`, `maxNodos`, `nodosObjetivo`, `entidadInicial`, `idioma`, `nombresTipos`, `etiquetasEntidad` (solo lo que necesita el navegador) |
 | `GET /api/tipos` | **Nueva.** Los tipos de relación de los datos con sus padres: `[{"id": "Marriage", "padres": ["Related", "Relationship"]}]` (RF-39) |
 | `GET /api/nombres` | Todas las entidades con sus etiquetas y sus propiedades de nombre, en bruto (el índice del buscador) |
 | `GET /api/vecindario/{id}?umbral=0.3` | `idCentral`, `umbral`, `recortado`, `entidades` (en bruto), `relaciones` (derivadas, con `valor` = relevancia asignada, `roles`, `periodo`, `lugar`, `fecha`), `relevanciasAsignadas` y `relevanciasReutilizadas` |
@@ -208,7 +209,7 @@ En el servidor: índice de relaciones por nodo, caché de respuestas (`CacheResp
 ## Configuración
 
 - **`servidor/configuracion.json`** (la de verdad):
-  - ajustes generales: `origenDatos`, `umbralPorDefecto`, `maxNodos`, `maxEntidadesVecindario`, `entidadInicial`, `idioma`;
+  - ajustes generales: `origenDatos`, `umbralPorDefecto`, `maxNodos`, `nodosObjetivo` (nodos que se buscan al abrir una entidad), `maxEntidadesVecindario`, `entidadInicial`, `idioma`;
   - clasificación de etiquetas: `etiquetasEntidad`, `etiquetasAuxiliares`, `papelesAuxiliares`, `tiposSinRelacion`, `relacionesIgnoradas`, `maxParticipantesIntermediario`;
   - relevancia y nombres: `pesosRelevancia`, `pesoPorDefecto`, `versionPesos` y `nombresTipos`.
 
@@ -261,8 +262,9 @@ Después, en `crear_repositorio` de `servidor/app.py`, crearla cuando `origenDat
 | `datos/FabricaEntidades.js` | `crearDesdeNeo4j`: la clase sale de las etiquetas con la tabla `etiquetasEntidad`. |
 | `datos/RepositorioVecindario.js` | El vecindario en memoria; tipos con nombre, padres, familia y color estable. |
 | `datos/ClienteServicio.js` | Configuración, tipos, nombres, vecindarios y detalle (`convertirDetalle`). |
-| `logica/` | `RelevanciaDesdeBD` (lee el valor asignado), `ConstructorSubgrafo`, `CalculadorCentralidad`, `PaletaColores`, `GestorSubgrafos` (y el detalle), `Buscador` (todos los nombres), `ControladorExploracion` (pide el detalle sin bloquear), `FiltroVisualizacion`, `HistorialNavegacion`, `EstadoCarga`. |
-| `vista3d/` | La vista 3D; la etiqueta de una relación incluye los roles. |
+| `logica/` | `RelevanciaDesdeBD` (lee el valor asignado), `ConstructorSubgrafo`, `CalculadorCentralidad`, `PaletaColores`, `GestorSubgrafos` (y el detalle), `AjustadorUmbral` (umbral inicial de cada entidad para que salgan unos `nodosObjetivo` nodos), `Buscador` (todos los nombres), `ControladorExploracion` (pide el detalle sin bloquear), `FiltroVisualizacion`, `HistorialNavegacion`, `EstadoCarga`, `DetectorComunidades` (grupos de entidades muy relacionadas, por propagación de etiquetas). |
+| `vista3d/` | La vista 3D; la etiqueta de una relación incluye los roles. `ModoDisposicion` (libre o por grupos) y la fuerza que junta a cada grupo en su zona (`SimulacionFuerzas`, `CalculadorDisposicion`). |
+| `interfaz/ControlDisposicion.js` | Botones «Libre» y «Por grupos» de la barra superior. |
 | `interfaz/` | `PanelInformacion` (subtipos, detalle, imágenes, fuentes, roles), `Leyenda` (agrupada por familias) y el resto de componentes del incremento 3. |
 
 ## Uso
@@ -272,6 +274,7 @@ Después, en `crear_repositorio` de `servidor/app.py`, crearla cuando `origenDat
 - **Navegar**: doble clic en un nodo o «Explorar su red». «← Volver» (o `Alt + ←`) regresa.
 - **Filtrar**: pulsa un tipo en la leyenda para ocultarlo (sale apagado y tachado) o volver a mostrarlo; están agrupados por familia. «Todas» y «Ninguna» cambian todas las relaciones a la vez.
 - **Cámara**: arrastra para girar, rueda para acercar, «Vista inicial» (o `Inicio`).
+- **Disposición**: «Libre» (las fuerzas reparten los nodos) o «Por grupos» (las entidades muy relacionadas entre sí se juntan, cada grupo en su zona, con una mancha de color detrás de los grupos de 5 o más). En los dos, la distancia al centro sigue siendo la relevancia. El modo se mantiene al cambiar de entidad o de umbral.
 
 ## Lista de comprobación del incremento 3b (a mano)
 

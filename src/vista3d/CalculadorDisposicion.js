@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ModoDisposicion } from './ModoDisposicion.js';
 
 /**
  * CalculadorDisposicion
@@ -14,6 +15,10 @@ import * as THREE from 'three';
  *    ordenados de más a menos relevantes, cada uno a una distancia del centro
  *    que depende de su relevancia.
  *  - Los de niveles siguientes, alrededor de su padre y hacia fuera.
+ *
+ * También calcula, según el modo de disposición, hacia qué DIRECCIÓN tiene
+ * que ir cada nodo (direccionesObjetivo): SimulacionFuerzas los empuja hacia
+ * ella sin cambiar su distancia al centro.
  *
  * Requisitos: RF-16 y RF-17 (colocación según la relevancia), RNF-28.
  */
@@ -238,5 +243,87 @@ export class CalculadorDisposicion {
       }
     }
     return maximo;
+  }
+
+  /**
+   * Hacia qué dirección (vector de longitud 1) tiene que ir cada nodo en
+   * un modo de disposición. Los nodos que no salen en el mapa se mueven
+   * libremente (como siempre).
+   *
+   *  - LIBRE: ninguno.
+   *  - POR_GRUPOS: cada grupo de 2 o más entidades, una dirección propia,
+   *    repartidas por la esfera con la espiral de Fibonacci para que queden
+   *    lo más separadas posible. Los nodos que están solos en su grupo
+   *    quedan libres.
+   * La central nunca sale (está fija en el centro).
+   *
+   * @param {Subgrafo} subgrafo
+   * @param {string} modo - un valor de ModoDisposicion.
+   * @param {Map<string, number>|null} grupos - id → número de grupo
+   *   (DetectorComunidades); solo hace falta en POR_GRUPOS.
+   * @returns {Map<string, {x:number, y:number, z:number}>}
+   */
+  direccionesObjetivo(subgrafo, modo, grupos) {
+    const direcciones = new Map();
+    const idCentral = subgrafo.getEntidadCentral().getId();
+    if (modo === ModoDisposicion.POR_GRUPOS && grupos !== null && grupos !== undefined) {
+      const tamanos = CalculadorDisposicion.#tamanosDeGrupo(grupos);
+      // Solo los grupos de 2 o más; como están numerados de mayor a menor
+      // tamaño, son los primeros números.
+      let gruposConDireccion = 0;
+      for (let numero = 0; numero < tamanos.length; numero++) {
+        if (tamanos[numero] >= 2) {
+          gruposConDireccion = gruposConDireccion + 1;
+        }
+      }
+      const direccionesDeGrupo = CalculadorDisposicion.#puntosEnEsfera(gruposConDireccion);
+      for (const id of grupos.keys()) {
+        const numero = grupos.get(id);
+        if (id !== idCentral && numero < gruposConDireccion) {
+          direcciones.set(id, direccionesDeGrupo[numero]);
+        }
+      }
+    }
+    return direcciones;
+  }
+
+  /**
+   * (Privado) Cuántos nodos tiene cada grupo (posición = número de grupo).
+   *
+   * @param {Map<string, number>} grupos
+   * @returns {number[]}
+   */
+  static #tamanosDeGrupo(grupos) {
+    const tamanos = [];
+    for (const numero of grupos.values()) {
+      while (tamanos.length <= numero) {
+        tamanos.push(0);
+      }
+      tamanos[numero] = tamanos[numero] + 1;
+    }
+    return tamanos;
+  }
+
+  /**
+   * (Privado) N puntos repartidos por una esfera de radio 1 (espiral de
+   * Fibonacci). Con un solo punto, delante de la cámara.
+   *
+   * @param {number} cantidad
+   * @returns {{x:number, y:number, z:number}[]}
+   */
+  static #puntosEnEsfera(cantidad) {
+    const puntos = [];
+    if (cantidad === 1) {
+      puntos.push({ x: 0, y: 0, z: 1 });
+      return puntos;
+    }
+    const anguloAureo = Math.PI * (3 - Math.sqrt(5));
+    for (let i = 0; i < cantidad; i++) {
+      const y = 1 - 2 * (i + 0.5) / cantidad;
+      const radioHorizontal = Math.sqrt(1 - y * y);
+      const angulo = i * anguloAureo;
+      puntos.push({ x: Math.cos(angulo) * radioHorizontal, y: y, z: Math.sin(angulo) * radioHorizontal });
+    }
+    return puntos;
   }
 }

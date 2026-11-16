@@ -28,6 +28,7 @@ class Configuracion:
     URL_POR_DEFECTO = ""
     UMBRAL_POR_DEFECTO = 0.3
     MAX_NODOS_POR_DEFECTO = 150
+    NODOS_OBJETIVO_POR_DEFECTO = 100
     ENTIDAD_INICIAL_POR_DEFECTO = ""
     MAX_ENTIDADES_VECINDARIO_POR_DEFECTO = 2000
 
@@ -96,6 +97,16 @@ class Configuracion:
         if not isinstance(maximo, int) or isinstance(maximo, bool) or maximo < 1:
             return Configuracion.MAX_NODOS_POR_DEFECTO
         return maximo
+
+    def get_nodos_objetivo(self) -> int:
+        """Cuántos nodos, más o menos, se quieren ver al cargar una entidad
+        (100 si falta o no es válido). El navegador elige el umbral inicial
+        de cada entidad para acercarse a este número.
+        """
+        objetivo = self.__datos.get("nodosObjetivo")
+        if not isinstance(objetivo, int) or isinstance(objetivo, bool) or objetivo < 1:
+            return Configuracion.NODOS_OBJETIVO_POR_DEFECTO
+        return objetivo
 
     def get_max_entidades_vecindario(self) -> int:
         """Máximo de entidades de un vecindario (2000 si falta o no es válido).
