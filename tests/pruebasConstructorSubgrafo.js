@@ -2,8 +2,10 @@ import { prueba, comprobar, comprobarIgual, redondear } from './miniPruebas.js';
 import { ConstructorSubgrafo } from '../src/logica/ConstructorSubgrafo.js';
 import { RepositorioVecindario } from '../src/datos/RepositorioVecindario.js';
 import { OrigenRelevancia } from '../src/modelo/OrigenRelevancia.js';
+import { SeleccionadorNodos } from '../src/logica/SeleccionadorNodos.js';
+import { EscenariosPrueba } from '../src/laboratorio/EscenariosPrueba.js';
 import {
-  configuracionEscenario, contextoEscenario, crearPiezas, JERARQUIA_ESCENARIO, construirDatos, escenarioAna, evento
+  configuracionEscenario, contextoEscenario, crearPiezas, construirDatos, escenarioAna, evento, cacheEscenario
 } from './escenarioPrototipo.js';
 import { CONTEXTO_PRUEBAS, crearRelevanciaPruebas, relacionesDesdeDatos } from './utilidadesPruebas.js';
 
@@ -28,7 +30,7 @@ function crearConstructor(umbral, maxNodos, mostrarDeducidos) {
   escenario.parejas.push({ a: "ana", b: "sofia", pruebas: deSofia });
   escenario.parejas.push({ a: "luis", b: "tomas", pruebas: [evento("Exposition", 12)] });
   const cache = new RepositorioVecindario(construirDatos(escenario), contextoEscenario());
-  const piezas = crearPiezas(configuracionEscenario(), JERARQUIA_ESCENARIO);
+  const piezas = crearPiezas(configuracionEscenario());
   return new ConstructorSubgrafo(cache, piezas.estrategia, piezas.calculador, umbral, maxNodos, mostrarDeducidos);
 }
 
@@ -54,11 +56,58 @@ prueba("Constructor: aplica el umbral a S y guarda el origen de cada nodo", asyn
   const subgrafo = await crearConstructor(0.3, 150).construir("ana");
   comprobar(subgrafo.contieneEntidad("paseo"), "Paseo (0,53) entra");
   comprobar(subgrafo.contieneEntidad("museo"), "el Museo (0,31) también");
-  comprobar(!subgrafo.contieneEntidad("retrato"), "Retrato (0,17) no");
-  comprobar(subgrafo.contieneEntidad("marta"), "Marta entra por su S (0,34), aunque su R sea 0,60");
+  comprobar(!subgrafo.contieneEntidad("retrato"), "Retrato (0,13) no");
+  comprobar(!subgrafo.contieneEntidad("marta"), "Marta no entra por su S (0,23), aunque su R sea 0,31");
   comprobarIgual(subgrafo.getNodo("paseo").getOrigen(), OrigenRelevancia.DEDUCIDA, "Paseo es deducido");
   comprobarIgual(subgrafo.getNodo("paseo").getNivel(), 2, "a dos saltos");
-  comprobarIgual(subgrafo.getNodo("marta").getOrigen(), OrigenRelevancia.COINCIDENCIAS, "Marta: coincidencias");
+  const todos = await crearConstructor(0, 150).construir("ana");
+  comprobarIgual(todos.getNodo("sofia").getOrigen(), OrigenRelevancia.COINCIDENCIAS, "Sofía: coincidencias");
+});
+
+prueba("Constructor: la cuota de obras deja sitio a las personas, y la central no cuenta", async function () {
+  const cache = cacheEscenario(EscenariosPrueba.artistaProlifica());
+  const piezas = crearPiezas(configuracionEscenario());
+  const conCuota = await new ConstructorSubgrafo(cache, piezas.estrategia, piezas.calculador, 0.3, 150, true,
+    new SeleccionadorNodos({ OBRA_DE_ARTE: 50 })).construir("ana");
+  const sinCuota = await new ConstructorSubgrafo(cache, piezas.estrategia, piezas.calculador, 0.3, 150, true)
+    .construir("ana");
+  let obras = 0;
+  const nodos = conCuota.getNodos();
+  for (let i = 0; i < nodos.length; i++) {
+    if (nodos[i].getEntidad().getTipo() === "OBRA_DE_ARTE") {
+      obras = obras + 1;
+    }
+  }
+  comprobarIgual(obras, 50, "50 obras");
+  comprobar(conCuota.contieneEntidad("joaquin") && conCuota.contieneEntidad("alumna11"), "entran el maestro y las alumnas");
+  comprobarIgual(sinCuota.getNumeroNodos(), 150, "sin cuota, las 150 plazas...");
+  comprobar(!sinCuota.contieneEntidad("joaquin"), "...se llenan de obras");
+  // Desde una obra, la central es una obra y no gasta cuota.
+  const desdeObra = await new ConstructorSubgrafo(cache, piezas.estrategia, piezas.calculador, 0, 150, true,
+    new SeleccionadorNodos({ OBRA_DE_ARTE: 1 })).construir("huerta");
+  let otrasObras = 0;
+  const nodosDesdeObra = desdeObra.getNodos();
+  for (let i = 1; i < nodosDesdeObra.length; i++) {
+    if (nodosDesdeObra[i].getEntidad().getTipo() === "OBRA_DE_ARTE") {
+      otrasObras = otrasObras + 1;
+    }
+  }
+  comprobarIgual(otrasObras, 1, "la central y otra");
+});
+
+prueba("Constructor: a igual S y C, el corte es por id (no depende del orden de llegada)", async function () {
+  const entidades = [{ id: "c", tipo: "PERSONA", nombre: "Central" }];
+  const relaciones = [];
+  for (let i = 9; i >= 0; i--) {
+    entidades.push({ id: "v" + i, tipo: "PERSONA", nombre: "Vecina " + i });
+    relaciones.push(["r" + i, "c", "v" + i, "Friendship"]);
+  }
+  const cache = new RepositorioVecindario(relacionesDesdeDatos({ entidades: entidades, relaciones: relaciones }),
+    CONTEXTO_PRUEBAS);
+  const piezas = crearRelevanciaPruebas();
+  const subgrafo = await new ConstructorSubgrafo(cache, piezas.estrategia, piezas.calculador, 0, 4).construir("c");
+  comprobar(subgrafo.contieneEntidad("v0") && subgrafo.contieneEntidad("v1") && subgrafo.contieneEntidad("v2"),
+    "entran las tres primeras por id, aunque llegaron las últimas");
 });
 
 prueba("Constructor: solo se dibujan las relaciones dibujables entre nodos incluidos", async function () {
@@ -109,22 +158,22 @@ prueba("Constructor: desmarcar «Mostrar deducidos» los quita", async function 
 });
 
 prueba("Constructor: los deducidos se quitan ANTES de aplicar el máximo", async function () {
-  // Con 7 nodos como máximo y los deducidos ocultos, entran los 6 directos de
+  // Con 6 nodos como máximo y los deducidos ocultos, entran los 5 directos de
   // más relevancia (si se quitasen después, Paseo ocuparía un sitio).
-  const subgrafo = await crearConstructor(0, 7, false).construir("ana");
-  comprobarIgual(subgrafo.getNumeroNodos(), 7, "7 nodos");
-  comprobar(subgrafo.contieneEntidad("sofia"), "el 6.º directo (Sofía) entra");
+  const subgrafo = await crearConstructor(0, 6, false).construir("ana");
+  comprobarIgual(subgrafo.getNumeroNodos(), 6, "6 nodos");
+  comprobar(subgrafo.contieneEntidad("sofia"), "el 5.º directo (Sofía) entra");
 });
 
 prueba("Constructor: ordena y corta por S (un deducido con más S pasa delante de un directo)", async function () {
   // Con 6 nodos entran la central y los 5 de mayor S: Huerta (1), Joaquín
-  // (0,95), Luis (0,79), Paseo (0,53, deducido) y el Taller (0,52).
+  // (0,95), Luis (0,62), Paseo (0,53, deducido) y el Taller (0,52).
   const subgrafo = await crearConstructor(0, 6).construir("ana");
   const esperados = ["huerta", "joaquin", "luis", "paseo", "taller"];
   for (let i = 0; i < esperados.length; i++) {
     comprobar(subgrafo.contieneEntidad(esperados[i]), "falta " + esperados[i]);
   }
-  comprobar(!subgrafo.contieneEntidad("marta"), "Marta (0,34) se queda fuera");
+  comprobar(!subgrafo.contieneEntidad("museo"), "el Museo (0,31) se queda fuera");
 });
 
 prueba("Constructor: un solo muelle por pareja, con el peso de lo que transmite", async function () {
@@ -144,15 +193,42 @@ prueba("Constructor: un solo muelle por pareja, con el peso de lo que transmite"
     vistos.add(clave);
     peso[clave] = muelles[i].peso;
   }
-  // Entre dos directos: el mayor de los dos sentidos de F(Y,X) · T̄ · fE · h.
-  // Luis → Marta: 0,5 × T̄(Amistad 0,5 y Exposición 0,542 → Amistad) × 1 × 1;
-  // Marta → Luis: 0,5 × T(Exposition>Friendship) = 0,3 → 0,15 (menos).
-  const tLuis = (0.5 * 0.4 + 0.5423 * 0.3) / (0.5 + 0.5423);
-  comprobar(Math.abs(peso["luis|marta"] - 0.5 * tLuis) < 0.001, "Luis–Marta: " + peso["luis|marta"]);
-  // Entre un deducido y su padre: F(P,Z) · T̄ · fE(Z) · h(P) · τ = 1 × 0,8 × 1 × 1 × 1.
-  comprobar(Math.abs(peso["joaquin|paseo"] - 0.8) < 0.001, "Joaquín–Paseo: " + peso["joaquin|paseo"]);
-  // Luis–Pedro: Matrimonio (0,5) × T̄(→ Matrimonio) 0,3 × fE(Pedro) 0,6.
-  comprobar(Math.abs(peso["luis|pedro"] - 0.09) < 0.001, "Luis–Pedro: " + peso["luis|pedro"]);
+  // Lo que un directo Y transmite a X: fE(Y) · Tr · F(Y,X) · fE(X) · h(Y).
+  // Joaquín → Paseo: 1 × (0,95 × 0,8) × 1 × 1 × 1.
+  comprobar(Math.abs(peso["joaquin|paseo"] - 0.76) < 0.001, "Joaquín–Paseo: " + peso["joaquin|paseo"]);
+  // Luis es amigo (0,5) y coexpositor de Ana (5 coincidencias de 0,14 con ρ = 0,5).
+  let resto = 1;
+  for (let k = 0; k < 5; k++) {
+    resto = resto * (1 - 0.14 * Math.pow(0.5, k));
+  }
+  const exposiciones = 1 - resto;
+  // Luis → Marta (Amistad, 0,5): Friendship>Friendship 0,4 y Exposition>Friendship 0,3.
+  const aMarta = (1 - (1 - 0.5 * 0.4) * (1 - exposiciones * 0.3)) * 0.5;
+  comprobar(Math.abs(peso["luis|marta"] - aMarta) < 0.001, "Luis–Marta: " + peso["luis|marta"]);
+  // Luis → Pedro (Matrimonio, 0,5; fE 0,6): Friendship>Marriage 0,3 y Exposition>Marriage 0,3.
+  const aPedro = (1 - (1 - 0.5 * 0.3) * (1 - exposiciones * 0.3)) * 0.5 * 0.6;
+  comprobar(Math.abs(peso["luis|pedro"] - aPedro) < 0.001, "Luis–Pedro: " + peso["luis|pedro"]);
+});
+
+prueba("Constructor: entre dos directos que se transmiten, el muelle es el mayor de los dos sentidos", async function () {
+  const escenario = escenarioAna();
+  escenario.parejas.push({ a: "ana", b: "marta", pruebas: [EscenariosPrueba.rel("Mentorship", { ana: "aprendiz",
+    marta: "maestro" })] });
+  const cache = cacheEscenario(escenario);
+  const piezas = crearPiezas(configuracionEscenario());
+  const subgrafo = await new ConstructorSubgrafo(cache, piezas.estrategia, piezas.calculador, 0, 150).construir("ana");
+  const deLuis = subgrafo.getNodo("marta").getResultado().getTransmisiones().get("luis");
+  const deMarta = subgrafo.getNodo("luis").getResultado().getTransmisiones().get("marta");
+  comprobar(deLuis !== deMarta, "los dos sentidos son distintos");
+  const muelles = subgrafo.getMuelles();
+  let peso = -1;
+  for (let i = 0; i < muelles.length; i++) {
+    const ids = [muelles[i].nodoA.getEntidad().getId(), muelles[i].nodoB.getEntidad().getId()];
+    if (ids.includes("luis") && ids.includes("marta")) {
+      peso = muelles[i].peso;
+    }
+  }
+  comprobarIgual(redondear(peso), redondear(Math.max(deLuis, deMarta)), "el mayor");
 });
 
 prueba("Constructor: como mucho 150 nodos, los más relevantes", async function () {

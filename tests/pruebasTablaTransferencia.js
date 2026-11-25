@@ -1,4 +1,5 @@
-import { prueba, comprobarIgual, redondear } from './miniPruebas.js';
+import { prueba, comprobar, comprobarIgual, redondear } from './miniPruebas.js';
+import { CompatibilidadTemporal } from '../src/logica/CompatibilidadTemporal.js';
 import { TablaTransferencia } from '../src/logica/TablaTransferencia.js';
 import { TipoRelacion } from '../src/modelo/TipoRelacion.js';
 import { TipoEntidad } from '../src/modelo/TipoEntidad.js';
@@ -8,7 +9,7 @@ import { configuracionEscenario, JERARQUIA_ESCENARIO } from './escenarioPrototip
 
 /*
  * Pruebas de TablaTransferencia (src/logica/): la tabla T con rol y
- * herencia, la T efectiva y factorEntidad.
+ * herencia, la transmisión Tr y factorEntidad.
  */
 
 const ETIQUETAS_ENTIDAD = { Person: "PERSONA", Organization: "ORGANIZACION", HeritageItem: "OBRA_DE_ARTE" };
@@ -51,16 +52,44 @@ prueba("TablaTransferencia: T por defecto", function () {
   comprobarIgual(crearTabla().getT(AMISTAD, null, EMPLEO), 0.3, "Friendship>Employement no está: transferenciaPorDefecto");
 });
 
-prueba("TablaTransferencia: getTEfectiva con dos tipos es la media ponderada por su fuerza", function () {
-  const luis = persona("luis", ["Person", "Creator", "Painter"]);
-  const ana = persona("ana", ["Person", "Creator", "Painter"]);
-  // Luis es amigo (0,5) y coexpositor (0,6) de Ana.
-  const evidencia = new EvidenciaPareja({
-    desde: ana, hacia: luis, fuerza: 0.8, certeza: 1, tipoPrincipal: EXPOSICION, declarada: true, numeroEventos: 0,
-    relaciones: [], tipos: [{ tipo: AMISTAD, rol: null, fuerza: 0.5 }, { tipo: EXPOSICION, rol: null, fuerza: 0.6 }]
+prueba("TablaTransferencia: buscarT dice de dónde sale el valor", function () {
+  const tabla = crearTabla();
+  comprobarIgual(tabla.buscarT(MENTORIA, "maestro", PINTURA).clave, "Mentorship:maestro>Creation", "heredada con rol");
+  comprobarIgual(tabla.buscarT(AMISTAD, null, EMPLEO).clave, null, "por defecto");
+});
+
+/** Un tramo con esos tipos ({ tipo, rol, fuerza, periodos }). */
+function tramo(tipos, periodo) {
+  return new EvidenciaPareja({
+    desde: persona("ana", ["Person", "Creator", "Painter"]), hacia: persona("luis", ["Person", "Creator", "Painter"]),
+    fuerza: 0.8, certeza: 1, tipoPrincipal: tipos[0].tipo, periodoPrincipal: periodo, declarada: true, numeroEventos: 0,
+    relaciones: [], tipos: tipos
   });
-  // (0,5 × T(Friendship>Creation) + 0,6 × T(Exposition>Creation)) / 1,1 = (0,1 + 0,24) / 1,1
-  comprobarIgual(redondear(crearTabla().getTEfectiva(evidencia, CREACION)), redondear(0.34 / 1.1), "media ponderada");
+}
+
+prueba("TablaTransferencia: getTransmision con dos tipos es el noisy-OR de sus partes y añadir uno nunca la baja", function () {
+  const tabla = crearTabla();
+  const obra = tramo([{ tipo: CREACION, rol: null, fuerza: 1 }], null);
+  // Luis es amigo (0,5) y coexpositor (0,6) de Ana: partes 0,5 × 0,2 y 0,6 × 0,4.
+  const amigo = { tipo: AMISTAD, rol: null, fuerza: 0.5 };
+  const coexpositor = { tipo: EXPOSICION, rol: null, fuerza: 0.6 };
+  const soloAmigo = tabla.getTransmision(tramo([amigo], null), obra);
+  const soloCoexpositor = tabla.getTransmision(tramo([coexpositor], null), obra);
+  const losDos = tabla.getTransmision(tramo([amigo, coexpositor], null), obra);
+  comprobarIgual(redondear(losDos), redondear(1 - (1 - 0.1) * (1 - 0.24)), "noisy-OR de 0,1 y 0,24");
+  comprobar(losDos >= soloAmigo && losDos >= soloCoexpositor, "nunca menos que cada uno por separado");
+});
+
+prueba("TablaTransferencia: cada tipo del primer tramo transmite con su propio factor de tiempo", function () {
+  const configuracion = configuracionEscenario();
+  const tabla = new TablaTransferencia(configuracion, JERARQUIA_ESCENARIO, new CompatibilidadTemporal(configuracion));
+  const obraTardia = tramo([{ tipo: CREACION, rol: null, fuerza: 1 }], { desde: 1945, hasta: 1945 });
+  const mentoria = { tipo: MENTORIA, rol: "maestro", fuerza: 0.95, periodos: [{ desde: 1900, hasta: 1910 }] };
+  const amistad = { tipo: AMISTAD, rol: null, fuerza: 0.5, periodos: [{ desde: 1900, hasta: 1910 }] };
+  comprobarIgual(redondear(tabla.getTransmision(tramo([mentoria], null), obraTardia)), redondear(0.95 * 0.8 * 0.3),
+    "la mentoría, fuera de tiempo");
+  comprobarIgual(redondear(tabla.getTransmision(tramo([mentoria, amistad], null), obraTardia)),
+    redondear(1 - (1 - 0.95 * 0.8 * 0.3) * (1 - 0.5 * 0.2)), "a la amistad no le afecta el tiempo");
 });
 
 prueba("TablaTransferencia: factorEntidad de un Painter (1,0), de una Person sin subtipo (0,6) y sin factor", function () {

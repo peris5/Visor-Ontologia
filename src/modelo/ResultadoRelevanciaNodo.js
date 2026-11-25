@@ -16,12 +16,11 @@ import { OrigenRelevancia } from './OrigenRelevancia.js';
  *  - explicacion: textos para la etiqueta y el panel («Mentoría (su
  *    maestro)», «Coinciden en 3 exposiciones», «Creación de Joaquín Mestre
  *    (su maestro)»).
- *  - padres: en un nodo deducido, los nodos directos por los que entra, de
- *    más a menos aportación; si no, [].
+ *  - padres: los nodos directos que le transmiten algo, de más a menos
+ *    aportación (también en los nodos que son directos).
  *  - evidenciaPropia: la del nodo con la central (F × C × factorEntidad).
- *  - transmisiones: id de otro nodo → lo que esa pareja transmite en el
- *    cálculo (entre dos directos, o entre un deducido y cada padre). Con
- *    eso ConstructorSubgrafo da el peso de los muelles.
+ *  - transmisiones: id de cada padre → lo que le transmite en el cálculo.
+ *    Con eso ConstructorSubgrafo da el peso de los muelles.
  *
  * Guarda también su Entidad (para crear el NodoRelevante sin buscarla).
  */
@@ -32,6 +31,7 @@ export class ResultadoRelevanciaNodo {
   #certeza;
   #origen;
   #explicacion;
+  #generadorExplicacion;
   #padres;
   #evidenciaPropia;
   #transmisiones;
@@ -66,6 +66,7 @@ export class ResultadoRelevanciaNodo {
         this.#explicacion.push(datos.explicacion[i]);
       }
     }
+    this.#generadorExplicacion = null;
     this.#padres = [];
     if (Array.isArray(datos.padres)) {
       for (let i = 0; i < datos.padres.length; i++) {
@@ -116,9 +117,23 @@ export class ResultadoRelevanciaNodo {
   }
 
   /**
+   * Quién escribe la explicación. Se llama solo la primera vez que alguien
+   * la pide: se calculan miles de nodos y solo se enseñan 150.
+   *
+   * @param {Function} generador - sin parámetros; devuelve la lista de textos.
+   */
+  setGeneradorExplicacion(generador) {
+    this.#generadorExplicacion = generador;
+  }
+
+  /**
    * @returns {string[]} copia de los textos de la explicación.
    */
   getExplicacion() {
+    if (this.#generadorExplicacion !== null) {
+      this.#explicacion = this.#generadorExplicacion();
+      this.#generadorExplicacion = null;
+    }
     const copia = [];
     for (let i = 0; i < this.#explicacion.length; i++) {
       copia.push(this.#explicacion[i]);
@@ -130,11 +145,11 @@ export class ResultadoRelevanciaNodo {
    * La explicación en una línea: «Amistad · 5 exposiciones juntos».
    */
   getTextoExplicacion() {
-    return this.#explicacion.join(" · ");
+    return this.getExplicacion().join(" · ");
   }
 
   /**
-   * @returns {Entidad[]} copia de los padres de un deducido, del que más aporta al que menos.
+   * @returns {Entidad[]} copia de los directos que le transmiten, del que más aporta al que menos.
    */
   getPadres() {
     const copia = [];

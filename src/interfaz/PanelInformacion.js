@@ -213,6 +213,10 @@ export class PanelInformacion extends ComponenteUI {
         PanelInformacion.#anadirDato(datos, "Nombre", relacion.getNombre());
       }
       PanelInformacion.#anadirDato(datos, "Participantes", String(relacion.getParticipantes()));
+      const registros = relacion.getIdsIntermediarios().length;
+      if (registros > 1) {
+        PanelInformacion.#anadirDato(datos, "Registros", registros + " del mismo evento (se cuentan como uno)");
+      }
       PanelInformacion.#anadirDato(datos, "Relevancia", PanelInformacion.#enPorcentaje(relacion.getRelevancia()) +
         " (peso del tipo × participantes × época)");
     }
@@ -263,7 +267,12 @@ export class PanelInformacion extends ComponenteUI {
     PanelInformacion.#anadirDato(datos, "Fuerza (R)", PanelInformacion.#enPorcentaje(resultado.getFuerza()));
     PanelInformacion.#anadirDato(datos, "Certeza (C)", PanelInformacion.#enPorcentaje(resultado.getCerteza()) + " (" +
       PanelInformacion.textoDeLaCerteza(resultado.getCerteza()) + ")");
-    PanelInformacion.#anadirDato(datos, "Origen", PanelInformacion.textoDelOrigen(resultado.getOrigen()));
+    let textoOrigen = PanelInformacion.textoDelOrigen(resultado.getOrigen());
+    if (resultado.esDeducido() && resultado.getPadre() === null) {
+      // Ni directo ni a través de otro: lo que lo une a la central es muy poco.
+      textoOrigen = "Evidencia escasa con la entidad central";
+    }
+    PanelInformacion.#anadirDato(datos, "Origen", textoOrigen);
     if (resultado.getTextoExplicacion() !== "") {
       PanelInformacion.#anadirDato(datos, "Por qué", resultado.getTextoExplicacion());
     }

@@ -22,6 +22,7 @@ class Configuracion:
     PAPELES_AUXILIARES = ["periodo", "lugar", "imagen", "fuente"]
 
     ORIGEN_POR_DEFECTO = "simulado"
+    ORIGEN_SIMULADA_GRANDE = "simuladaGrande"
     URL_POR_DEFECTO = ""
     UMBRAL_POR_DEFECTO = 0.3
     MAX_NODOS_POR_DEFECTO = 150
@@ -57,6 +58,9 @@ class Configuracion:
         self.__comprobar_diccionario("papelesAuxiliares", problemas)
         self.__comprobar_lista("tiposSinRelacion", problemas)
         self.__comprobar_lista("relacionesIgnoradas", problemas)
+        self.__comprobar_lista("tiposCoincidencia", problemas)
+        self.__comprobar_lista("relacionesLugar", problemas)
+        self.__comprobar_lista("etiquetasCreador", problemas)
         self.__comprobar_entero_positivo("maxParticipantesIntermediario", problemas)
         self.__comprobar_entero_positivo("maxParticipantesEvidencia", problemas)
         self.__comprobar_texto("idioma", problemas)
@@ -71,8 +75,16 @@ class Configuracion:
                              + "; ".join(problemas) + ".")
 
     def get_origen_datos(self) -> str:
-        """"simulado" o el origen indicado."""
+        """"simulado", "simuladaGrande" o el origen indicado."""
         return self.__leer_texto("origenDatos", Configuracion.ORIGEN_POR_DEFECTO)
+
+    def cambiar_origen_datos(self, origen: str) -> None:
+        """Usa otro origen de datos sin tocar el archivo (lo hace app.py si
+        existe la variable de entorno VISOR_ORIGEN_DATOS).
+        """
+        # Una copia: no se cambia el diccionario que se recibió en cargar.
+        self.__datos = dict(self.__datos)
+        self.__datos["origenDatos"] = origen
 
     def get_url_servicio(self) -> str:
         """Dirección del servicio de la BD real."""
@@ -103,8 +115,27 @@ class Configuracion:
         return objetivo
 
     def get_entidad_inicial(self) -> str:
-        """Id de la entidad que se muestra al empezar ("" si no hay)."""
+        """Id de la entidad que se muestra al empezar ("" si no hay). Con los
+        datos simulados grandes es la de simulacionGrande.
+        """
+        if self.get_origen_datos() == Configuracion.ORIGEN_SIMULADA_GRANDE:
+            inicial = self.get_simulacion_grande().get("entidadInicial")
+            if isinstance(inicial, str):
+                return inicial
         return self.__leer_texto("entidadInicial", Configuracion.ENTIDAD_INICIAL_POR_DEFECTO)
+
+    def get_deduplicar_eventos(self) -> bool:
+        """¿Se juntan los registros repetidos del mismo evento? (True si falta)"""
+        return self.__datos.get("deduplicarEventos", True) is True
+
+    def get_simulacion_grande(self) -> dict[str, Any]:
+        """Semilla y tamaños de los datos simulados grandes ({} si faltan: el
+        generador usa los suyos).
+        """
+        valor = self.__datos.get("simulacionGrande")
+        if not isinstance(valor, dict):
+            return {}
+        return valor
 
     # Los siguientes solo se pueden usar después de comprobar().
 
@@ -131,6 +162,22 @@ class Configuracion:
     def get_relaciones_ignoradas(self) -> list[str]:
         """Tipos de relación de Neo4j que no cuentan para derivar relaciones."""
         return self.__datos["relacionesIgnoradas"]
+
+    def get_tipos_coincidencia(self) -> list[str]:
+        """Tipos exactos de evento que pueden estar registrados varias veces
+        (los mismos que en public/relevancia.json).
+        """
+        return self.__datos["tiposCoincidencia"]
+
+    def get_relaciones_lugar(self) -> list[str]:
+        """Relaciones de Neo4j que unen un intermediario con el lugar donde
+        ocurrió (las mismas que en public/relevancia.json).
+        """
+        return self.__datos["relacionesLugar"]
+
+    def get_etiquetas_creador(self) -> list[str]:
+        """Etiquetas de quien crea obras (para elegir la muestra del laboratorio)."""
+        return self.__datos["etiquetasCreador"]
 
     def get_max_participantes_intermediario(self) -> int:
         """Un intermediario con más entidades que esto da relaciones que NO se

@@ -67,6 +67,18 @@ prueba("AjustadorUmbral: el objetivo debe ser un entero mayor que 0", function (
   }
 });
 
+prueba("AjustadorUmbral: no deja sola a la central si algún umbral da nodos", function () {
+  // 50 obras con relevancia 1: con un objetivo de 20, «1 nodo» está más cerca que «51».
+  const relevancias = [];
+  for (let i = 0; i < 50; i++) {
+    relevancias.push(1);
+  }
+  const eleccion = new AjustadorUmbral(20).elegir(relevancias, 0, 150);
+  comprobarIgual(eleccion.nodos, 51, "las 50 obras");
+  comprobarIgual(eleccion.umbral, 0.95, "con el umbral más alto que las muestra");
+  comprobarIgual(new AjustadorUmbral(20).elegir([], 0, 150).nodos, 1, "si no hay nodos, la central sola");
+});
+
 prueba("GestorSubgrafos: obtenerSubgrafoAjustado da el número de nodos más cercano al objetivo", async function () {
   const objetivo = 40;
   const entidades = ["n1", "n121", "n146", "ana_ferrer"];

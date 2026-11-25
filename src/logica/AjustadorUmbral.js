@@ -8,13 +8,15 @@
  * subgrafo para cada uno? Le basta con la relevancia de cada nodo (el
  * producto de su mejor camino desde la central): con un umbral u entran
  * la central y los nodos de relevancia mayor que u, como mucho maxNodos.
- * Es así porque, si un nodo supera u, todas las relaciones de su mejor
- * camino también lo superan (un producto de números entre 0 y 1 nunca es
- * mayor que sus factores), así que se llega a él igual.
+ * Le llegan solo los que pueden entrar, con las cuotas ya aplicadas
+ * (SeleccionadorNodos).
  *
  * Solo prueba los valores que tiene el deslizador (de 0,05 en 0,05) y se
  * queda con el que da un número de nodos más cercano al objetivo. Si dos
- * quedan igual de cerca, el más alto (menos nodos, más ligero).
+ * quedan igual de cerca, el más alto (menos nodos, más ligero). Un umbral
+ * que deja SOLA a la central no se elige si otro da algún nodo: en un artista
+ * con 50 obras de S = 1 y un objetivo de 30, «1 nodo» quedaba más cerca que
+ * «51 nodos» y la página se abría vacía.
  */
 export class AjustadorUmbral {
   static MINIMO = 0.05;
@@ -66,7 +68,8 @@ export class AjustadorUmbral {
       }
       const nodos = this.contarNodos(relevancias, umbral, maxNodos);
       const diferencia = Math.abs(nodos - this.#nodosObjetivo);
-      if (diferencia < mejorDiferencia) {
+      const dejaDeEstarSola = mejorNodos === 1 && nodos > 1;
+      if (diferencia < mejorDiferencia || dejaDeEstarSola) {
         mejorUmbral = umbral;
         mejorNodos = nodos;
         mejorDiferencia = diferencia;

@@ -16,6 +16,13 @@ import { TipoRelacion } from './TipoRelacion.js';
  *    1911»), periodo, lugar y fecha, si el intermediario los tiene;
  *  - participantes: cuántas entidades tiene el intermediario (2 en una
  *    relación directa). Cuanto más grande el evento, menos dice;
+ *  - participantesPorClase: cuántas de cada clase ({ PERSONA: 3,
+ *    OBRA_DE_ARTE: 8 }); entre dos personas solo cuentan las personas;
+ *  - via: el tipo de la relación de la BD que une cada extremo al
+ *    intermediario, en bruto (PARTICIPATES_IN, OCURRED_AT, IS_EXPOSED...).
+ *    Dice, por ejemplo, cuál de los dos es el lugar del evento;
+ *  - idsIntermediarios: los ids originales si el servidor ha juntado varios
+ *    registros del mismo evento (si no, solo idIntermedio);
  *  - dibujable: false si el intermediario es demasiado grande para
  *    dibujarlo (más de maxParticipantesIntermediario en el servidor). No
  *    se dibuja, pero cuenta como evidencia para la relevancia;
@@ -38,6 +45,9 @@ export class Relacion {
   #lugar;
   #fecha;
   #participantes;
+  #participantesPorClase;
+  #via;
+  #idsIntermediarios;
   #nombre;
   #dibujable;
   #sintetica;
@@ -48,7 +58,9 @@ export class Relacion {
    *   la BD; la evidencia de la pareja en las sintéticas).
    * @param {Object} datos - opcional: { idIntermedio, roles (objeto o Map
    *   idEntidad → rol), nombre, periodo (Periodo o null), lugar, fecha,
-   *   participantes (2 si no se indica), dibujable (true si no se indica),
+   *   participantes (2 si no se indica), participantesPorClase (objeto
+   *   TipoEntidad → número), via (objeto idEntidad → tipo de relación de la
+   *   BD), idsIntermediarios (lista), dibujable (true si no se indica),
    *   sintetica (false si no se indica), texto }.
    */
   constructor(id, origen, destino, tipo, valor, datos) {
@@ -76,7 +88,12 @@ export class Relacion {
     if (typeof extra.idIntermedio === "string" && extra.idIntermedio !== "") {
       this.#idIntermedio = extra.idIntermedio;
     }
-    this.#roles = Relacion.#leerRoles(extra.roles);
+    this.#roles = Relacion.#leerTextos(extra.roles);
+    this.#via = Relacion.#leerTextos(extra.via);
+    this.#idsIntermediarios = [this.#idIntermedio];
+    if (Array.isArray(extra.idsIntermediarios) && extra.idsIntermediarios.length > 0) {
+      this.#idsIntermediarios = extra.idsIntermediarios.slice();
+    }
     this.#periodo = null;
     if (extra.periodo !== undefined) {
       this.#periodo = extra.periodo;
@@ -86,6 +103,10 @@ export class Relacion {
     this.#participantes = 2;
     if (Number.isInteger(extra.participantes) && extra.participantes >= 2) {
       this.#participantes = extra.participantes;
+    }
+    this.#participantesPorClase = null;
+    if (extra.participantesPorClase !== undefined && extra.participantesPorClase !== null) {
+      this.#participantesPorClase = extra.participantesPorClase;
     }
     this.#dibujable = extra.dibujable !== false;
     this.#nombre = "";
@@ -104,6 +125,51 @@ export class Relacion {
    */
   getParticipantes() {
     return this.#participantes;
+  }
+
+  /**
+   * Cuántas entidades de una clase tiene el intermediario.
+   *
+   * @param {string} clase - un valor de TipoEntidad.
+   * @returns {number} si no se sabe (no han llegado participantesPorClase), todas.
+   */
+  getParticipantesDeClase(clase) {
+    if (this.#participantesPorClase === null) {
+      return this.#participantes;
+    }
+    if (typeof this.#participantesPorClase[clase] === "number") {
+      return this.#participantesPorClase[clase];
+    }
+    return 0;
+  }
+
+  /**
+   * El tipo de la relación de la BD que une un extremo al intermediario.
+   *
+   * @param {Entidad} entidad - el origen o el destino.
+   * @returns {string} en bruto («OCURRED_AT»), o "" si no hay (una relación directa).
+   */
+  getVia(entidad) {
+    if (this.#via.has(entidad.getId())) {
+      return this.#via.get(entidad.getId());
+    }
+    return "";
+  }
+
+  /**
+   * @returns {boolean} true si une directamente sus dos entidades, sin un
+   *   intermediario (ninguno de sus extremos tiene vía).
+   */
+  esDirecta() {
+    return this.#via.size === 0 && !this.#sintetica;
+  }
+
+  /**
+   * @returns {string[]} copia de los ids de los registros del intermediario
+   *   (más de uno si el servidor ha juntado varios del mismo evento).
+   */
+  getIdsIntermediarios() {
+    return this.#idsIntermediarios.slice();
   }
 
   /**
@@ -246,22 +312,22 @@ export class Relacion {
     return idDestino + "|" + idOrigen;
   }
 
-  /** Los roles como Map (admite un objeto normal o un Map). */
-  static #leerRoles(roles) {
+  /** idEntidad → texto (roles o vías) como Map (admite un objeto normal o un Map). */
+  static #leerTextos(textos) {
     const resultado = new Map();
-    if (roles === undefined || roles === null) {
+    if (textos === undefined || textos === null) {
       return resultado;
     }
-    if (roles instanceof Map) {
-      for (const clave of roles.keys()) {
-        resultado.set(clave, roles.get(clave));
+    if (textos instanceof Map) {
+      for (const clave of textos.keys()) {
+        resultado.set(clave, textos.get(clave));
       }
       return resultado;
     }
-    const claves = Object.keys(roles);
+    const claves = Object.keys(textos);
     for (let i = 0; i < claves.length; i++) {
-      if (typeof roles[claves[i]] === "string" && roles[claves[i]] !== "") {
-        resultado.set(claves[i], roles[claves[i]]);
+      if (typeof textos[claves[i]] === "string" && textos[claves[i]] !== "") {
+        resultado.set(claves[i], textos[claves[i]]);
       }
     }
     return resultado;

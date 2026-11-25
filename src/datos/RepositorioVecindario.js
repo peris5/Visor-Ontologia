@@ -21,7 +21,8 @@ import { PaletaColores } from '../logica/PaletaColores.js';
  *     ids:        [ ids de las entidades pedidas ],
  *     entidades:  [ { id, etiquetas, propiedades } ],              (en bruto)
  *     relaciones: [ { id, idIntermedio, origen, destino, tipo, padres, roles,
- *                     nombre, periodo, lugar, fecha, participantes, dibujable } ]
+ *                     nombre, periodo, lugar, fecha, participantes, participantesPorClase,
+ *                     via, dibujable, idsIntermediarios (solo en los eventos juntados) } ]
  *   }
  * (sin relevancias: las calcula el navegador) y para interpretarla hace
  * falta el CONTEXTO, que se recibe al arrancar:
@@ -39,6 +40,7 @@ export class RepositorioVecindario extends RepositorioDatos {
   #relacionesPorEntidad;
   #completas;
   #contexto;
+  #version;
 
   /**
    * @param {Object|null} datosIniciales - una respuesta de /api/relaciones
@@ -51,6 +53,7 @@ export class RepositorioVecindario extends RepositorioDatos {
       throw new Error("El repositorio necesita el contexto (idioma, nombresTipos, etiquetasEntidad y tipos).");
     }
     this.#contexto = contexto;
+    this.#version = 0;
     this.#entidades = new Map();
     this.#relaciones = new Map();
     this.#relacionesPorEntidad = new Map();
@@ -78,12 +81,7 @@ export class RepositorioVecindario extends RepositorioDatos {
     this.#anadirTiposNuevos(datos.relaciones);
     for (let i = 0; i < datos.relaciones.length; i++) {
       if (!this.#relaciones.has(datos.relaciones[i].id)) {
-        const relacion = this.#crearRelacion(datos.relaciones[i]);
-        this.#relaciones.set(relacion.getId(), relacion);
-        this.#apuntarEnElIndice(relacion.getOrigen().getId(), relacion);
-        if (relacion.getDestino().getId() !== relacion.getOrigen().getId()) {
-          this.#apuntarEnElIndice(relacion.getDestino().getId(), relacion);
-        }
+        this.anadirRelacion(this.#crearRelacion(datos.relaciones[i]));
       }
     }
     if (Array.isArray(datos.ids)) {
@@ -91,6 +89,60 @@ export class RepositorioVecindario extends RepositorioDatos {
         this.#completas.add(datos.ids[i]);
       }
     }
+  }
+
+  /**
+   * Añade una relación ya creada (si no estaba). La usan incorporar y la
+   * prueba de monotonía del laboratorio, que después la quita.
+   *
+   * @param {Relacion} relacion
+   */
+  anadirRelacion(relacion) {
+    if (this.#relaciones.has(relacion.getId())) {
+      return;
+    }
+    this.#version = this.#version + 1;
+    this.#relaciones.set(relacion.getId(), relacion);
+    this.#apuntarEnElIndice(relacion.getOrigen().getId(), relacion);
+    if (relacion.getDestino().getId() !== relacion.getOrigen().getId()) {
+      this.#apuntarEnElIndice(relacion.getDestino().getId(), relacion);
+    }
+  }
+
+  /**
+   * Quita una relación de la caché (solo la usa el laboratorio).
+   */
+  quitarRelacion(idRelacion) {
+    if (!this.#relaciones.has(idRelacion)) {
+      return;
+    }
+    this.#version = this.#version + 1;
+    const relacion = this.#relaciones.get(idRelacion);
+    this.#relaciones.delete(idRelacion);
+    this.#quitarDelIndice(relacion.getOrigen().getId(), relacion);
+    this.#quitarDelIndice(relacion.getDestino().getId(), relacion);
+  }
+
+  /**
+   * Cambia cada vez que se añade o se quita una relación. Quien guarda algo
+   * calculado con las relaciones (PenalizacionGrado) sabe así cuándo
+   * olvidarlo.
+   *
+   * @returns {number}
+   */
+  getVersion() {
+    return this.#version;
+  }
+
+  /**
+   * @returns {Relacion[]} todas las relaciones que hay en la caché (para el laboratorio).
+   */
+  todasLasRelaciones() {
+    const lista = [];
+    for (const relacion of this.#relaciones.values()) {
+      lista.push(relacion);
+    }
+    return lista;
   }
 
   /**
@@ -207,6 +259,14 @@ export class RepositorioVecindario extends RepositorioDatos {
     this.#relacionesPorEntidad.get(idEntidad).push(relacion);
   }
 
+  #quitarDelIndice(idEntidad, relacion) {
+    const lista = this.#relacionesPorEntidad.get(idEntidad);
+    const posicion = lista.indexOf(relacion);
+    if (posicion >= 0) {
+      lista.splice(posicion, 1);
+    }
+  }
+
   /** ¿La entidad cumple el tipo y contiene el texto en su nombre? */
   static #cumpleLaBusqueda(entidad, textoEnMinusculas, tipo) {
     if (tipo !== null && tipo !== undefined && entidad.getTipo() !== tipo) {
@@ -314,6 +374,9 @@ export class RepositorioVecindario extends RepositorioDatos {
         lugar: datos.lugar,
         fecha: datos.fecha,
         participantes: datos.participantes,
+        participantesPorClase: datos.participantesPorClase,
+        via: datos.via,
+        idsIntermediarios: datos.idsIntermediarios,
         dibujable: datos.dibujable
       });
   }

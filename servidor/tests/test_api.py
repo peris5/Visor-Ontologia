@@ -17,7 +17,7 @@ from servidor.datos.repositorio_simulado import RepositorioSimulado
 from servidor.tests.utilidades import cargar_configuracion, cargar_datos_ejemplo
 
 CAMPOS_RELACION = {"id", "idIntermedio", "origen", "destino", "tipo", "padres", "roles", "nombre", "periodo",
-                   "lugar", "fecha", "participantes", "dibujable"}
+                   "lugar", "fecha", "participantes", "participantesPorClase", "via", "dibujable"}
 
 
 @pytest.fixture
@@ -53,7 +53,9 @@ def test_salud(cliente: TestClient) -> None:
 def test_configuracion_no_envia_lo_que_es_solo_del_servidor(cliente: TestClient) -> None:
     datos = cliente.get("/api/configuracion").json()
     assert set(datos.keys()) == {"umbralPorDefecto", "maxNodos", "nodosObjetivo", "entidadInicial", "idioma", "nombresTipos",
-                                 "etiquetasEntidad"}
+                                 "etiquetasEntidad", "origenDatos", "deduplicarEventos"}
+    assert datos["origenDatos"] == "simulado"
+    assert datos["deduplicarEventos"] is True
     assert datos["maxNodos"] == 150
     assert datos["entidadInicial"] == "n1"
     assert datos["nombresTipos"]["COINCIDENCIAS"] == "Coincidencias en eventos"
@@ -245,6 +247,19 @@ def test_roles_y_periodos_llegan_en_bruto(cliente: TestClient) -> None:
             extremos.remove("joaquin_mestre")
             anios[extremos[0]] = relacion["periodo"]["from"]
     assert anios == {"obra_paseo": "1905", "obra_tardia": "1945"}
+
+
+def test_participantes_por_clase_y_vias_en_el_escenario_de_ana(cliente: TestClient) -> None:
+    datos = pedir_relaciones(cliente, ["ana_ferrer", "obra_huerta"])
+    taller = entre(datos, "ana_ferrer", "taller_valencia")[0]
+    assert taller["via"] == {"ana_ferrer": "HAS_ROLE_IN", "taller_valencia": "OCURRED_AT"}
+    assert taller["participantesPorClase"] == {"PERSONA": 1, "ORGANIZACION": 1}
+    museo = entre(datos, "obra_huerta", "museo_ciudad")[0]
+    assert museo["via"] == {"obra_huerta": "IS_EXPOSED", "museo_ciudad": "OCURRED_AT"}
+    autoria = entre(datos, "ana_ferrer", "obra_huerta")[0]
+    assert autoria["via"] == {"ana_ferrer": "PARTICIPATES_IN", "obra_huerta": "PRODUCED"}
+    for relacion in entre(datos, "ana_ferrer", "luis_peris"):
+        assert relacion["participantesPorClase"] == {"PERSONA": relacion["participantes"]}
 
 
 def test_detalle_con_eventos_imagenes_y_fuentes(cliente: TestClient) -> None:

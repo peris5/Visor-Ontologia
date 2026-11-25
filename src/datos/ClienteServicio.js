@@ -76,6 +76,18 @@ export class ClienteServicio {
   }
 
   /**
+   * Ids de entidades para el laboratorio (la aplicación no lo usa).
+   *
+   * @param {number} numero - cuántas.
+   * @param {number} semilla - con la misma, siempre las mismas.
+   * @returns {Promise<Object>} { ids, creadores, entidades, intermediariosIgnorados: { tipo: cuántos },
+   *   eventosJuntados: { tipo: cuántos } }
+   */
+  async obtenerMuestra(numero, semilla) {
+    return await this.#pedir("/muestra?n=" + encodeURIComponent(numero) + "&semilla=" + encodeURIComponent(semilla));
+  }
+
+  /**
    * TODAS las relaciones de esas entidades (las que se dibujan y las que
    * solo son evidencia) y las entidades de sus extremos, en bruto (ver
    * RepositorioVecindario). Si hay más de 200 ids, se piden en trozos de

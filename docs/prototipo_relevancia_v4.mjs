@@ -6,10 +6,16 @@
 //   E2  en las parejas de dos personas, p cuenta solo las personas del intermediario
 //   E3  como mucho 50 obras entre los nodos dibujados (cuota por clase)
 //   E4  en los eventos de tipo coincidencia, toda pareja es coincidencia salvo las del lugar del evento
+// Y tres cambios en cómo cuentan los eventos, porque los participantes registrados de un evento salen
+// de fuentes muy distintas (anécdotas, vídeos...) y no dicen cuánta gente hubo:
+//   E5  una coincidencia en un evento vale como mucho topeCoincidencia (0,2); si los registrados
+//       demuestran que el evento fue grande, menos (2/n). Los registrados se usan solo como mínimo.
+//   E6  lo que une con el lugar del evento no se reparte entre participantes
+//   E7  dos eventos del mismo tipo, en el mismo lugar y la misma fecha son el mismo: se juntan
 // Además calcula recorriendo los vecinos de cada directo (mismo resultado, unas 9 veces más rápido)
 // y desempata por certeza y por identificador, para que el corte de los 150 no dependa del orden.
 //
-// Ejecutar: node prototipo_relevancia_v4.mjs  →  debe decir «v4: 15/15» y «Todas cumplen».
+// Ejecutar: node prototipo_relevancia_v4.mjs  →  debe decir «v4: 17/17» y «Todas cumplen».
 // Estilo: sin flechas, ternarios, ?., ??, map ni filter.
 
 // ---------- Perfil artístico ----------
@@ -59,13 +65,16 @@ export const PARAMETROS = {
     margenAnios: 5,
     factorFueraDeTiempo: 0.3,
     factorTiempoSinFecha: 1,
-    maxParticipantesEvidencia: 200
+    maxParticipantesEvidencia: 200,
+    topeCoincidencia: 0.2   // lo máximo que vale una coincidencia en un evento (E5)
 };
 
 // Las dos configuraciones que se comparan. v3 = la anterior; v4 = la propuesta.
 export const CONFIG = {
-    v3: { nombre: "v3", hubPorTipo: false, contarPersonas: false, coincidenciaSalvoLugar: false, cuotas: {} },
-    v4: { nombre: "v4", hubPorTipo: true, contarPersonas: true, coincidenciaSalvoLugar: true, cuotas: { HeritageItem: 50 } }
+    v3: { nombre: "v3", hubPorTipo: false, contarPersonas: false, coincidenciaSalvoLugar: false, cuotas: {},
+          topeCoincidencia: false, lugarSinReparto: false, deduplicarEventos: false },
+    v4: { nombre: "v4", hubPorTipo: true, contarPersonas: true, coincidenciaSalvoLugar: true, cuotas: { HeritageItem: 50 },
+          topeCoincidencia: true, lugarSinReparto: true, deduplicarEventos: true }
 };
 
 // ---------- Utilidades ----------
@@ -143,8 +152,50 @@ function transmision(primerTramo, segundoTramo) {
 // intermediario = { id, tipo, participantes: [{ id, rol }], periodo: { desde, hasta } | null }
 // El lugar del evento (OCURRED_AT) va como participante con rol "lugar".
 
-export function derivarParejas(entidades, intermediarios, config) {
+// E7: dos eventos del mismo tipo, en el mismo lugar y en la misma fecha exacta (día) son el mismo evento
+// registrado desde dos fuentes. Se juntan en uno con todos los participantes de los dos. Sin lugar o sin fecha
+// exacta no se juntan: con solo el año, dos exposiciones distintas de la misma galería se confundirían
+// (en la BD simulada, que solo tiene años, se habrían juntado 1.184 eventos distintos).
+function claveEvento(it) {
+    if (TIPOS_COINCIDENCIA.indexOf(it.tipo) < 0 || it.periodo === null || it.periodo === undefined) { return null; }
+    if (typeof it.periodo.fecha !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(it.periodo.fecha)) { return null; }
+    let lugar = null;
+    for (let k = 0; k < it.participantes.length; k++) {
+        if (it.participantes[k].rol === ROL_LUGAR) { lugar = it.participantes[k].id; }
+    }
+    if (lugar === null) { return null; }
+    return it.tipo + "|" + lugar + "|" + it.periodo.fecha;
+}
+
+export function deduplicarEventos(intermediarios) {
+    const resultado = [];
+    const porClave = new Map();
+    for (let i = 0; i < intermediarios.length; i++) {
+        const it = intermediarios[i];
+        const clave = claveEvento(it);
+        if (clave === null) { resultado.push(it); continue; }
+        if (!porClave.has(clave)) {
+            const copia = { id: it.id, tipo: it.tipo, periodo: it.periodo, participantes: it.participantes.slice() };
+            porClave.set(clave, copia);
+            resultado.push(copia);
+            continue;
+        }
+        const unido = porClave.get(clave);
+        for (let k = 0; k < it.participantes.length; k++) {
+            let ya = false;
+            for (let q = 0; q < unido.participantes.length; q++) {
+                if (unido.participantes[q].id === it.participantes[k].id) { ya = true; }
+            }
+            if (!ya) { unido.participantes.push(it.participantes[k]); }
+        }
+    }
+    return resultado;
+}
+
+export function derivarParejas(entidades, intermediariosEnBruto, config) {
     const parejas = new Map();
+    let intermediarios = intermediariosEnBruto;
+    if (config.deduplicarEventos) { intermediarios = deduplicarEventos(intermediariosEnBruto); }
     for (let i = 0; i < intermediarios.length; i++) {
         const it = intermediarios[i];
         const n = it.participantes.length;
@@ -172,6 +223,7 @@ export function derivarParejas(entidades, intermediarios, config) {
                 roles[px.id] = px.rol;
                 roles[py.id] = py.rol;
                 const prueba = { tipo: it.tipo, participantes: p, factorTiempo: 1, declarada: !coincidencia,
+                                 conLugar: px.rol === ROL_LUGAR || py.rol === ROL_LUGAR,
                                  roles: roles, intermediario: it.id };
                 if (it.periodo !== null && it.periodo !== undefined) { prueba.periodo = it.periodo; }
                 let clave = px.id + "|" + py.id;
@@ -184,6 +236,21 @@ export function derivarParejas(entidades, intermediarios, config) {
     const lista = [];
     for (const par of parejas.values()) { lista.push(par); }
     return lista;
+}
+
+// (2/p)^β de la fórmula (3), con los cambios E5 y E6.
+//   E6: lo que une con el lugar del evento no se reparte: que una obra se expusiera en un museo
+//       no depende de cuánta gente expusiera con ella.
+//   E5: en una coincidencia, los participantes registrados no dicen cuánta gente hubo (los eventos se
+//       registran desde anécdotas, vídeos, prensa...). Solo son un mínimo: si hay 100 registrados, hubo al
+//       menos 100. Por eso la coincidencia vale como mucho topeCoincidencia y menos si los registrados
+//       demuestran que el evento fue grande. Idea de Crandall y otros (2010) y Pham y otros (2013): un evento
+//       concurrido dice poco de cada pareja.
+function factorReparto(prueba, config) {
+    const reparto = Math.pow(2 / prueba.participantes, PARAMETROS.beta);
+    if (config.lugarSinReparto && prueba.declarada && prueba.conLugar) { return 1; }
+    if (config.topeCoincidencia && !prueba.declarada) { return menor(PARAMETROS.topeCoincidencia, reparto); }
+    return reparto;
 }
 
 // ---------- Grafo y capa 0: evidencia dirigida (b visto desde a) ----------
@@ -269,7 +336,7 @@ export class Grafo {
         let declarada = false;
         for (let i = 0; i < pruebas.length; i++) {
             const prueba = pruebas[i];
-            const factorParticipantes = Math.pow(2 / prueba.participantes, p.beta);
+            const factorParticipantes = factorReparto(prueba, this.config);
             const r = pesoPrueba(prueba, b) * factorParticipantes * prueba.factorTiempo;
             if (!porTipo.has(prueba.tipo)) { porTipo.set(prueba.tipo, []); }
             porTipo.get(prueba.tipo).push({ r: r, prueba: prueba });
@@ -623,6 +690,33 @@ function intermediariosMentoria(conLugar) {
     return [{ id: "M1", tipo: "Mentorship", participantes: part, periodo: { desde: 1900, hasta: 1905 } }];
 }
 
+// P15: la misma exposición registrada desde dos fuentes (mismo tipo, lugar y día), una con Carla y otra sin ella.
+// La otra fecha es del mismo año pero de otro día: es otra exposición y no se junta.
+function intermediariosDuplicados(duplicado, otraFecha) {
+    const lista = [{ id: "E1", tipo: "Exposition", periodo: { desde: 1920, hasta: 1920, fecha: "1920-05-14" },
+                     participantes: [{ id: "Ana", rol: "expositor" }, { id: "Bea", rol: "expositor" }, { id: "Carla", rol: "expositor" },
+                                     { id: "Galeria", rol: ROL_LUGAR }] }];
+    if (duplicado) {
+        let fecha = "1920-05-14";
+        if (otraFecha) { fecha = "1920-06-02"; }
+        lista.push({ id: "E2", tipo: "Exposition", periodo: { desde: 1920, hasta: 1920, fecha: fecha },
+                     participantes: [{ id: "Ana", rol: "expositor" }, { id: "Bea", rol: "expositor" }, { id: "Galeria", rol: ROL_LUGAR }] });
+    }
+    return lista;
+}
+
+// P16: Ana y Bea en una exposición con solo ellas dos registradas, y en otra con 100 personas registradas.
+function intermediariosTamano(registrados) {
+    const part = [{ id: "Ana", rol: "expositor" }, { id: "Bea", rol: "expositor" }, { id: "Galeria", rol: ROL_LUGAR }];
+    for (let i = 0; i < registrados - 2; i++) { part.push({ id: "Visitante" + i, rol: "expositor" }); }
+    return [{ id: "E9", tipo: "Exposition", periodo: { desde: 1930, hasta: 1930 }, participantes: part }];
+}
+function entidadesTamano() {
+    const e = { Ana: "Creator", Bea: "Creator", Galeria: "Organization", Carla: "Creator" };
+    for (let i = 0; i < 98; i++) { e["Visitante" + i] = "Creator"; }
+    return e;
+}
+
 // ---------- Propiedades ----------
 
 const EPS = 0.000001;
@@ -761,6 +855,22 @@ function propiedades(config) {
     const mSin = gM0.evidencia("Ana", "Joaquín").fuerza;
     salida.push({ p: "P14 Obras y lugar no diluyen a las personas", ok: Math.abs(fCon - fSin) < EPS && Math.abs(mCon - mSin) < EPS,
                   detalle: "exponer juntas " + fCon.toFixed(2) + " vs " + fSin.toFixed(2) + " · mentoría " + mCon.toFixed(2) + " vs " + mSin.toFixed(2) });
+
+    // P15 (nueva). Un evento registrado dos veces cuenta una vez; dos eventos de fechas distintas, dos.
+    const ent = entidadesTamano();
+    const fUna = new Grafo(ent, derivarParejas(ent, intermediariosDuplicados(false, false), config), config).evidencia("Ana", "Bea").fuerza;
+    const fDup = new Grafo(ent, derivarParejas(ent, intermediariosDuplicados(true, false), config), config).evidencia("Ana", "Bea").fuerza;
+    const fDos = new Grafo(ent, derivarParejas(ent, intermediariosDuplicados(true, true), config), config).evidencia("Ana", "Bea").fuerza;
+    salida.push({ p: "P15 El mismo evento registrado dos veces cuenta una", ok: Math.abs(fUna - fDup) < EPS && fDos > fUna + EPS,
+                  detalle: "una vez " + fUna.toFixed(3) + " · duplicado " + fDup.toFixed(3) + " · otro día " + fDos.toFixed(3) });
+
+    // P16 (nueva). Pocos registrados no hacen íntimo un evento; muchos registrados sí lo hacen grande.
+    const ePoco = new Grafo(ent, derivarParejas(ent, intermediariosTamano(2), config), config).evidencia("Ana", "Bea");
+    const eMucho = new Grafo(ent, derivarParejas(ent, intermediariosTamano(100), config), config).evidencia("Ana", "Bea");
+    const techoFuerza = PESOS.Exposition * PARAMETROS.topeCoincidencia;
+    salida.push({ p: "P16 Pocos registrados no hacen íntimo un evento", ok: ePoco.fuerza <= techoFuerza + EPS && eMucho.fuerza < ePoco.fuerza - EPS,
+                  detalle: "2 registrados: fuerza " + ePoco.fuerza.toFixed(3) + ", certeza " + ePoco.certeza.toFixed(3)
+                           + " · 100 registrados: fuerza " + eMucho.fuerza.toFixed(3) });
     return salida;
 }
 
@@ -815,7 +925,7 @@ function robustez() {
     PARAMETROS.lambda = original.lambda;
     PARAMETROS.delta = original.delta;
     console.log("Combinaciones probadas: " + lambdas.length * deltas.length);
-    if (fallos.length === 0) { console.log("Todas cumplen las 15 propiedades."); }
+    if (fallos.length === 0) { console.log("Todas cumplen las 17 propiedades."); }
     for (let i = 0; i < fallos.length; i++) { console.log("  " + fallos[i]); }
 }
 

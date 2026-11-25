@@ -63,6 +63,18 @@ class RepositorioDatos(ABC):
         y ubicación. Lanza EntidadNoEncontrada si no existe.
         """
 
+    @abstractmethod
+    async def obtener_muestra(self, numero: int, semilla: int) -> dict[str, Any]:
+        """Para el laboratorio: los creadores (etiquetasCreador) con más
+        relaciones y otros al azar con esa semilla, hasta «numero» (si no hay
+        bastantes creadores, se completa con otras entidades):
+          { "ids": [...], "creadores": cuántos de ellos son creadores,
+            "entidades": cuántas hay en la base de datos,
+            "intermediariosIgnorados": {tipo: cuántos},
+            "eventosJuntados": {tipo: cuántos} }
+        Con la misma semilla, siempre los mismos. Solo lee.
+        """
+
     async def cerrar(self) -> None:
         """Libera lo que use el repositorio (por ejemplo, la conexión con la
         base de datos real). El servidor lo llama al pararse. Por defecto no

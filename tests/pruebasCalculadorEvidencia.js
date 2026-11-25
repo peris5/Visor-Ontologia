@@ -2,12 +2,16 @@ import { prueba, comprobar, comprobarIgual, redondear } from './miniPruebas.js';
 import { RepositorioVecindario } from '../src/datos/RepositorioVecindario.js';
 import { CalculadorEvidencia } from '../src/logica/CalculadorEvidencia.js';
 import {
-  configuracionEscenario, contextoEscenario, crearPiezas, JERARQUIA_ESCENARIO, relacionDePrueba, entidadDePrueba
+  configuracionEscenario, configuracionV3, contextoEscenario, crearPiezas, relacionDePrueba, entidadDePrueba
 } from './escenarioPrototipo.js';
 
 /*
  * Pruebas de CalculadorEvidencia (src/logica/): la capa 0, la evidencia de
  * cada pareja con TODAS sus relaciones, vista desde un lado.
+ *
+ * Las que necesitan coincidencias fuertes usan la v3 (sin tope): lo que
+ * comprueban es cómo se combinan, no cuánto vale cada una (eso está en
+ * pruebasRepartoParticipantes.js).
  */
 
 const PINTOR = ["Person", "Creator", "Painter"];
@@ -31,7 +35,7 @@ function crearCalculador(configuracion) {
   if (configuracion !== undefined) {
     config = configuracion;
   }
-  return crearPiezas(config, JERARQUIA_ESCENARIO).calculador;
+  return crearPiezas(config).calculador;
 }
 
 /** Las relaciones de la caché entre dos entidades. */
@@ -59,10 +63,13 @@ prueba("CalculadorEvidencia: una relación declarada da certeza 1", function () 
   comprobarIgual(redondear(ev.getValor()), 0.95, "F × C = 0,95 × 1");
 });
 
-prueba("CalculadorEvidencia: 3 coincidencias de 2 participantes dan certeza 1 − 0,6³ = 0,784", function () {
+prueba("CalculadorEvidencia: 3 coincidencias de 2 participantes dan certeza 1 − 0,6³ = 0,784 sin tope (v3) y " +
+  "1 − 0,92³ = 0,221 con él", function () {
   const cache = crearCache([relacionDePrueba("e1", "a", "b", "Exposition", 2), relacionDePrueba("e2", "a", "b", "Exposition", 2),
     relacionDePrueba("e3", "a", "b", "Exposition", 2)]);
-  const ev = evidencia(crearCalculador(), cache, "a", "b");
+  comprobarIgual(redondear(evidencia(crearCalculador(), cache, "a", "b").getCerteza()), redondear(1 - Math.pow(0.92, 3)),
+    "con tope: cada una, 0,4 × 0,2");
+  const ev = evidencia(crearCalculador(configuracionV3()), cache, "a", "b");
   comprobarIgual(redondear(ev.getCerteza()), 0.784, "certeza");
   comprobar(!ev.esDeclarada(), "solo coincidencias");
   comprobarIgual(ev.getNumeroEventos(), 3, "número de eventos");
@@ -74,8 +81,8 @@ prueba("CalculadorEvidencia: multiplexidad, 10 exposiciones de 4 suman menos con
     relaciones.push(relacionDePrueba("e" + i, "a", "b", "Exposition", 4));
   }
   const cache = crearCache(relaciones);
-  const conRho = evidencia(crearCalculador(), cache, "a", "b");
-  const configuracion = configuracionEscenario();
+  const conRho = evidencia(crearCalculador(configuracionV3()), cache, "a", "b");
+  const configuracion = configuracionV3();
   configuracion.rho = 1;
   const sinRho = evidencia(crearCalculador(configuracion), cache, "a", "b");
   comprobar(conRho.getFuerza() < sinRho.getFuerza(), "ρ = 0,5: " + conRho.getFuerza().toFixed(3) + " < ρ = 1: " +
@@ -105,12 +112,18 @@ prueba("CalculadorEvidencia: «tipos» guarda todos los tipos con su fuerza", fu
   for (let i = 0; i < 5; i++) {
     relaciones.push(relacionDePrueba("e" + i, "a", "b", "Exposition", 4));
   }
-  const ev = evidencia(crearCalculador(), crearCache(relaciones), "a", "b");
+  relaciones[1].fecha = "1906";
+  const ev = evidencia(crearCalculador(configuracionV3()), crearCache(relaciones), "a", "b");
   const tipos = ev.getTipos();
   comprobarIgual(tipos.length, 2, "Amistad y Exposición");
   const porId = {};
   for (let i = 0; i < tipos.length; i++) {
     porId[tipos[i].tipo.getId()] = tipos[i].fuerza;
+    if (tipos[i].tipo.getId() === "Exposition") {
+      comprobarIgual(tipos[i].periodos.length, 5, "los periodos de las 5 exposiciones");
+      comprobarIgual(tipos[i].periodos[0].desde, 1906, "el de la que tiene fecha");
+      comprobarIgual(tipos[i].periodos[1], null, "null en las que no tienen");
+    }
   }
   comprobarIgual(redondear(porId.Friendship), 0.5, "Amistad");
   comprobarIgual(Math.round(porId.Exposition * 1000) / 1000, 0.542, "5 exposiciones con ρ = 0,5");
@@ -120,10 +133,20 @@ prueba("CalculadorEvidencia: «tipos» guarda todos los tipos con su fuerza", fu
   comprobarIgual(ev.getRelaciones().length, 6, "guarda las 6 relaciones");
 });
 
+prueba("CalculadorEvidencia: si dos tipos empatan, el principal no depende del orden de llegada", function () {
+  const amistad = relacionDePrueba("f", "a", "b", "Friendship", 2);
+  const matrimonio = relacionDePrueba("g", "a", "b", "Marriage", 2);
+  const calculador = crearCalculador();
+  comprobarIgual(evidencia(calculador, crearCache([amistad, matrimonio]), "a", "b").getTipoPrincipal().getId(),
+    "Friendship", "en un orden");
+  comprobarIgual(evidencia(calculador, crearCache([matrimonio, amistad]), "a", "b").getTipoPrincipal().getId(),
+    "Friendship", "y en el otro");
+});
+
 prueba("CalculadorEvidencia: Creation no es coincidencia aunque herede de Event; obra y museo tampoco", function () {
   const cache = crearCache([
     relacionDePrueba("expo", "a", "b", "Exposition", 4),
-    relacionDePrueba("expo", "obra", "museo", "Exposition", 4),
+    relacionDePrueba("expo", "obra", "museo", "Exposition", 4, { via: { obra: "IS_EXPOSED", museo: "OCURRED_AT" } }),
     relacionDePrueba("crea", "a", "b", "Creation", 3)
   ]);
   const calculador = crearCalculador();
@@ -179,4 +202,8 @@ prueba("CalculadorEvidencia: los textos (coincidencias, declaradas y vínculo)",
   const conRol = evidencia(calculador, mentoria, "a", "b");
   comprobarIgual(calculador.textoDeclaradas(conRol), "Mentoría (su maestro)", "declarada con rol");
   comprobarIgual(calculador.textoVinculo(conRol), "su maestro", "vínculo con rol");
+  const dosVinculos = crearCache([relacionDePrueba("m", "a", "b", "Mentorship", 2, { roles: { b: "mestre" } }),
+    relacionDePrueba("k", "a", "b", "coworking", 2)]);
+  comprobarIgual(calculador.textoVinculo(evidencia(calculador, dosVinculos, "a", "b")), "su maestro, Colaboración",
+    "se dicen todos los tipos declarados: el que hace entrar a un deducido puede no ser el más fuerte");
 });

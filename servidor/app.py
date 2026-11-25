@@ -14,12 +14,14 @@ La documentación de la API se genera sola en http://localhost:8000/docs
 """
 import json
 import logging
+import os
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 # Path de FastAPI (parámetros de la ruta) se llama igual que Path de pathlib
 # (rutas de archivos), así que se importa con otro nombre.
 from fastapi import Path as ParametroDeRuta
@@ -32,6 +34,7 @@ from servidor.api.conversor_json import ConversorJson
 from servidor.datos.repositorio_datos import EntidadNoEncontrada, RepositorioDatos
 from servidor.datos.repositorio_simulado import RepositorioSimulado
 from servidor.logica.configuracion import Configuracion
+from servidor.simulacion.generador_bd_grande import GeneradorBDGrande
 
 # Las rutas se calculan a partir de este archivo, así el servidor funciona
 # aunque se arranque desde otra carpeta.
@@ -40,6 +43,12 @@ CARPETA_PROYECTO = CARPETA_SERVIDOR.parent
 ARCHIVO_CONFIGURACION = CARPETA_SERVIDOR / "configuracion.json"
 ARCHIVO_DATOS_EJEMPLO = CARPETA_SERVIDOR / "datos" / "datos_ejemplo.json"
 CARPETA_PAGINA_PUBLICADA = CARPETA_PROYECTO / "dist"
+
+# Si existe esta variable de entorno, manda sobre "origenDatos" de
+# configuracion.json. Sirve para medir en el laboratorio con los datos grandes
+# sin cambiar el archivo (y sin dejarlo cambiado):
+#     $env:VISOR_ORIGEN_DATOS = "simuladaGrande"      (PowerShell)
+VARIABLE_ORIGEN_DATOS = "VISOR_ORIGEN_DATOS"
 
 # Antes, en el navegador, el repositorio simulado esperaba 150 ms para
 # parecerse a una red. Ahora entre el navegador y los datos ya hay una red de
@@ -56,6 +65,8 @@ SEGUNDOS_VIGENCIA_CACHE = 600
 # en trozos de este tamaño (ver ClienteServicio.js).
 MAX_IDS_POR_PETICION = 200
 MAX_LONGITUD_ID = 100
+# Máximo de entidades de la muestra del laboratorio.
+MAX_MUESTRA = 1000
 
 # Durante cuántos segundos puede el NAVEGADOR reutilizar una respuesta sin
 # volver a pedirla (cabecera Cache-Control). Si el usuario vuelve a una
@@ -85,16 +96,29 @@ def crear_configuracion() -> Configuracion:
         configuracion.comprobar()
     except (OSError, ValueError) as error:
         raise RuntimeError("No se puede arrancar el servidor: " + str(error)) from error
+    origen = os.environ.get(VARIABLE_ORIGEN_DATOS, "")
+    if origen != "":
+        configuracion.cambiar_origen_datos(origen)
     return configuracion
 
 
 def crear_repositorio(configuracion: Configuracion) -> RepositorioDatos:
-    """Crea el repositorio según el origen de datos configurado (de momento,
-    solo el simulado)."""
+    """Crea el repositorio según el origen de datos configurado: "simulado"
+    (los datos pequeños de ejemplo) o "simuladaGrande" (unas 25.000
+    entidades inventadas, para el laboratorio).
+    """
     origen = configuracion.get_origen_datos()
-    if origen != "simulado":
-        raise RuntimeError("El origen de datos \"" + origen + "\" aún no está disponible "
-                           "(llegará en el incremento 4). Usa \"simulado\" en servidor/configuracion.json.")
+    registro.info("Origen de los datos: %s.", origen)
+    if origen == Configuracion.ORIGEN_SIMULADA_GRANDE:
+        inicio = time.perf_counter()
+        datos = GeneradorBDGrande(configuracion.get_simulacion_grande()).generar()
+        repositorio = RepositorioSimulado(datos, RETARDO_SIMULADO_MS, configuracion)
+        registro.info("Datos simulados grandes: %d nodos y %d relaciones, generados y cargados en %.1f s.",
+                      len(datos["nodos"]), len(datos["relaciones"]), time.perf_counter() - inicio)
+        return repositorio
+    if origen != Configuracion.ORIGEN_POR_DEFECTO:
+        raise RuntimeError("El origen de datos \"" + origen + "\" aún no está disponible (llegará en el incremento "
+                           "4). Usa \"simulado\" o \"simuladaGrande\" en servidor/configuracion.json.")
     with open(ARCHIVO_DATOS_EJEMPLO, encoding="utf-8") as archivo:
         datos = json.load(archivo)
     return RepositorioSimulado(datos, RETARDO_SIMULADO_MS, configuracion)
@@ -224,10 +248,12 @@ class PeticionRelaciones(BaseModel):
 async def obtener_relaciones(peticion: Request, cuerpo: PeticionRelaciones) -> Response:
     """Todas las relaciones derivadas de las entidades pedidas y las
     entidades de sus extremos (ver RepositorioDatos.obtener_relaciones).
-    Cada relación lleva "participantes" y "dibujable": las de los
-    intermediarios con más de maxParticipantesIntermediario entidades
-    llegan con dibujable = false (cuentan para la relevancia pero no se
-    dibujan).
+    Cada relación lleva "participantes", "participantesPorClase", "via" (con
+    qué relación de la BD está unido cada extremo al intermediario) y
+    "dibujable": las de los intermediarios con más de
+    maxParticipantesIntermediario entidades llegan con dibujable = false
+    (cuentan para la relevancia pero no se dibujan). Los registros repetidos
+    del mismo evento llegan juntados en uno, con "idsIntermediarios".
 
     Es POST porque la lista de ids puede ser larga (hasta 200) y no cabe
     bien en una URL. Aun así, no cambia nada en el servidor.
@@ -276,6 +302,17 @@ def preparador_relaciones(repositorio: RepositorioDatos, id_entidad: str) -> Any
             raise HTTPException(status_code=404, detail=str(error)) from error
 
     return preparar
+
+
+@app.get("/api/muestra")
+async def obtener_muestra(peticion: Request, n: Annotated[int, Query(ge=1, le=MAX_MUESTRA)] = 325,
+                          semilla: int = 7) -> Response:
+    """Ids de entidades para el laboratorio (ver
+    RepositorioDatos.obtener_muestra): con la misma n y la misma semilla,
+    siempre las mismas. No la usa la aplicación.
+    """
+    muestra = await peticion.app.state.repositorio.obtener_muestra(n, semilla)
+    return Response(content=json.dumps(muestra, ensure_ascii=False).encode("utf-8"), media_type="application/json")
 
 
 @app.get("/api/detalle/{id_entidad}")

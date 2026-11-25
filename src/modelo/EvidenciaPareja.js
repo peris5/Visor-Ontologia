@@ -13,9 +13,10 @@ import { Entidad } from './Entidad.js';
  *    coincidencias, crece con el número de coincidencias y baja con el
  *    tamaño de cada evento.
  *  - valor: F × C.
- *  - tipos: TODOS los tipos de sus relaciones, cada uno con su fuerza y el
- *    rol (normalizado) del otro extremo en su prueba más fuerte:
- *    [{ tipo: TipoRelacion, rol: string|null, fuerza: number }].
+ *  - tipos: TODOS los tipos de sus relaciones, cada uno con su fuerza, el
+ *    rol (normalizado) del otro extremo en su prueba más fuerte y los años de
+ *    todas sus pruebas (null en las que no tienen fecha):
+ *    [{ tipo: TipoRelacion, rol: string|null, fuerza: number, periodos: ({ desde, hasta }|null)[] }].
  *  - tipoPrincipal: el tipo de mayor fuerza; rolPrincipal: su rol;
  *    periodoPrincipal: los años de su prueba más fuerte ({ desde, hasta } o null).
  *  - declarada: ¿hay alguna relación declarada?
@@ -52,7 +53,11 @@ export class EvidenciaPareja {
     if (Array.isArray(datos.tipos)) {
       for (let i = 0; i < datos.tipos.length; i++) {
         const tipo = datos.tipos[i];
-        this.#tipos.push({ tipo: tipo.tipo, rol: tipo.rol, fuerza: tipo.fuerza });
+        let periodos = [null];
+        if (Array.isArray(tipo.periodos) && tipo.periodos.length > 0) {
+          periodos = tipo.periodos;
+        }
+        this.#tipos.push({ tipo: tipo.tipo, rol: tipo.rol, fuerza: tipo.fuerza, periodos: periodos });
       }
     }
     this.#tipoPrincipal = datos.tipoPrincipal;
@@ -102,13 +107,13 @@ export class EvidenciaPareja {
   }
 
   /**
-   * @returns {Object[]} copia de [{ tipo, rol, fuerza }], uno por tipo.
+   * @returns {Object[]} copia de [{ tipo, rol, fuerza, periodos }], uno por tipo.
    */
   getTipos() {
     const copia = [];
     for (let i = 0; i < this.#tipos.length; i++) {
       const tipo = this.#tipos[i];
-      copia.push({ tipo: tipo.tipo, rol: tipo.rol, fuerza: tipo.fuerza });
+      copia.push({ tipo: tipo.tipo, rol: tipo.rol, fuerza: tipo.fuerza, periodos: tipo.periodos });
     }
     return copia;
   }

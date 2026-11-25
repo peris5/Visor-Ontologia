@@ -1,13 +1,5 @@
 import { ClienteServicio } from '../datos/ClienteServicio.js';
-import { RelevanciaCompuesta } from '../logica/RelevanciaCompuesta.js';
-import { CalculadorEvidencia } from '../logica/CalculadorEvidencia.js';
-import { TablaTransferencia } from '../logica/TablaTransferencia.js';
-import { RefuerzoEntreDirectos } from '../logica/RefuerzoEntreDirectos.js';
-import { PenalizacionGrado } from '../logica/PenalizacionGrado.js';
-import { CompatibilidadTemporal } from '../logica/CompatibilidadTemporal.js';
-import { DeduccionPorTipos } from '../logica/DeduccionPorTipos.js';
-import { RelevanciaNodosTresCapas } from '../logica/RelevanciaNodosTresCapas.js';
-import { RelevanciaNodosMejorCamino } from '../logica/RelevanciaNodosMejorCamino.js';
+import { FabricaRelevancia } from '../logica/FabricaRelevancia.js';
 import { GestorSubgrafos } from '../logica/GestorSubgrafos.js';
 import { Buscador } from '../logica/Buscador.js';
 import { ControladorExploracion } from '../logica/ControladorExploracion.js';
@@ -135,17 +127,14 @@ export class Aplicacion {
     const umbral = Aplicacion.#leerUmbral(configuracion);
     const maxNodos = Aplicacion.#leerMaxNodos(configuracion);
 
-    // La relevancia: la de cada relación (RelevanciaCompuesta), la evidencia
-    // de cada pareja (CalculadorEvidencia) y la de los nodos (la estrategia
-    // elegida con estrategiaNodos).
-    const tabla = new TablaTransferencia(relevancia, jerarquia);
-    const calculador = new CalculadorEvidencia(new RelevanciaCompuesta(relevancia), relevancia, tabla);
-    const estrategiaNodos = Aplicacion.#crearEstrategiaNodos(relevancia, tabla, calculador);
+    // La relevancia: la de cada relación, la evidencia de cada pareja, la de
+    // los nodos (la estrategia elegida con estrategiaNodos) y las cuotas.
+    const piezas = FabricaRelevancia.crear(relevancia, jerarquia);
     if (typeof relevancia.opacidadMinima === "number") {
       NodoVisual.setOpacidadMinima(relevancia.opacidadMinima);
     }
-    this.#gestor = new GestorSubgrafos(this.#cliente, estrategiaNodos, calculador, maxNodos, this.#contexto,
-      relevancia.mostrarDeducidosPorDefecto !== false);
+    this.#gestor = new GestorSubgrafos(this.#cliente, piezas.estrategia, piezas.calculador, maxNodos, this.#contexto,
+      relevancia.mostrarDeducidosPorDefecto !== false, piezas.seleccionador);
     this.#buscador = new Buscador(Aplicacion.#prepararIndice(nombres, this.#contexto));
     const nodosObjetivo = Aplicacion.#leerNodosObjetivo(configuracion, maxNodos);
     this.#controlador = new ControladorExploracion(this.#gestor, this.#buscador, umbral, nodosObjetivo);
@@ -288,19 +277,6 @@ export class Aplicacion {
       throw new Error("No se puede leer public/relevancia.json");
     }
     return await respuesta.json();
-  }
-
-  /**
-   * La estrategia de los nodos según estrategiaNodos: "tresCapas" (por
-   * defecto) o "mejorCamino" (el cálculo anterior, para comparar).
-   */
-  static #crearEstrategiaNodos(relevancia, tabla, calculador) {
-    if (relevancia.estrategiaNodos === "mejorCamino") {
-      return new RelevanciaNodosMejorCamino(calculador);
-    }
-    const penalizacion = new PenalizacionGrado(relevancia);
-    return new RelevanciaNodosTresCapas(calculador, new RefuerzoEntreDirectos(relevancia, tabla, penalizacion),
-      new DeduccionPorTipos(relevancia, tabla, penalizacion, new CompatibilidadTemporal(relevancia), calculador));
   }
 
   /** El umbral de la configuración, si es un número entre 0 y 1. */

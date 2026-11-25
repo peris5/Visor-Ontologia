@@ -1,5 +1,6 @@
 import { RepositorioVecindario } from '../datos/RepositorioVecindario.js';
 import { ConstructorSubgrafo } from './ConstructorSubgrafo.js';
+import { SeleccionadorNodos } from './SeleccionadorNodos.js';
 
 /**
  * Une las piezas para obtener un subgrafo y evita peticiones innecesarias.
@@ -18,12 +19,11 @@ import { ConstructorSubgrafo } from './ConstructorSubgrafo.js';
  * tres capas solo mira, como mucho, a dos saltos de la central:
  *  - la evidencia de la central con cada vecino (capa 0) sale de las
  *    relaciones de la central (tanda 1);
- *  - el refuerzo (capas 1 y 2) solo mira las relaciones entre directos:
- *    salen de las relaciones de los directos (tanda 2);
- *  - la deducción (capa 3) solo llega a los vecinos de los directos, y la
- *    evidencia de cada directo con sus vecinos también está en la tanda 2.
+ *  - solo transmiten los directos, y a sus vecinos: la evidencia de cada
+ *    directo con cada vecino suyo está en la tanda 2;
  *  - el grado de cada directo (la penalización h de los intermediarios muy
- *    conectados) es EXACTO: tras la tanda 2 se tienen TODAS sus relaciones.
+ *    conectados), en total o de un tipo, es EXACTO: tras la tanda 2 se tienen
+ *    TODAS sus relaciones.
  * Nada más influye en el cálculo, así que tener más relaciones no cambiaría
  * ningún número. (Antes, con el producto del mejor camino, hacía falta
  * buscar por rondas sin saber hasta dónde llegar.)
@@ -48,6 +48,8 @@ export class GestorSubgrafos {
   #cache;
   #contexto;
   #mostrarDeducidos;
+  #seleccionador;
+  #resultados;
   #detalles;
   #estadisticas;
   #milisegundosUltimoCalculo;
@@ -62,8 +64,9 @@ export class GestorSubgrafos {
    * @param {Object} contexto - { idioma, nombresTipos, etiquetasEntidad, tipos }
    *   para interpretar las relaciones (ver RepositorioVecindario).
    * @param {boolean} mostrarDeducidos - opcional; true si no se indica.
+   * @param {SeleccionadorNodos} seleccionador - opcional; sin cuotas si no se indica.
    */
-  constructor(cliente, estrategiaNodos, calculador, maxNodos, contexto, mostrarDeducidos) {
+  constructor(cliente, estrategiaNodos, calculador, maxNodos, contexto, mostrarDeducidos, seleccionador) {
     this.#cliente = cliente;
     this.#estrategiaNodos = estrategiaNodos;
     this.#calculador = calculador;
@@ -71,6 +74,11 @@ export class GestorSubgrafos {
     this.#contexto = contexto;
     this.#cache = new RepositorioVecindario(null, contexto);
     this.#mostrarDeducidos = mostrarDeducidos !== false;
+    this.#seleccionador = new SeleccionadorNodos();
+    if (seleccionador instanceof SeleccionadorNodos) {
+      this.#seleccionador = seleccionador;
+    }
+    this.#resultados = new Map();
     this.#detalles = new Map();
     this.#estadisticas = { tandas: 0, directos: 0, deducidos: 0 };
     this.#milisegundosUltimoCalculo = 0;
@@ -96,15 +104,13 @@ export class GestorSubgrafos {
    */
   async obtenerSubgrafoAjustado(idEntidad, ajustador) {
     const tandas = await this.#cargar(idEntidad);
-    const completo = new ConstructorSubgrafo(this.#cache, this.#estrategiaNodos, this.#calculador, 0, this.#maxNodos,
-      this.#mostrarDeducidos);
-    await completo.construir(idEntidad);
+    const resultados = this.#estrategiaNodos.calcular(this.#cache.entidad(idEntidad), this.#cache);
+    // Las relevancias de los que pueden entrar (con las cuotas ya aplicadas):
+    // los mismos que verá ConstructorSubgrafo con cualquier umbral.
+    const elegibles = this.#seleccionador.elegibles(resultados, idEntidad, this.#mostrarDeducidos);
     const relevancias = [];
-    for (const [id, resultado] of completo.getResultados()) {
-      const seMuestra = this.#mostrarDeducidos || !resultado.esDeducido();
-      if (id !== idEntidad && seMuestra) {
-        relevancias.push(resultado.getRelevancia());
-      }
+    for (let i = 0; i < elegibles.length; i++) {
+      relevancias.push(elegibles[i].getRelevancia());
     }
     const eleccion = ajustador.elegir(relevancias, 0, this.#maxNodos);
     return this.#construir(idEntidad, eleccion.umbral, tandas);
@@ -153,7 +159,17 @@ export class GestorSubgrafos {
   }
 
   /**
-   * La caché de relaciones (para las pruebas).
+   * Los resultados de TODOS los nodos del último subgrafo, hayan entrado o no
+   * (para el laboratorio).
+   *
+   * @returns {Map<string, ResultadoRelevanciaNodo>}
+   */
+  getResultados() {
+    return new Map(this.#resultados);
+  }
+
+  /**
+   * La caché de relaciones (para las pruebas y el laboratorio).
    *
    * @returns {RepositorioVecindario}
    */
@@ -222,13 +238,14 @@ export class GestorSubgrafos {
     // Se mide solo el cálculo, sin la red (para las pruebas de rendimiento).
     const inicio = performance.now();
     const constructor = new ConstructorSubgrafo(this.#cache, this.#estrategiaNodos, this.#calculador, umbral,
-      this.#maxNodos, this.#mostrarDeducidos);
+      this.#maxNodos, this.#mostrarDeducidos, this.#seleccionador);
     const subgrafo = await constructor.construir(idEntidad);
     this.#milisegundosUltimoCalculo = performance.now() - inicio;
+    this.#resultados = constructor.getResultados();
 
     let directos = 0;
     let deducidos = 0;
-    for (const [id, resultado] of constructor.getResultados()) {
+    for (const [id, resultado] of this.#resultados) {
       if (resultado.esDeducido()) {
         deducidos = deducidos + 1;
       } else if (id !== idEntidad) {

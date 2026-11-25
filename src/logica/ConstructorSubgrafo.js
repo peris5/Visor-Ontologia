@@ -2,6 +2,7 @@ import { RepositorioVecindario } from '../datos/RepositorioVecindario.js';
 import { EstrategiaRelevanciaNodos } from './EstrategiaRelevanciaNodos.js';
 import { CalculadorEvidencia } from './CalculadorEvidencia.js';
 import { CalculadorCentralidad } from './CalculadorCentralidad.js';
+import { SeleccionadorNodos } from './SeleccionadorNodos.js';
 import { NodoRelevante } from '../modelo/NodoRelevante.js';
 import { Subgrafo } from '../modelo/Subgrafo.js';
 import { Relacion } from '../modelo/Relacion.js';
@@ -12,26 +13,26 @@ import { OrigenRelevancia } from '../modelo/OrigenRelevancia.js';
  *
  *   1. Pide la relevancia de los nodos (ResultadoRelevanciaNodo) a la
  *      EstrategiaRelevanciaNodos, con las relaciones que ya están en la caché.
- *   2. Ordena por la relevancia S (= R × C), aplica el umbral a S y se
- *      queda con los de mayor S hasta el máximo de nodos; la entidad
- *      central siempre entra. Si no se muestran los
- *      deducidos, se quitan ANTES de aplicar el máximo (así su sitio lo
- *      ocupan otros nodos).
+ *   2. Ordena por la relevancia S (= R × C; a igualdad, por C y por id),
+ *      aplica el umbral a S, las cuotas por clase y el máximo de nodos; la
+ *      entidad central siempre entra. Si no se muestran los deducidos, se
+ *      quitan ANTES (así su sitio lo ocupan otros nodos). Ver
+ *      SeleccionadorNodos.
  *   3. Aristas: las relaciones dibujables (dibujable = true) entre nodos
  *      incluidos. De cada pareja guarda también su evidencia en el subgrafo
  *      (para la línea discontinua y el panel).
  *   4. Arista SINTÉTICA: si un nodo incluido no tiene ninguna relación
  *      dibujable con otro nodo incluido (por ejemplo, porque solo coincide con
  *      la central en eventos grandes), se añade UNA arista de tipo
- *      COINCIDENCIAS hacia la central (si es directo) o hacia su padre (si es
- *      deducido), con la evidencia de la pareja como valor.
+ *      COINCIDENCIAS hacia la central (si es directo) o hacia su mejor padre
+ *      (si es deducido), con la evidencia de la pareja como valor.
  *   5. MUELLES para la simulación de fuerzas: UNO POR PAREJA de nodos
  *      incluidos, aunque se dibujen varias curvas (si cada curva tuviera el
  *      suyo, una pareja con cinco exposiciones tiraría cinco veces). Su
  *      peso es lo que esa pareja transmite en el cálculo:
- *        - entre dos directos: el mayor de los dos sentidos de
- *          F(Y,X) · T̄ · fE · h (RefuerzoEntreDirectos);
- *        - entre un deducido y su padre: F(P,Z) · T̄ · fE(Z) · h(P) · τ;
+ *        - si un directo Y transmite a X: fE(Y) · Tr · F(Y,X) · fE(X) · h(Y)
+ *          (PropagacionDesdeDirectos); si los dos son directos y se
+ *          transmiten mutuamente, el mayor de los dos sentidos;
  *        - cualquier otra pareja: F × C de su evidencia;
  *        - con la central no hay muelle (su distancia ya la fija la
  *          restricción radial).
@@ -56,6 +57,7 @@ export class ConstructorSubgrafo {
   #umbral;
   #maxNodos;
   #mostrarDeducidos;
+  #seleccionador;
   #resultados;
 
   /**
@@ -65,8 +67,9 @@ export class ConstructorSubgrafo {
    * @param {number} umbral - opcional; 0.3 si no se indica.
    * @param {number} maxNodos - opcional; 150 si no se indica.
    * @param {boolean} mostrarDeducidos - opcional; true si no se indica.
+   * @param {SeleccionadorNodos} seleccionador - opcional; sin cuotas si no se indica.
    */
-  constructor(repositorio, estrategia, calculador, umbral, maxNodos, mostrarDeducidos) {
+  constructor(repositorio, estrategia, calculador, umbral, maxNodos, mostrarDeducidos, seleccionador) {
     if (!(repositorio instanceof RepositorioVecindario)) {
       throw new Error("ConstructorSubgrafo necesita un RepositorioVecindario.");
     }
@@ -94,6 +97,10 @@ export class ConstructorSubgrafo {
       this.#maxNodos = maxNodos;
     }
     this.#mostrarDeducidos = mostrarDeducidos !== false;
+    this.#seleccionador = new SeleccionadorNodos();
+    if (seleccionador instanceof SeleccionadorNodos) {
+      this.#seleccionador = seleccionador;
+    }
     this.#resultados = new Map();
   }
 
@@ -165,24 +172,17 @@ export class ConstructorSubgrafo {
   }
 
   /**
-   * Los resultados que entran: relevancia S mayor que el umbral, sin los
-   * deducidos si no se muestran, de mayor a menor S y como mucho
-   * maxNodos − 1 (el otro sitio es de la central).
+   * Los resultados que entran: los elegibles (en orden y con las cuotas) de
+   * relevancia S mayor que el umbral y como mucho maxNodos − 1 (el otro sitio
+   * es de la central).
    */
   #elegirNodos(idCentral, umbral) {
-    const candidatos = [];
-    for (const [id, resultado] of this.#resultados) {
-      const seMuestra = this.#mostrarDeducidos || !resultado.esDeducido();
-      if (id !== idCentral && seMuestra && resultado.getRelevancia() > umbral) {
-        candidatos.push(resultado);
-      }
-    }
-    candidatos.sort(function (a, b) {
-      return b.getRelevancia() - a.getRelevancia();
-    });
+    const elegibles = this.#seleccionador.elegibles(this.#resultados, idCentral, this.#mostrarDeducidos);
     const elegidos = [];
-    for (let i = 0; i < candidatos.length && i < this.#maxNodos - 1; i++) {
-      elegidos.push(candidatos[i]);
+    for (let i = 0; i < elegibles.length && elegidos.length < this.#maxNodos - 1; i++) {
+      if (elegibles[i].getRelevancia() > umbral) {
+        elegidos.push(elegibles[i]);
+      }
     }
     return elegidos;
   }
@@ -295,8 +295,8 @@ export class ConstructorSubgrafo {
 
   /**
    * Una arista COINCIDENCIAS para cada nodo sin ninguna arista dibujada:
-   * hacia la central si es directo, o hacia su padre si es deducido (si el
-   * padre no ha entrado, hacia la central).
+   * hacia la central si es directo, o hacia su mejor padre si es deducido (el
+   * mejor de los que han entrado; si no ha entrado ninguno, la central).
    */
   #anadirAristasSinteticas(subgrafo, conArista) {
     const central = subgrafo.getEntidadCentral();
@@ -308,9 +308,13 @@ export class ConstructorSubgrafo {
       if (entidad.getId() !== central.getId() && !conArista.has(entidad.getId())) {
         let destino = central;
         const resultado = nodo.getResultado();
-        if (resultado !== null && resultado.esDeducido() && resultado.getPadre() !== null &&
-          subgrafo.contieneEntidad(resultado.getPadre().getId())) {
-          destino = resultado.getPadre();
+        if (resultado !== null && resultado.esDeducido()) {
+          const padres = resultado.getPadres();
+          for (let j = 0; j < padres.length && destino === central; j++) {
+            if (subgrafo.contieneEntidad(padres[j].getId())) {
+              destino = padres[j];
+            }
+          }
         }
         const evidencia = subgrafo.getEvidencia(destino.getId(), entidad.getId());
         let valor = nodo.getRelevancia();

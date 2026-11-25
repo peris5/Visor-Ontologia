@@ -6,7 +6,7 @@ from servidor.tests.utilidades import cargar_configuracion
 def test_configuracion_solo_lo_que_necesita_el_cliente() -> None:
     datos = ConversorJson.configuracion_a_diccionario(cargar_configuracion())
     assert set(datos.keys()) == {"umbralPorDefecto", "maxNodos", "nodosObjetivo", "entidadInicial", "idioma", "nombresTipos",
-                                 "etiquetasEntidad"}
+                                 "etiquetasEntidad", "origenDatos", "deduplicarEventos"}
     assert datos["idioma"] == "es"
     assert datos["nombresTipos"]["Marriage"] == "Matrimonio"
     assert datos["etiquetasEntidad"]["Person"] == "PERSONA"

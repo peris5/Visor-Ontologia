@@ -229,7 +229,7 @@ export class SelectorInteraccion {
       return nombre;
     }
     let prefijo = "";
-    if (resultado.esDeducido()) {
+    if (resultado.esDeducido() && resultado.getPadre() !== null) {
       prefijo = "Deducido: ";
     }
     return nombre + " — " + prefijo + resultado.getTextoExplicacion();

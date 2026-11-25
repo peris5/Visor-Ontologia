@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<!--
+  Laboratorio de la relevancia (página de desarrollo, no se enlaza desde el visor).
+  Con los dos servidores en marcha: http://localhost:5173/laboratorio.html
+-->
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Laboratorio · Visor de patrimonio</title>
+  <link rel="stylesheet" href="/src/estilos.css">
+</head>
+<body class="pagina-pruebas pagina-laboratorio">
+  <header>
+    <h1>Laboratorio de la relevancia</h1>
+    <p class="subtitulo" id="fuente">Conectando con el servidor…</p>
+  </header>
+
+  <main>
+    <div role="tablist" aria-label="Secciones" class="laboratorio-pestanas">
+      <button type="button" role="tab" id="pestana-propiedades" aria-controls="panel-propiedades" aria-selected="true">Propiedades</button>
+      <button type="button" role="tab" id="pestana-medir" aria-controls="panel-medir" aria-selected="false">Medir sobre los datos</button>
+      <button type="button" role="tab" id="pestana-comparar" aria-controls="panel-comparar" aria-selected="false">Comparar configuraciones</button>
+      <button type="button" role="tab" id="pestana-tipos" aria-controls="panel-tipos" aria-selected="false">Tipos y datos</button>
+    </div>
+
+    <div class="laboratorio-barra">
+      <label>Entidades <input type="number" id="muestraN" min="1" max="1000" value="325"></label>
+      <label>Semilla <input type="number" id="muestraSemilla" value="7"></label>
+      <button type="button" id="botonInforme">Descargar informe</button>
+    </div>
+    <div id="avisoLaboratorio" class="laboratorio-aviso" role="status" hidden></div>
+    <div id="avisoMuestra" class="laboratorio-aviso" role="status" hidden></div>
+
+    <div id="panel-propiedades" role="tabpanel" aria-labelledby="pestana-propiedades">
+      <p>Las propiedades P0–P16 con la primera configuración de «Comparar» (al abrir, la de <code>public/relevancia.json</code>).</p>
+      <div class="laboratorio-barra">
+        <button type="button" id="botonPropiedades">Comprobar</button>
+        <button type="button" id="botonRobustez">Robustez</button>
+      </div>
+      <div id="resultadoPropiedades"></div>
+      <div id="resultadoRobustez"></div>
+    </div>
+
+    <div id="panel-medir" role="tabpanel" aria-labelledby="pestana-medir" hidden>
+      <p>Carga y calcula cada entidad de la muestra como la aplicación. Todo se comprueba con las propias relaciones.</p>
+      <div class="laboratorio-barra">
+        <button type="button" id="botonMedir">Medir</button>
+        <button type="button" id="botonMonotonia">Monotonía</button>
+      </div>
+      <div id="resultadoMedir"></div>
+      <div id="resultadoMonotonia"></div>
+    </div>
+
+    <div id="panel-comparar" role="tabpanel" aria-labelledby="pestana-comparar" hidden>
+      <p>Cambia la segunda y compara las dos sobre la misma muestra. Si convence, descárgala y cópiala a <code>public/relevancia.json</code>.</p>
+      <div class="laboratorio-configuraciones">
+        <label>Primera configuración <textarea id="configuracionUna" spellcheck="false" rows="18"></textarea></label>
+        <label>Segunda configuración <textarea id="configuracionOtra" spellcheck="false" rows="18"></textarea></label>
+      </div>
+      <div class="laboratorio-barra">
+        <button type="button" id="botonComparar">Comparar</button>
+        <button type="button" id="botonDescargarConfiguracion">Descargar la segunda configuración</button>
+      </div>
+      <div id="resultadoComparar"></div>
+    </div>
+
+    <div id="panel-tipos" role="tabpanel" aria-labelledby="pestana-tipos" hidden>
+      <p>Qué hay en las relaciones que ha cargado la última medición («Medir»). Lo resaltado no está previsto en la configuración.</p>
+      <div id="resultadoTipos"></div>
+    </div>
+  </main>
+
+  <script type="module" src="/src/laboratorio/principal.js"></script>
+</body>
+</html>

@@ -1,5 +1,9 @@
 import { ConstructorSubgrafo } from '../src/logica/ConstructorSubgrafo.js';
-import { configuracionEscenario, crearPiezas, JERARQUIA_ESCENARIO, cacheEscenario, contextoEscenario } from './escenarioPrototipo.js';
+import {
+  configuracionEscenario, configuracionV3, crearPiezas, cacheEscenario, contextoEscenario, escenarioAna, evento,
+  relacionDePrueba, entidadDePrueba
+} from './escenarioPrototipo.js';
+import { RepositorioVecindario } from '../src/datos/RepositorioVecindario.js';
 import { prueba, comprobar, comprobarIgual } from './miniPruebas.js';
 import { PanelInformacion } from '../src/interfaz/PanelInformacion.js';
 import { Subgrafo } from '../src/modelo/Subgrafo.js';
@@ -208,8 +212,9 @@ prueba("PanelInformacion: se cierra con la × y es una región aria-live", funct
 });
 
 prueba("PanelInformacion: S, R, C, origen, evidencia propia y camino de los nodos", async function () {
+  // Con los cambios de la v4 apagados, Marta es directa (solo coincidencias).
   const escenario = cacheEscenario();
-  const piezas = crearPiezas(configuracionEscenario(), JERARQUIA_ESCENARIO);
+  const piezas = crearPiezas(configuracionV3());
   const subgrafo = await new ConstructorSubgrafo(escenario, piezas.estrategia, piezas.calculador, 0, 150).construir("ana");
   const panel = new PanelInformacion(null, CONTEXTO_PRUEBAS_PANEL);
   const padre = document.createElement("div");
@@ -221,9 +226,9 @@ prueba("PanelInformacion: S, R, C, origen, evidencia propia y camino de los nodo
   comprobarIgual(datos["Origen"], "Solo coincidencias en eventos con la entidad central", "origen de Marta");
   comprobarIgual(datos["Por qué"], "Coinciden en 3 exposiciones · Amistad con Luis Peris", "explicación");
   comprobar(datos["Evidencia propia"] !== undefined, "evidencia propia");
-  comprobarIgual(datos["Relevancia (S)"], "34 %", "S");
-  comprobarIgual(datos["Fuerza (R)"], "60 %", "R");
-  comprobarIgual(datos["Certeza (C)"], "56 % (probable)", "C en número y en palabras");
+  comprobarIgual(datos["Relevancia (S)"], "50 %", "S");
+  comprobarIgual(datos["Fuerza (R)"], "61 %", "R");
+  comprobarIgual(datos["Certeza (C)"], "81 % (probable)", "C en número y en palabras");
   comprobar(datos["Refuerzo"] === undefined, "ya no hay «Refuerzo»");
   const ocultos = padre.querySelectorAll(".informacion-eventos-ocultos li");
   comprobarIgual(ocultos.length, 1, "la exposición de 40 no se dibuja, pero se lista");
@@ -243,4 +248,44 @@ prueba("PanelInformacion: S, R, C, origen, evidencia propia y camino de los nodo
   comprobarIgual(PanelInformacion.textoDeLaCerteza(0.9), "segura", "0,9: segura");
   comprobarIgual(PanelInformacion.textoDeLaCerteza(0.5), "probable", "0,5: probable");
   comprobarIgual(PanelInformacion.textoDeLaCerteza(0.49), "supuesta", "menos: supuesta");
+});
+
+prueba("PanelInformacion: con la v4 Marta es deducida, y el panel sigue diciendo que coincidió en 3 exposiciones", async function () {
+  const escenario = escenarioAna();
+  escenario.entidades.tomas = ["Person", "Tomás Roig"];
+  escenario.parejas.push({ a: "ana", b: "tomas", pruebas: [evento("Exposition", 50)] });
+  const piezas = crearPiezas(configuracionEscenario());
+  const subgrafo = await new ConstructorSubgrafo(cacheEscenario(escenario), piezas.estrategia, piezas.calculador, 0, 150)
+    .construir("ana");
+  const panel = new PanelInformacion(null, CONTEXTO_PRUEBAS_PANEL);
+  const padre = document.createElement("div");
+  panel.montar(padre);
+  const marta = subgrafo.getNodo("marta");
+  panel.mostrarEntidad(marta.getEntidad(), marta, subgrafo);
+  const datos = leerDatos(padre);
+  comprobar(datos["Por qué"].includes("Coinciden en 3 exposiciones"), datos["Por qué"]);
+  comprobarIgual(datos["Camino"], "Ana Ferrer → Luis Peris → Marta Soler", "y por dónde llega");
+  comprobarIgual(padre.querySelectorAll(".informacion-eventos-ocultos li").length, 1, "lista la de 40, que no se dibuja");
+  // Un vecino sin evidencia suficiente y sin padres no es «deducido a través de» nadie.
+  const tomas = subgrafo.getNodo("tomas");
+  panel.mostrarEntidad(tomas.getEntidad(), tomas, subgrafo);
+  comprobarIgual(leerDatos(padre)["Origen"], "Evidencia escasa con la entidad central", "Tomás");
+});
+
+prueba("PanelInformacion: una relación de un evento juntado dice cuántos registros tiene", async function () {
+  const cache = new RepositorioVecindario({
+    ids: ["a", "b"], entidades: [entidadDePrueba("a", ["Person"], "Ana"), entidadDePrueba("b", ["Person"], "Bea")],
+    relaciones: [relacionDePrueba("e1", "a", "b", "Exposition", 3, { idsIntermediarios: ["e1", "e2"] }),
+      relacionDePrueba("e3", "a", "b", "Exposition", 3)]
+  }, contextoEscenario());
+  const piezas = crearPiezas(configuracionEscenario());
+  const subgrafo = await new ConstructorSubgrafo(cache, piezas.estrategia, piezas.calculador, 0, 150).construir("a");
+  const panel = new PanelInformacion(null, CONTEXTO_PRUEBAS_PANEL);
+  const padre = document.createElement("div");
+  panel.montar(padre);
+  const relaciones = cache.relacionesDe("a");
+  panel.mostrarRelacion(relaciones[0], subgrafo);
+  comprobarIgual(leerDatos(padre)["Registros"], "2 del mismo evento (se cuentan como uno)", "el juntado");
+  panel.mostrarRelacion(relaciones[1], subgrafo);
+  comprobarIgual(leerDatos(padre)["Registros"], undefined, "el normal no lo dice");
 });

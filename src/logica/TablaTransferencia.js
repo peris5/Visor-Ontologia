@@ -1,3 +1,5 @@
+import { EquivalenciasTipos } from './EquivalenciasTipos.js';
+
 /**
  * Cuánto se TRANSMITE la relevancia por un camino de dos tipos de relación
  * (tabla T) y cuánto pesa cada tipo de entidad (factorEntidad). Los valores
@@ -17,11 +19,18 @@
  * En los pasos 1 y 2 se aplica la herencia por la jerarquía (IS_A): primero
  * tipo1 con tipo2 y con los padres de tipo2 (del más cercano al más lejano;
  * así Mentorship:maestro>Paint usa Mentorship:maestro>Creation), y después
- * cada padre de tipo1 con tipo2 y sus padres.
+ * cada padre de tipo1 con tipo2 y sus padres. Un tipo con equivalente usa los
+ * de este en lugar de sus padres (EquivalenciasTipos).
  *
- * getTEfectiva: el primer tramo (central–P) puede tener varios tipos (Luis
- * es amigo Y coexpositor de Ana). T̄ es la media de T ponderada por la
- * fuerza de cada tipo del primer tramo.
+ * Tr (getTransmision): el primer tramo (central–P) puede tener varios tipos
+ * (Luis es amigo Y coexpositor de Ana). Cada tipo transmite su parte, con su
+ * propio factor de tiempo τ, y las partes se combinan con noisy-OR:
+ *
+ *     Tr(c,P → P,Z) = 1 − Π_tipos t de c–P (1 − fuerza_t · T(t, rol_t, tipo(P,Z)) · τ(t, P–Z))
+ *
+ * Así, añadir un tipo o una prueba nunca baja la transmisión. La media
+ * ponderada de la v2 sí podía bajarla: un vínculo nuevo con una T pequeña
+ * tiraba de la media hacia abajo.
  *
  * factorEntidad: lo que no es creación artística transmite menos. Se usa la
  * etiqueta MÁS ESPECÍFICA de la entidad que tenga factor, subiendo por sus
@@ -33,13 +42,26 @@ export class TablaTransferencia {
   #porDefecto;
   #factores;
   #jerarquia;
+  #temporal;
+  #equivalencias;
+  // Lo ya buscado, para no repetir la búsqueda con herencia en cada camino:
+  // «tipo1:rol>tipo2» → { valor, clave }, y entidad → su factor.
+  #buscados;
+  #factorPorEntidad;
 
   /**
    * @param {Object} configuracion - { tablaTransferencia, transferenciaPorDefecto, factorEntidad }
    * @param {Object} jerarquia - etiqueta → sus padres, del más cercano al más
    *   lejano (de /api/jerarquia). Opcional.
+   * @param {CompatibilidadTemporal} temporal - τ, para getTransmision.
+   *   Opcional: sin él, τ = 1.
+   * @param {EquivalenciasTipos} equivalencias - opcional.
    */
-  constructor(configuracion, jerarquia) {
+  constructor(configuracion, jerarquia, temporal, equivalencias) {
+    this.#equivalencias = equivalencias;
+    if (!(equivalencias instanceof EquivalenciasTipos)) {
+      this.#equivalencias = new EquivalenciasTipos(configuracion, jerarquia);
+    }
     this.#tabla = {};
     if (configuracion.tablaTransferencia !== undefined && configuracion.tablaTransferencia !== null) {
       this.#tabla = configuracion.tablaTransferencia;
@@ -57,6 +79,12 @@ export class TablaTransferencia {
     if (jerarquia !== undefined && jerarquia !== null) {
       this.#jerarquia = jerarquia;
     }
+    this.#temporal = null;
+    if (temporal !== undefined && temporal !== null) {
+      this.#temporal = temporal;
+    }
+    this.#buscados = new Map();
+    this.#factorPorEntidad = new WeakMap();
   }
 
   /**
@@ -68,40 +96,49 @@ export class TablaTransferencia {
    * @returns {number} entre 0 y 1.
    */
   getT(tipo1, rol1, tipo2) {
-    const ids1 = TablaTransferencia.tipoYPadres(tipo1);
-    const ids2 = TablaTransferencia.tipoYPadres(tipo2);
-    if (typeof rol1 === "string" && rol1 !== "") {
-      const conRol = this.#buscar(ids1, ":" + rol1, ids2);
-      if (conRol !== null) {
-        return conRol;
-      }
-    }
-    const sinRol = this.#buscar(ids1, "", ids2);
-    if (sinRol !== null) {
-      return sinRol;
-    }
-    return this.#porDefecto;
+    return this.buscarT(tipo1, rol1, tipo2).valor;
   }
 
   /**
-   * T̄: la media de T(tipo, rol, tipo2) sobre los tipos del primer tramo,
-   * ponderada por la fuerza de cada tipo.
+   * Como getT, pero dice también de dónde sale el valor (para el laboratorio).
    *
-   * @param {EvidenciaPareja} evidencia - el primer tramo (P visto desde la central).
-   * @param {TipoRelacion} tipo2 - el del segundo tramo.
+   * @returns {Object} { valor, clave: "Mentorship:maestro>Creation", o null
+   *   si no hay ninguna y se ha usado transferenciaPorDefecto }
    */
-  getTEfectiva(evidencia, tipo2) {
-    const tipos = evidencia.getTipos();
-    let suma = 0;
-    let pesos = 0;
+  buscarT(tipo1, rol1, tipo2) {
+    let sufijo = "";
+    if (typeof rol1 === "string" && rol1 !== "") {
+      sufijo = ":" + rol1;
+    }
+    const consulta = tipo1.getId() + sufijo + ">" + tipo2.getId();
+    if (!this.#buscados.has(consulta)) {
+      this.#buscados.set(consulta, this.#buscarConHerencia(tipo1, sufijo, tipo2));
+    }
+    return this.#buscados.get(consulta);
+  }
+
+  /**
+   * Tr: lo que transmite el primer tramo hacia el segundo (ver la
+   * explicación de la clase). Nunca pasa de la fuerza del primer tramo:
+   * T ≤ 1 y τ ≤ 1, así que cada parte es como mucho fuerza_t, y
+   * 1 − Π (1 − fuerza_t) es justo F(c,P).
+   *
+   * @param {EvidenciaPareja} primerTramo - P visto desde la central.
+   * @param {EvidenciaPareja} segundoTramo - Z visto desde P.
+   * @returns {number} entre 0 y 1.
+   */
+  getTransmision(primerTramo, segundoTramo) {
+    const tipos = primerTramo.getTipos();
+    const tipo2 = segundoTramo.getTipoPrincipal();
+    let producto = 1;
     for (let i = 0; i < tipos.length; i++) {
-      suma = suma + tipos[i].fuerza * this.getT(tipos[i].tipo, tipos[i].rol, tipo2);
-      pesos = pesos + tipos[i].fuerza;
+      let tau = 1;
+      if (this.#temporal !== null) {
+        tau = this.#temporal.getFactor(tipos[i], segundoTramo);
+      }
+      producto = producto * (1 - tipos[i].fuerza * this.getT(tipos[i].tipo, tipos[i].rol, tipo2) * tau);
     }
-    if (pesos === 0) {
-      return this.#porDefecto;
-    }
-    return suma / pesos;
+    return 1 - producto;
   }
 
   /**
@@ -111,54 +148,73 @@ export class TablaTransferencia {
    * @returns {number} entre 0 y 1.
    */
   getFactorEntidad(entidad) {
-    const etiquetas = entidad.getEtiquetas();
-    // De la más específica (la que tiene más padres) a la más general.
-    const ordenadas = [];
-    for (let i = 0; i < etiquetas.length; i++) {
-      ordenadas.push(etiquetas[i]);
+    if (!this.#factorPorEntidad.has(entidad)) {
+      this.#factorPorEntidad.set(entidad, this.#calcularFactorEntidad(entidad));
     }
+    return this.#factorPorEntidad.get(entidad);
+  }
+
+  /**
+   * ¿La etiqueta, o alguno de sus padres, tiene factorEntidad?
+   */
+  tieneFactor(etiqueta) {
+    return this.#factorDeEtiqueta(etiqueta) !== null;
+  }
+
+  #calcularFactorEntidad(entidad) {
+    const ordenadas = entidad.getEtiquetas();
+    // De la más específica (la que tiene más padres) a la más general.
     const tabla = this;
     ordenadas.sort(function (a, b) {
       return tabla.#padresDe(b).length - tabla.#padresDe(a).length;
     });
     for (let i = 0; i < ordenadas.length; i++) {
-      const candidatas = [ordenadas[i]];
-      const padres = this.#padresDe(ordenadas[i]);
-      for (let j = 0; j < padres.length; j++) {
-        candidatas.push(padres[j]);
-      }
-      for (let j = 0; j < candidatas.length; j++) {
-        if (Object.prototype.hasOwnProperty.call(this.#factores, candidatas[j])) {
-          return this.#factores[candidatas[j]];
-        }
+      const factor = this.#factorDeEtiqueta(ordenadas[i]);
+      if (factor !== null) {
+        return factor;
       }
     }
     return 1;
   }
 
-  /**
-   * El id del tipo y los de sus padres, del más cercano al más lejano (lo
-   * usa también CompatibilidadTemporal).
-   *
-   * @param {TipoRelacion} tipo
-   * @returns {string[]}
-   */
-  static tipoYPadres(tipo) {
-    const ids = [tipo.getId()];
-    const padres = tipo.getPadres();
+  /** El factor de la etiqueta o de su padre más cercano que tenga; null si ninguno. */
+  #factorDeEtiqueta(etiqueta) {
+    const candidatas = [etiqueta];
+    const padres = this.#padresDe(etiqueta);
     for (let i = 0; i < padres.length; i++) {
-      ids.push(padres[i]);
+      candidatas.push(padres[i]);
     }
-    return ids;
+    for (let i = 0; i < candidatas.length; i++) {
+      if (Object.prototype.hasOwnProperty.call(this.#factores, candidatas[i])) {
+        return this.#factores[candidatas[i]];
+      }
+    }
+    return null;
+  }
+
+  #buscarConHerencia(tipo1, sufijo, tipo2) {
+    const ids1 = this.#equivalencias.getIds(tipo1);
+    const ids2 = this.#equivalencias.getIds(tipo2);
+    let clave = null;
+    if (sufijo !== "") {
+      clave = this.#buscarClave(ids1, sufijo, ids2);
+    }
+    if (clave === null) {
+      clave = this.#buscarClave(ids1, "", ids2);
+    }
+    if (clave === null) {
+      return { valor: this.#porDefecto, clave: null };
+    }
+    return { valor: this.#tabla[clave], clave: clave };
   }
 
   /** «a<sufijo>>b» para cada a de ids1 y b de ids2, en el orden de la herencia; null si no hay. */
-  #buscar(ids1, sufijo, ids2) {
+  #buscarClave(ids1, sufijo, ids2) {
     for (let i = 0; i < ids1.length; i++) {
       for (let j = 0; j < ids2.length; j++) {
         const clave = ids1[i] + sufijo + ">" + ids2[j];
         if (Object.prototype.hasOwnProperty.call(this.#tabla, clave)) {
-          return this.#tabla[clave];
+          return clave;
         }
       }
     }

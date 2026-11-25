@@ -1,4 +1,6 @@
 import { EstrategiaRelevancia } from './EstrategiaRelevancia.js';
+import { RepartoParticipantes } from './RepartoParticipantes.js';
+import { EquivalenciasTipos } from './EquivalenciasTipos.js';
 
 /**
  * La relevancia de UNA relación, calculada siempre en el navegador (la base
@@ -11,12 +13,14 @@ import { EstrategiaRelevancia } from './EstrategiaRelevancia.js';
  *    el otro es mi maestro; «Mentorship.aprendiz» = 0,60: es mi alumno),
  *    también por los padres del tipo. Si no hay, el de pesosRelevancia
  *    (public/relevancia.json); si el tipo no tiene, el de su padre más
- *    cercano que tenga (Paint → Creation); si ninguno, pesoPorDefecto.
+ *    cercano que tenga (Paint → Creation); si ninguno, pesoPorDefecto. Un
+ *    tipo con equivalente usa los de este (EquivalenciasTipos).
  *    Por el rol, la relevancia de una relación puede ser distinta en cada
  *    sentido (la evidencia es dirigida, ver CalculadorEvidencia).
- *  - (2/n)^β: n = participantes del intermediario. Una relación entre dos
- *    vale entera; coincidir en un evento de 40 personas, mucho menos.
- *    β = betaParticipantes.
+ *  - (2/n)^β: el REPARTO entre los participantes del intermediario. Una
+ *    relación entre dos vale entera; coincidir en un evento de 40 personas,
+ *    mucho menos. β = betaParticipantes. Quién cuenta en n, el tope de las
+ *    coincidencias y lo que no se reparte: ver RepartoParticipantes.
  *  - f_t (factor de tiempo): penaliza lo que ocurrió lejos de la ÉPOCA de la
  *    entidad central (del primer al último año de sus propias relaciones
  *    con fecha, ver epocaDe):
@@ -38,7 +42,8 @@ export class RelevanciaCompuesta extends EstrategiaRelevancia {
   #pesos;
   #pesosPorRol;
   #pesoPorDefecto;
-  #beta;
+  #reparto;
+  #equivalencias;
   #factorTiempoMinimo;
   #tauTiempoAnios;
   #factorTiempoSinFecha;
@@ -48,17 +53,23 @@ export class RelevanciaCompuesta extends EstrategiaRelevancia {
   /**
    * @param {Object} configuracion - la de public/relevancia.json: {
    *   pesosRelevancia, pesosPorRol (opcional), pesoPorDefecto, betaParticipantes, factorTiempoMinimo,
-   *   tauTiempoAnios, factorTiempoSinFecha, tiposSinTiempo }
+   *   tauTiempoAnios, factorTiempoSinFecha, tiposSinTiempo, y lo de RepartoParticipantes }
+   * @param {EquivalenciasTipos} equivalencias - opcional; sin ellas, las de la
+   *   configuración sin jerarquía.
    */
-  constructor(configuracion) {
+  constructor(configuracion, equivalencias) {
     super();
+    this.#equivalencias = equivalencias;
+    if (!(equivalencias instanceof EquivalenciasTipos)) {
+      this.#equivalencias = new EquivalenciasTipos(configuracion, null);
+    }
     this.#pesos = RelevanciaCompuesta.#objeto(configuracion.pesosRelevancia);
     this.#pesosPorRol = {};
     if (configuracion.pesosPorRol !== undefined && configuracion.pesosPorRol !== null) {
       this.#pesosPorRol = configuracion.pesosPorRol;
     }
     this.#pesoPorDefecto = RelevanciaCompuesta.#entre0y1(configuracion.pesoPorDefecto, "pesoPorDefecto");
-    this.#beta = RelevanciaCompuesta.#positivo(configuracion.betaParticipantes, "betaParticipantes");
+    this.#reparto = new RepartoParticipantes(configuracion);
     this.#factorTiempoMinimo = RelevanciaCompuesta.#entre0y1(configuracion.factorTiempoMinimo, "factorTiempoMinimo");
     this.#tauTiempoAnios = RelevanciaCompuesta.#positivo(configuracion.tauTiempoAnios, "tauTiempoAnios");
     this.#factorTiempoSinFecha = RelevanciaCompuesta.#entre0y1(configuracion.factorTiempoSinFecha,
@@ -86,7 +97,14 @@ export class RelevanciaCompuesta extends EstrategiaRelevancia {
   }
 
   getBeta() {
-    return this.#beta;
+    return this.#reparto.getBeta();
+  }
+
+  /**
+   * @returns {RepartoParticipantes} cómo se reparte cada relación y qué es coincidencia.
+   */
+  getReparto() {
+    return this.#reparto;
   }
 
   /**
@@ -102,7 +120,7 @@ export class RelevanciaCompuesta extends EstrategiaRelevancia {
     if (typeof rolDelOtro === "string") {
       rol = rolDelOtro;
     }
-    const r = this.getPeso(relacion.getTipo(), rol) * this.getFactorParticipantes(relacion.getParticipantes()) *
+    const r = this.getPeso(relacion.getTipo(), rol) * this.#reparto.getFactor(relacion) *
       this.getFactorTiempo(relacion);
     relacion.setRelevancia(r);
     return r;
@@ -121,39 +139,38 @@ export class RelevanciaCompuesta extends EstrategiaRelevancia {
    * @param {string|null} rolDelOtro - opcional: rol normalizado del otro extremo.
    */
   getPeso(tipo, rolDelOtro) {
-    const ids = RelevanciaCompuesta.#tipoYPadres(tipo);
+    return this.buscarPeso(tipo, rolDelOtro).valor;
+  }
+
+  /**
+   * Como getPeso, pero dice también de dónde sale (para el laboratorio).
+   *
+   * @returns {Object} { valor, clave: «Mentorship.maestro», «Creation»... o
+   *   null si ha sido pesoPorDefecto }
+   */
+  buscarPeso(tipo, rolDelOtro) {
+    const ids = this.#equivalencias.getIds(tipo);
     if (typeof rolDelOtro === "string" && rolDelOtro !== "") {
       for (let i = 0; i < ids.length; i++) {
         const clave = ids[i] + "." + rolDelOtro;
         if (Object.prototype.hasOwnProperty.call(this.#pesosPorRol, clave)) {
-          return this.#pesosPorRol[clave];
+          return { valor: this.#pesosPorRol[clave], clave: clave };
         }
       }
     }
     for (let i = 0; i < ids.length; i++) {
       if (Object.prototype.hasOwnProperty.call(this.#pesos, ids[i])) {
-        return this.#pesos[ids[i]];
+        return { valor: this.#pesos[ids[i]], clave: ids[i] };
       }
     }
-    return this.#pesoPorDefecto;
-  }
-
-  /**
-   * (2/n)^β: 1 con dos participantes, más pequeño cuanto más grande el evento.
-   */
-  getFactorParticipantes(participantes) {
-    let n = 2;
-    if (typeof participantes === "number" && participantes > 2) {
-      n = participantes;
-    }
-    return Math.pow(2 / n, this.#beta);
+    return { valor: this.#pesoPorDefecto, clave: null };
   }
 
   /**
    * f_t (ver la explicación de la clase).
    */
   getFactorTiempo(relacion) {
-    const ids = RelevanciaCompuesta.#tipoYPadres(relacion.getTipo());
+    const ids = this.#equivalencias.getIds(relacion.getTipo());
     for (let i = 0; i < ids.length; i++) {
       if (this.#tiposSinTiempo.includes(ids[i])) {
         return 1;
@@ -245,16 +262,6 @@ export class RelevanciaCompuesta extends EstrategiaRelevancia {
       return null;
     }
     return parseInt(encontrado[0], 10);
-  }
-
-  /** El id del tipo y los de sus padres, del más cercano al más lejano. */
-  static #tipoYPadres(tipo) {
-    const ids = [tipo.getId()];
-    const padres = tipo.getPadres();
-    for (let i = 0; i < padres.length; i++) {
-      ids.push(padres[i]);
-    }
-    return ids;
   }
 
   static #objeto(valor) {

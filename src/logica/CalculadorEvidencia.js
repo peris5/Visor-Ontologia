@@ -1,5 +1,4 @@
 import { EvidenciaPareja } from '../modelo/EvidenciaPareja.js';
-import { TipoEntidad } from '../modelo/TipoEntidad.js';
 import { RelevanciaCompuesta } from './RelevanciaCompuesta.js';
 import { NormalizadorRoles } from './NormalizadorRoles.js';
 
@@ -11,13 +10,16 @@ import { NormalizadorRoles } from './NormalizadorRoles.js';
  * Se juntan TODAS las relaciones y eventos que unen a dos entidades, se
  * dibujen o no (también las de los eventos grandes, dibujable = false):
  *
- *     r = peso(tipo, rol del otro) × (2/n)^β × f_t          (RelevanciaCompuesta)
+ *     r = peso(tipo, rol del otro) × reparto × f_t           (RelevanciaCompuesta)
  *
  *     por tipo:  fuerza_tipo = 1 − Π_k (1 − r_k · ρ^(k−1))   pruebas del mismo tipo, de mayor a menor
  *     total:     F = 1 − Π_tipos (1 − fuerza_tipo)
  *
  *     certeza:   C = 1 si hay alguna relación DECLARADA;
- *                si no, 1 − Π_k (1 − pCoincidencia · (2/n_k)^β)   sobre sus eventos
+ *                si no, 1 − Π_k (1 − pCoincidencia · reparto_k)   sobre sus eventos
+ *
+ * El REPARTO es (2/n)^β, con el tope de las coincidencias y las demás reglas
+ * de RepartoParticipantes, que decide también qué es coincidencia.
  *
  * MULTIPLEXIDAD: las pruebas repetidas del mismo tipo rinden cada vez
  * menos (ρ, rho): diez exposiciones juntos no son diez veces una. Los tipos
@@ -29,15 +31,13 @@ import { NormalizadorRoles } from './NormalizadorRoles.js';
  * suman más que una.
  *
  * ¿Coincidencia o declarada?
- *  - COINCIDENCIA: una relación de un evento cuyo tipo más específico está en
- *    tiposCoincidencia Y cuyos dos extremos son personas (dos pintores que
- *    expusieron en la misma exposición). Coincidir no prueba que tengan
- *    relación: solo da una certeza parcial.
+ *  - COINCIDENCIA: dos entidades unidas por un evento de tiposCoincidencia
+ *    (dos pintores, o dos obras, en la misma exposición), salvo que una sea
+ *    el lugar del evento. Coincidir no prueba que tengan relación: solo da
+ *    una certeza parcial.
  *  - DECLARADA: todo lo demás (una Relationship, una relación directa, el
- *    autor y su obra en una Creation, la obra y el museo en una Exposition,
- *    los coautores de una obra...).
- *  - El tipo se compara EXACTO, sin herencia: Creation hereda de Event y no
- *    debe contar como coincidencia aunque Event esté en la lista.
+ *    autor y su obra en una Creation, la obra y el museo donde se expuso, los
+ *    coautores de una obra...).
  *
  * También elige los NODOS DIRECTOS de una entidad central: los X con
  * F(c,X) × C(c,X) × factorEntidad(X) ≥ umbralDirecto (como mucho maxDirectos).
@@ -46,7 +46,7 @@ export class CalculadorEvidencia {
   #estrategia;
   #tabla;
   #normalizador;
-  #tiposCoincidencia;
+  #reparto;
   #probabilidadCoincidencia;
   #rho;
   #umbralDirecto;
@@ -55,7 +55,7 @@ export class CalculadorEvidencia {
   /**
    * @param {RelevanciaCompuesta} estrategia - la relevancia de cada relación.
    * @param {Object} configuracion - la de public/relevancia.json:
-   *   { tiposCoincidencia, probabilidadCoincidencia, rho, rolesEquivalentes,
+   *   { probabilidadCoincidencia, rho, rolesEquivalentes, rolesPorDireccion,
    *     umbralDirecto, maxDirectos }
    * @param {TablaTransferencia} tabla - opcional: para el factorEntidad con
    *   que se eligen los directos (sin ella, 1).
@@ -70,12 +70,7 @@ export class CalculadorEvidencia {
       this.#tabla = tabla;
     }
     this.#normalizador = new NormalizadorRoles(configuracion);
-    this.#tiposCoincidencia = [];
-    if (Array.isArray(configuracion.tiposCoincidencia)) {
-      for (let i = 0; i < configuracion.tiposCoincidencia.length; i++) {
-        this.#tiposCoincidencia.push(configuracion.tiposCoincidencia[i]);
-      }
-    }
+    this.#reparto = estrategia.getReparto();
     this.#probabilidadCoincidencia = CalculadorEvidencia.#entre0y1(configuracion.probabilidadCoincidencia,
       "probabilidadCoincidencia");
     this.#rho = CalculadorEvidencia.#entre0y1(configuracion.rho, "rho");
@@ -109,18 +104,10 @@ export class CalculadorEvidencia {
   }
 
   /**
-   * ¿Es una coincidencia (ver la explicación de la clase)?
+   * ¿Es una coincidencia (ver RepartoParticipantes)?
    */
   esCoincidencia(relacion) {
-    if (relacion.esSintetica()) {
-      return false;
-    }
-    if (!this.#tiposCoincidencia.includes(relacion.getTipo().getId())) {
-      return false;
-    }
-    const origenEsPersona = relacion.getOrigen().getTipo() === TipoEntidad.PERSONA;
-    const destinoEsPersona = relacion.getDestino().getTipo() === TipoEntidad.PERSONA;
-    return origenEsPersona && destinoEsPersona;
+    return this.#reparto.esCoincidencia(relacion);
   }
 
   /**
@@ -143,7 +130,7 @@ export class CalculadorEvidencia {
     let numeroEventos = 0;
     for (let i = 0; i < relaciones.length; i++) {
       const relacion = relaciones[i];
-      const rol = this.#normalizador.normalizar(relacion.getRol(hacia));
+      const rol = this.#normalizador.rolDe(relacion, hacia);
       const r = this.#estrategia.calcularRelevanciaRelacion(relacion, rol);
       const idTipo = relacion.getTipo().getId();
       if (!porTipo.has(idTipo)) {
@@ -152,8 +139,7 @@ export class CalculadorEvidencia {
       porTipo.get(idTipo).pruebas.push({ r: r, relacion: relacion, rol: rol });
       if (this.esCoincidencia(relacion)) {
         numeroEventos = numeroEventos + 1;
-        const factorParticipantes = this.#estrategia.getFactorParticipantes(relacion.getParticipantes());
-        productoCerteza = productoCerteza * (1 - this.#probabilidadCoincidencia * factorParticipantes);
+        productoCerteza = productoCerteza * (1 - this.#probabilidadCoincidencia * this.#reparto.getFactor(relacion));
       } else {
         hayDeclarada = true;
       }
@@ -164,10 +150,7 @@ export class CalculadorEvidencia {
     let principal = null;
     let mejorFuerza = -1;
     for (const grupo of porTipo.values()) {
-      // De mayor a menor r (sort es estable: a igual r, en el orden en que llegaron).
-      grupo.pruebas.sort(function (a, b) {
-        return b.r - a.r;
-      });
+      grupo.pruebas.sort(CalculadorEvidencia.#compararPruebas);
       let producto = 1;
       let atenuacion = 1;
       for (let k = 0; k < grupo.pruebas.length; k++) {
@@ -176,8 +159,16 @@ export class CalculadorEvidencia {
       }
       const fuerzaTipo = 1 - producto;
       productoFuerza = productoFuerza * (1 - fuerzaTipo);
-      tipos.push({ tipo: grupo.tipo, rol: grupo.pruebas[0].rol, fuerza: fuerzaTipo });
-      if (fuerzaTipo > mejorFuerza) {
+      const periodos = [];
+      for (let k = 0; k < grupo.pruebas.length; k++) {
+        periodos.push(RelevanciaCompuesta.aniosDe(grupo.pruebas[k].relacion));
+      }
+      tipos.push({ tipo: grupo.tipo, rol: grupo.pruebas[0].rol, fuerza: fuerzaTipo, periodos: periodos });
+      // A igual fuerza, el primer tipo por orden alfabético: el orden en que
+      // llegan las relaciones depende de por dónde se haya navegado, y no
+      // puede influir en el resultado.
+      if (fuerzaTipo > mejorFuerza ||
+        (fuerzaTipo === mejorFuerza && grupo.tipo.getId() < principal.tipo.getId())) {
         mejorFuerza = fuerzaTipo;
         principal = grupo;
       }
@@ -202,41 +193,38 @@ export class CalculadorEvidencia {
   }
 
   /**
-   * La evidencia de cada pareja EN LOS DOS SENTIDOS, como un mapa de
-   * vecinos: idDesde → (idHacia → EvidenciaPareja de «hacia» vista desde
-   * «desde»). Las relaciones repetidas (mismo id) se cuentan una vez; las de
-   * una entidad consigo misma no cuentan.
+   * La evidencia de cada vecino VISTA DESDE una entidad. Las relaciones
+   * repetidas (mismo id) se cuentan una vez; las de la entidad consigo misma
+   * no cuentan.
    *
-   * vecinos.get(id).size es el GRADO de esa entidad (cuántas entidades
-   * distintas tiene relacionadas), exacto si se le han pasado todas sus
-   * relaciones.
+   * Con esto RelevanciaNodosTresCapas forma la caché de evidencias de cada
+   * cálculo, por pareja ORDENADA (idDesde → idHacia): la de B vista desde A y
+   * la de A vista desde B pueden ser distintas. Es de un solo cálculo porque
+   * f_t depende de la época de la central.
    *
-   * @param {Relacion[]} relaciones - de varias parejas.
-   * @returns {Map<string, Map<string, EvidenciaPareja>>}
+   * @param {Entidad} entidad
+   * @param {Relacion[]} relaciones - todas las suyas.
+   * @returns {Map<string, EvidenciaPareja>} idHacia → evidencia.
    */
-  calcularVecinos(relaciones) {
-    const porPareja = new Map();
+  calcularDesde(entidad, relaciones) {
+    const porVecino = new Map();
     const vistas = new Set();
     for (let i = 0; i < relaciones.length; i++) {
       const relacion = relaciones[i];
-      const esConsigoMisma = relacion.getOrigen().getId() === relacion.getDestino().getId();
-      if (!vistas.has(relacion.getId()) && !esConsigoMisma) {
+      const otra = relacion.getOtroExtremo(entidad);
+      if (!vistas.has(relacion.getId()) && otra.getId() !== entidad.getId()) {
         vistas.add(relacion.getId());
-        const clave = relacion.getClavePar();
-        if (!porPareja.has(clave)) {
-          porPareja.set(clave, []);
+        if (!porVecino.has(otra.getId())) {
+          porVecino.set(otra.getId(), { otra: otra, relaciones: [] });
         }
-        porPareja.get(clave).push(relacion);
+        porVecino.get(otra.getId()).relaciones.push(relacion);
       }
     }
-    const vecinos = new Map();
-    for (const relacionesDeLaPareja of porPareja.values()) {
-      const una = relacionesDeLaPareja[0].getOrigen();
-      const otra = relacionesDeLaPareja[0].getDestino();
-      CalculadorEvidencia.#apuntar(vecinos, una.getId(), otra.getId(), this.calcular(una, otra, relacionesDeLaPareja));
-      CalculadorEvidencia.#apuntar(vecinos, otra.getId(), una.getId(), this.calcular(otra, una, relacionesDeLaPareja));
+    const evidencias = new Map();
+    for (const [idOtra, pareja] of porVecino) {
+      evidencias.set(idOtra, this.calcular(entidad, pareja.otra, pareja.relaciones));
     }
-    return vecinos;
+    return evidencias;
   }
 
   /**
@@ -265,11 +253,7 @@ export class CalculadorEvidencia {
    */
   elegirDirectos(central, relacionesDeLaCentral) {
     this.#estrategia.setEpoca(RelevanciaCompuesta.epocaDe(relacionesDeLaCentral));
-    const vecinos = this.calcularVecinos(relacionesDeLaCentral);
-    let evidencias = new Map();
-    if (vecinos.has(central.getId())) {
-      evidencias = vecinos.get(central.getId());
-    }
+    const evidencias = this.calcularDesde(central, relacionesDeLaCentral);
     const candidatos = [];
     for (const evidencia of evidencias.values()) {
       const valor = this.valorPropio(evidencia);
@@ -277,10 +261,16 @@ export class CalculadorEvidencia {
         candidatos.push({ entidad: evidencia.getHacia(), valor: valor });
       }
     }
-    // sort con una función normal: de mayor a menor (estable: a igual
-    // evidencia se mantiene el orden en que llegaron).
+    // De mayor a menor; a igual evidencia, por id (para que maxDirectos no
+    // dependa del orden en que llegaron).
     candidatos.sort(function (a, b) {
-      return b.valor - a.valor;
+      if (b.valor !== a.valor) {
+        return b.valor - a.valor;
+      }
+      if (a.entidad.getId() < b.entidad.getId()) {
+        return -1;
+      }
+      return 1;
     });
     const directos = [];
     for (let i = 0; i < candidatos.length && i < this.#maxDirectos; i++) {
@@ -313,9 +303,12 @@ export class CalculadorEvidencia {
 
   /**
    * Lo que une a la central con un nodo directo, en pocas palabras, para
-   * explicar un deducido («Creación de Joaquín Mestre (su maestro)»): el rol
-   * del otro en su tipo declarado más fuerte («su maestro»); si no tiene
-   * rol, los nombres de los tipos declarados («Amistad»); si solo hay
+   * explicar un deducido («Creación de Joaquín Mestre (su maestro)»): por cada
+   * tipo declarado, de más a menos fuerza, el rol del otro («su maestro») o,
+   * si no tiene, el nombre del tipo («Amistad»). Se dicen TODOS («su maestro,
+   * Colaboración») porque todos transmiten, y el más fuerte no es siempre el
+   * que hace entrar al deducido: una obra del maestro muy posterior a la
+   * mentoría puede entrar porque además colaboraban. Si solo hay
    * coincidencias, «coinciden en 3 exposiciones».
    *
    * @param {EvidenciaPareja} evidencia - el directo visto desde la central.
@@ -325,12 +318,12 @@ export class CalculadorEvidencia {
     if (declarados.length === 0) {
       return "coinciden en " + this.textoCoincidencias(evidencia);
     }
-    if (declarados[0].rol !== null) {
-      return "su " + declarados[0].rol;
-    }
     const nombres = [];
     for (let i = 0; i < declarados.length; i++) {
-      const nombre = declarados[i].tipo.getNombre();
+      let nombre = declarados[i].tipo.getNombre();
+      if (declarados[i].rol !== null) {
+        nombre = "su " + declarados[i].rol;
+      }
       if (!nombres.includes(nombre)) {
         nombres.push(nombre);
       }
@@ -426,11 +419,15 @@ export class CalculadorEvidencia {
     return palabra + "es";
   }
 
-  static #apuntar(vecinos, idDesde, idHacia, evidencia) {
-    if (!vecinos.has(idDesde)) {
-      vecinos.set(idDesde, new Map());
+  /** De mayor a menor r; a igual r, por el id de la relación (el orden de llegada no influye). */
+  static #compararPruebas(a, b) {
+    if (b.r !== a.r) {
+      return b.r - a.r;
     }
-    vecinos.get(idDesde).set(idHacia, evidencia);
+    if (a.relacion.getId() < b.relacion.getId()) {
+      return -1;
+    }
+    return 1;
   }
 
   static #entre0y1(valor, nombre) {

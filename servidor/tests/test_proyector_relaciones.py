@@ -6,9 +6,13 @@ from servidor.logica.clasificador_etiquetas import ClasificadorEtiquetas
 from servidor.tests.utilidades import crear_configuracion_pruebas, crear_grafo_pequeno
 
 
-def crear_proyector() -> ProyectorRelaciones:
-    """El proyector sobre el grafo pequeño (límite de 3 participantes)."""
+def crear_proyector(grafo_propio: dict[str, Any] | None = None) -> ProyectorRelaciones:
+    """El proyector sobre el grafo pequeño (límite de 3 participantes), o
+    sobre otro grafo.
+    """
     grafo = crear_grafo_pequeno()
+    if grafo_propio is not None:
+        grafo = grafo_propio
     configuracion = crear_configuracion_pruebas()
     nodos: dict[str, dict[str, Any]] = {}
     adyacencia: dict[str, list[dict[str, Any]]] = {}
@@ -76,6 +80,23 @@ def test_obra_organizacion_por_exposition_con_fecha() -> None:
     assert relaciones[0]["destino"] == "museo"
     assert relaciones[0]["tipo"] == "Exposition"
     assert relaciones[0]["fecha"] == "1910"
+
+
+def test_una_relacion_directa_conserva_el_sentido_de_la_flecha() -> None:
+    # Con el origen mayor que el destino: en las demás relaciones la pareja se
+    # ordena por id, pero en una directa de la flecha salen los roles.
+    grafo = crear_grafo_pequeno()
+    for relacion in grafo["relaciones"]:
+        if relacion["tipo"] == "STUDENT_OF":
+            relacion["desde"] = "luis"
+            relacion["hasta"] = "ana"
+    proyector = crear_proyector(grafo)
+    desde_ana = por_intermediario(proyector.relaciones_de("ana"), "r10")
+    desde_luis = por_intermediario(proyector.relaciones_de("luis"), "r10")
+    assert desde_ana == desde_luis
+    assert desde_ana[0]["id"] == "r10|ana|luis"
+    assert desde_ana[0]["origen"] == "luis"
+    assert desde_ana[0]["destino"] == "ana"
 
 
 def test_relacion_directa() -> None:

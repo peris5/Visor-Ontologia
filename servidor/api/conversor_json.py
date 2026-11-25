@@ -24,6 +24,10 @@ class ConversorJson:
             "idioma": configuracion.get_idioma(),
             "nombresTipos": configuracion.get_nombres_tipos(),
             "etiquetasEntidad": configuracion.get_etiquetas_entidad(),
+            # Para el laboratorio: de dónde salen los datos y si el servidor
+            # junta los eventos repetidos.
+            "origenDatos": configuracion.get_origen_datos(),
+            "deduplicarEventos": configuracion.get_deduplicar_eventos(),
         }
 
     @staticmethod
@@ -32,8 +36,8 @@ class ConversorJson:
           - ids: las entidades pedidas. De ellas el navegador ya tiene TODAS
             las relaciones (de las demás entidades que aparecen, solo algunas).
           - entidades: en bruto, las pedidas y las de los extremos.
-          - relaciones: derivadas, sin relevancia, con "participantes" y
-            "dibujable".
+          - relaciones: derivadas, sin relevancia, con "participantes",
+            "participantesPorClase", "via" y "dibujable".
         """
         return {
             "ids": list(ids),

@@ -7,10 +7,11 @@ export default defineConfig({
 
   build: {
     rollupOptions: {
-      // Las dos páginas de la aplicación.
+      // La aplicación y las dos páginas de desarrollo (no se enlazan desde ella).
       input: {
         principal: 'index.html',
-        pruebas: 'pruebas.html'
+        pruebas: 'pruebas.html',
+        laboratorio: 'laboratorio.html'
       }
     }
   },

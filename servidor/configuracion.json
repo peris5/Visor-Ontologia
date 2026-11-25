@@ -18,6 +18,20 @@
   "maxParticipantesIntermediario": 10,
   "maxParticipantesEvidencia": 200,
 
+  "_comentarioDeduplicar": "Dos eventos de tiposCoincidencia con el mismo lugar (relacionesLugar) y la misma fecha con día son el mismo evento registrado desde dos fuentes: se juntan al derivar las relaciones (no se cambia nada en la BD). tiposCoincidencia y relacionesLugar deben ser los mismos que en public/relevancia.json (lo comprueba test_configuracion.py).",
+  "deduplicarEventos": true,
+  "tiposCoincidencia": ["Exposition", "Work", "Wedding", "Event"],
+  "relacionesLugar": ["OCURRED_AT"],
+
+  "_comentarioSimulacionGrande": "Para el laboratorio. Con \"origenDatos\": \"simuladaGrande\" (o la variable de entorno VISOR_ORIGEN_DATOS=simuladaGrande, sin tocar este archivo) se genera al arrancar un grafo inventado de unas 25.000 entidades con la forma de Neo4j (servidor/simulacion/). Con la misma semilla, siempre el mismo. porcentajeDuplicados: eventos registrados dos veces a propósito. etiquetasCreador: para elegir la muestra (/api/muestra).",
+  "etiquetasCreador": ["Creator"],
+  "simulacionGrande": {
+    "semilla": 2026, "entidadInicial": "C0001", "porcentajeDuplicados": 3,
+    "creadores": 2000, "personas": 1500, "obras": 22000,
+    "academias": 3, "talleres": 40, "museos": 25, "galerias": 40, "circulos": 20, "empresas": 15,
+    "exposicionesPequenas": 1600, "exposicionesMedianas": 350, "salones": 30, "tertulias": 300
+  },
+
   "_comentarioNombres": "Nombre en castellano de cada tipo. Un tipo que no esté aquí (por ejemplo, uno nuevo de la BD) se nombra solo a partir de su id.",
   "nombresTipos": {
     "Marriage": "Matrimonio", "Filiation": "Filiación", "Friendship": "Amistad", "Mentorship": "Mentoría",

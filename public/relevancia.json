@@ -13,6 +13,8 @@
     "maestro": ["maestro", "maestra", "mestre", "mestra", "teacher", "master"],
     "aprendiz": ["aprendiz", "alumno", "alumna", "discípulo", "discípula", "deixeble", "student", "apprentice"]
   },
+  "tiposEquivalentes": { "STUDENT_OF": "Mentorship", "Apprenticeship": "Mentorship" },
+  "rolesPorDireccion": { "STUDENT_OF": { "origen": "aprendiz", "destino": "maestro" } },
   "betaParticipantes": 1,
   "factorTiempoMinimo": 0.5,
   "tauTiempoAnios": 25,
@@ -31,7 +33,6 @@
   "tiposCoincidencia": ["Exposition", "Work", "Wedding", "Event"],
   "probabilidadCoincidencia": 0.4,
   "rho": 0.5,
-  "cierreTriadico": 0.3,
   "delta": 0.7,
   "gradoReferencia": 10,
   "paresTemporales": {
@@ -43,6 +44,13 @@
   "transferenciaSinFecha": 1.0,
   "umbralDirecto": 0.05,
   "maxDirectos": 1000,
+  "penalizacionPorTipo": true,
+  "contarSoloPersonas": true,
+  "coincidenciaSalvoLugar": true,
+  "relacionesLugar": ["OCURRED_AT"],
+  "cuotasPorClase": { "OBRA_DE_ARTE": 50 },
+  "topeCoincidencia": 0.2,
+  "lugarSinReparto": true,
   "mostrarDeducidosPorDefecto": true,
   "opacidadMinima": 0.25
 }

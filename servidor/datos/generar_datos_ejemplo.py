@@ -33,7 +33,7 @@ COMENTARIO = (
 
 COMENTARIO_PRUEBA_APRENDIZAJE = ("DE PRUEBA: Apprenticeship no está en el diseño. Sirve para comprobar que "
                                  "un subtipo nuevo funciona sin tocar el código.")
-COMENTARIO_ESCENARIO = ("ESCENARIO FIJO del ejemplo de relevancia en tres capas (docs/prototipo_relevancia.mjs): "
+COMENTARIO_ESCENARIO = ("ESCENARIO FIJO del ejemplo de relevancia en tres capas (docs/prototipo_relevancia_v4.mjs): "
                         "nombres inventados, ids fijos. Ana Ferrer es la entidad central del ejemplo.")
 # Ids fijos de las entidades del escenario (no dependen de la semilla).
 ID_ANA = "ana_ferrer"
@@ -620,7 +620,7 @@ class GeneradorDatosEjemplo:
     # ───────────── Escenario fijo del ejemplo de relevancia ─────────────
 
     def __escenario_ana_ferrer(self) -> None:
-        """El ejemplo de escenarioAna() de docs/prototipo_relevancia_v2.mjs con
+        """El ejemplo de escenarioAna() de docs/prototipo_relevancia_v4.mjs con
         nombres inventados:
 
           Ana Ferrer (pintora, la central del ejemplo)

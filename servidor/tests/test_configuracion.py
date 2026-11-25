@@ -91,6 +91,18 @@ def test_comprobar_rechaza_un_limite_de_evidencia_menor_que_el_de_dibujar() -> N
     assert "maxParticipantesEvidencia" in str(error.value)
 
 
+def test_lo_que_se_repite_en_la_configuracion_de_la_relevancia_coincide() -> None:
+    # El servidor (deduplicación) y el navegador (coincidencias) tienen que
+    # entender lo mismo por evento y por lugar.
+    with open(ARCHIVO_CONFIGURACION, encoding="utf-8") as archivo:
+        servidor = json.load(archivo)
+    ruta_relevancia = ARCHIVO_CONFIGURACION.parent.parent / "public" / "relevancia.json"
+    with open(ruta_relevancia, encoding="utf-8") as archivo:
+        navegador = json.load(archivo)
+    assert servidor["tiposCoincidencia"] == navegador["tiposCoincidencia"]
+    assert servidor["relacionesLugar"] == navegador["relacionesLugar"]
+
+
 def test_el_servidor_ya_no_tiene_pesos() -> None:
     # La relevancia la calcula siempre el navegador (public/relevancia.json).
     with open(ARCHIVO_CONFIGURACION, encoding="utf-8") as archivo:

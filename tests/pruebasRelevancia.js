@@ -47,20 +47,31 @@ prueba("RelevanciaCompuesta: el peso es el del tipo, el del padre más cercano o
   comprobarIgual(estrategia.getPeso(NUEVO), 0.4, "un tipo sin peso ni padres: pesoPorDefecto");
 });
 
-prueba("RelevanciaCompuesta: (2/n)^β baja con el número de participantes", function () {
+prueba("RelevanciaCompuesta: buscarPeso dice de dónde sale el peso", function () {
   const estrategia = crearEstrategia();
-  comprobarIgual(estrategia.getFactorParticipantes(2), 1, "entre dos");
-  comprobarIgual(redondear(estrategia.getFactorParticipantes(40)), 0.05, "40 participantes con β = 1");
-  const conBeta2 = crearEstrategia({ betaParticipantes: 2 });
-  comprobarIgual(redondear(conBeta2.getFactorParticipantes(4)), 0.25, "4 participantes con β = 2");
+  const mentoria = new TipoRelacion("Mentorship", "Mentoría", "#000000", ["Relationship"]);
+  comprobarIgual(estrategia.buscarPeso(MATRIMONIO).clave, "Marriage", "exacto");
+  comprobarIgual(estrategia.buscarPeso(PINTURA).clave, "Creation", "heredado");
+  comprobarIgual(estrategia.buscarPeso(mentoria, "aprendiz").clave, "Mentorship.aprendiz", "por rol");
+  comprobarIgual(estrategia.buscarPeso(NUEVO).clave, null, "por defecto");
+});
+
+prueba("RelevanciaCompuesta: (2/n)^β baja con el número de participantes", function () {
+  const reparto = crearEstrategia().getReparto();
+  comprobarIgual(reparto.getFactorDeNumero(2), 1, "entre dos");
+  comprobarIgual(redondear(reparto.getFactorDeNumero(40)), 0.05, "40 participantes con β = 1");
+  const conBeta2 = crearEstrategia({ betaParticipantes: 2 }).getReparto();
+  comprobarIgual(redondear(conBeta2.getFactorDeNumero(4)), 0.25, "4 participantes con β = 2");
 });
 
 prueba("RelevanciaCompuesta: r = peso × (2/n)^β × f_t y se guarda en la relación", function () {
   const estrategia = crearEstrategia();
-  const relacion = crearRelacion(EXPOSICION, { participantes: 4 });
+  const relacion = crearRelacion(MATRIMONIO, { participantes: 4 });
   const r = estrategia.calcularRelevanciaRelacion(relacion);
-  comprobarIgual(redondear(r), 0.35, "0,7 × 2/4 × 1 (sin época, f_t = 1)");
-  comprobarIgual(redondear(relacion.getRelevancia()), 0.35, "guardada en la relación");
+  comprobarIgual(redondear(r), 0.25, "0,5 × 2/4 × 1 (sin época, f_t = 1)");
+  comprobarIgual(redondear(relacion.getRelevancia()), 0.25, "guardada en la relación");
+  const coincidencia = estrategia.calcularRelevanciaRelacion(crearRelacion(EXPOSICION, { participantes: 4 }));
+  comprobarIgual(redondear(coincidencia), 0.14, "una coincidencia: 0,7 × 0,2 (el tope) × 1");
 });
 
 prueba("RelevanciaCompuesta: el factor de tiempo penaliza lo que queda lejos de la época de la central", function () {

@@ -1,5 +1,6 @@
 """RepositorioSimulado: los datos de ejemplo, con la forma de Neo4j, en memoria."""
 import asyncio
+import random
 from typing import Any
 
 from servidor.datos.proyector_relaciones import ProyectorRelaciones
@@ -34,6 +35,8 @@ class RepositorioSimulado(RepositorioDatos):
     # navegador, que calcula siempre la relevancia por su cuenta.
     PROPIEDADES_DE_RELEVANCIA = ["relevance", "relevanceSource", "relevanceVersion"]
     PROPIEDAD_ORDEN = "order"
+    # Cuántos de los creadores con más relaciones entran en la muestra.
+    MAS_RELACIONADOS_EN_LA_MUESTRA = 25
 
     def __init__(self, datos: dict[str, Any], retardo_ms: float, configuracion: Configuracion) -> None:
         """datos: con el formato de arriba (se copian: el repositorio no
@@ -51,12 +54,16 @@ class RepositorioSimulado(RepositorioDatos):
 
         self.__orden_nodos: list[str] = []
         self.__nodos = self.__cargar_nodos(datos["nodos"])
+        self.__posicion: dict[str, int] = {}
+        for id_nodo in self.__orden_nodos:
+            self.__posicion[id_nodo] = len(self.__posicion)
         self.__relaciones = self.__cargar_relaciones(datos["relaciones"])
         self.__adyacencia = self.__indexar()
 
         self.__clasificador = ClasificadorEtiquetas(configuracion, RepositorioSimulado.__leer_jerarquia(datos))
         self.__proyector = ProyectorRelaciones(self.__nodos, self.__adyacencia, self.__clasificador, configuracion)
         self.__jerarquia = RepositorioSimulado.__leer_jerarquia(datos)
+        self.__etiquetas_creador = configuracion.get_etiquetas_creador()
 
     def get_clasificador(self) -> ClasificadorEtiquetas:
         """El clasificador de etiquetas (con la jerarquía de estos datos)."""
@@ -163,6 +170,52 @@ class RepositorioSimulado(RepositorioDatos):
             "ubicacion": self.__ubicacion_de(id_entidad),
         }
 
+    async def obtener_muestra(self, numero: int, semilla: int) -> dict[str, Any]:
+        """Los creadores con más relaciones y otros al azar con la semilla."""
+        await self.__esperar()
+        # Para ordenar, tuplas (−relaciones, posición, id): de más a menos
+        # relaciones y, a igualdad, en el orden de los datos.
+        creadores: list[tuple[int, int, str]] = []
+        otras: list[str] = []
+        for id_nodo in self.__orden_nodos:
+            etiquetas = self.__nodos[id_nodo]["etiquetas"]
+            if self.__clasificador.es_entidad(etiquetas):
+                if self.__es_creador(etiquetas):
+                    creadores.append((-self.__proyector.numero_de_relaciones(id_nodo), len(creadores), id_nodo))
+                else:
+                    otras.append(id_nodo)
+        creadores.sort()
+        ids: list[str] = []
+        resto: list[str] = []
+        for tupla in creadores:
+            if len(ids) < RepositorioSimulado.MAS_RELACIONADOS_EN_LA_MUESTRA and len(ids) < numero:
+                ids.append(tupla[2])
+            else:
+                resto.append(tupla[2])
+        azar = random.Random(semilla)
+        azar.shuffle(resto)
+        azar.shuffle(otras)
+        for id_nodo in resto + otras:
+            if len(ids) < numero:
+                ids.append(id_nodo)
+        return {
+            "ids": ids,
+            "creadores": min(len(creadores), len(ids)),
+            "entidades": len(creadores) + len(otras),
+            "intermediariosIgnorados": self.__proyector.intermediarios_ignorados(),
+            "eventosJuntados": self.__proyector.eventos_juntados(),
+        }
+
+    def __es_creador(self, etiquetas: list[str]) -> bool:
+        """(Privado) ¿Alguna etiqueta (o padre) está en etiquetasCreador?"""
+        for etiqueta in etiquetas:
+            if etiqueta in self.__etiquetas_creador:
+                return True
+            for padre in self.__clasificador.padres(etiqueta):
+                if padre in self.__etiquetas_creador:
+                    return True
+        return False
+
     # ───────────── Privados: carga del grafo ─────────────
 
     def __cargar_nodos(self, lista: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -234,15 +287,20 @@ class RepositorioSimulado(RepositorioDatos):
 
     def __entidades_en_orden(self, encontrados: set[str]) -> list[dict[str, Any]]:
         """(Privado) Las entidades encontradas, en bruto y en el orden de los datos."""
+        # Se ordenan solo las encontradas: recorrer todos los nodos en cada
+        # petición sería lento con los datos grandes.
+        posiciones: list[int] = []
+        for id_nodo in encontrados:
+            posiciones.append(self.__posicion[id_nodo])
+        posiciones.sort()
         entidades: list[dict[str, Any]] = []
-        for id_nodo in self.__orden_nodos:
-            if id_nodo in encontrados:
-                nodo = self.__nodos[id_nodo]
-                entidades.append({
-                    "id": id_nodo,
-                    "etiquetas": list(nodo["etiquetas"]),
-                    "propiedades": RepositorioSimulado.__sin_relevancia(nodo["propiedades"]),
-                })
+        for posicion in posiciones:
+            nodo = self.__nodos[self.__orden_nodos[posicion]]
+            entidades.append({
+                "id": nodo["id"],
+                "etiquetas": list(nodo["etiquetas"]),
+                "propiedades": RepositorioSimulado.__sin_relevancia(nodo["propiedades"]),
+            })
         return entidades
 
     def __es_relacion_directa(self, relacion: dict[str, Any]) -> bool:

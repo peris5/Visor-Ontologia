@@ -1,7 +1,8 @@
 /*
- * Estilos de las dos páginas:
+ * Estilos de las páginas:
  *  - index.html (body.pagina-visor): vista 3D a pantalla completa, fondo oscuro.
  *  - pruebas.html (body.pagina-pruebas): lista de pruebas, fondo claro.
+ *  - laboratorio.html (también body.pagina-laboratorio): tablas, fondo claro.
  */
 
 :root {
@@ -44,6 +45,173 @@ body {
   margin: 0;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   line-height: 1.45;
+}
+
+/* ───────────────────────── Laboratorio ───────────────────────── */
+
+body.pagina-laboratorio header,
+body.pagina-laboratorio main {
+  max-width: 1200px;
+}
+
+.laboratorio-ocupado {
+  cursor: progress;
+}
+
+.laboratorio-pestanas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--borde);
+}
+
+.pagina-laboratorio button {
+  padding: 8px 14px;
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  background: var(--superficie);
+  color: var(--texto);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pagina-laboratorio button:hover {
+  border-color: var(--acento);
+}
+
+.pagina-laboratorio button:focus-visible,
+.pagina-laboratorio textarea:focus-visible,
+.pagina-laboratorio input:focus-visible {
+  outline: 2px solid var(--acento);
+  outline-offset: 1px;
+}
+
+.laboratorio-pestanas button {
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+}
+
+.laboratorio-pestanas button[aria-selected="true"] {
+  background: var(--acento);
+  color: #ffffff;
+}
+
+.laboratorio-barra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.laboratorio-barra input {
+  width: 6em;
+  padding: 6px;
+  border: 1px solid var(--borde);
+  border-radius: 4px;
+  font: inherit;
+}
+
+.laboratorio-aviso {
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+}
+
+.laboratorio-aviso + .laboratorio-aviso {
+  margin-top: 8px;
+}
+
+.laboratorio-atencion {
+  background: #fff6dd;
+  color: #6b4e00;
+}
+
+.laboratorio-desplegable {
+  margin: 6px 0;
+}
+
+.laboratorio-desplegable summary {
+  cursor: pointer;
+}
+
+.laboratorio-error {
+  background: var(--error-fondo);
+  color: var(--error-texto);
+}
+
+.laboratorio-tabla {
+  margin: 20px 0;
+}
+
+.laboratorio-tabla h3 {
+  margin: 0 0 6px;
+}
+
+.laboratorio-nota {
+  margin: 0 0 8px;
+  color: var(--texto-suave);
+}
+
+.laboratorio-desplazable {
+  max-height: 60vh;
+  overflow: auto;
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  background: var(--superficie);
+}
+
+.laboratorio-tabla table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.laboratorio-tabla th,
+.laboratorio-tabla td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--borde);
+  text-align: left;
+  vertical-align: top;
+}
+
+.laboratorio-tabla th {
+  position: sticky;
+  top: 0;
+  background: var(--fondo);
+}
+
+.fila-bien td {
+  background: var(--correcto-fondo);
+  color: var(--correcto-texto);
+}
+
+.fila-mal td {
+  background: var(--error-fondo);
+  color: var(--error-texto);
+}
+
+.fila-aviso td {
+  background: #fff6dd;
+  color: #6b4e00;
+}
+
+.laboratorio-configuraciones {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.laboratorio-configuraciones textarea {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px;
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.8rem;
 }
 
 /* ───────────────────────── Página de pruebas ───────────────────────── */

@@ -73,6 +73,20 @@ export class TipoRelacion {
   }
 
   /**
+   * El id del tipo y los de sus padres, del más cercano al más lejano: el
+   * orden en que se busca con herencia (pesos, tabla T, pares temporales).
+   *
+   * @returns {string[]}
+   */
+  getIdYPadres() {
+    const ids = [this.#id];
+    for (let i = 0; i < this.#padres.length; i++) {
+      ids.push(this.#padres[i]);
+    }
+    return ids;
+  }
+
+  /**
    * El padre más alto por debajo de la raíz; si no hay, el propio tipo.
    * Marriage ["Related", "Relationship"] → "Related";
    * Mentorship ["Relationship"] → "Mentorship"; STUDENT_OF [] → "STUDENT_OF".

@@ -4,8 +4,7 @@
  * estrategiaNodos en public/relevancia.json:
  *
  *  - RelevanciaNodosTresCapas ("tresCapas", la del visor): evidencia de
- *    cada pareja, refuerzo simétrico entre los nodos directos y deducción a
- *    dos saltos.
+ *    cada pareja y propagación desde los nodos directos.
  *  - RelevanciaNodosMejorCamino ("mejorCamino"): el cálculo anterior
  *    (producto del mejor camino), que se conserva para comparar.
  *

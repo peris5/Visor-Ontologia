@@ -1,14 +1,7 @@
 import relacionesEjemplo from './relacionesEjemplo.json';
 import configuracionServidor from '../servidor/configuracion.json';
 import configuracionRelevancia from '../public/relevancia.json';
-import { RelevanciaCompuesta } from '../src/logica/RelevanciaCompuesta.js';
-import { CalculadorEvidencia } from '../src/logica/CalculadorEvidencia.js';
-import { TablaTransferencia } from '../src/logica/TablaTransferencia.js';
-import { PenalizacionGrado } from '../src/logica/PenalizacionGrado.js';
-import { CompatibilidadTemporal } from '../src/logica/CompatibilidadTemporal.js';
-import { RefuerzoEntreDirectos } from '../src/logica/RefuerzoEntreDirectos.js';
-import { DeduccionPorTipos } from '../src/logica/DeduccionPorTipos.js';
-import { RelevanciaNodosTresCapas } from '../src/logica/RelevanciaNodosTresCapas.js';
+import { FabricaRelevancia } from '../src/logica/FabricaRelevancia.js';
 
 /*
  * Funciones de ayuda compartidas por las pruebas del navegador.
@@ -51,19 +44,14 @@ const ETIQUETA_DE_TIPO = {
  * Las piezas de la relevancia en tres capas, con la configuración de
  * public/relevancia.json (o la que se indique) y la jerarquía de los datos.
  *
- * @returns {Object} { estrategia, calculador }
+ * @returns {Object} las de FabricaRelevancia: { estrategia, calculador, seleccionador... }
  */
 export function crearRelevanciaPruebas(configuracion) {
   let config = configuracionRelevancia;
   if (configuracion !== undefined) {
     config = configuracion;
   }
-  const tabla = new TablaTransferencia(config, JERARQUIA_PRUEBAS);
-  const calculador = new CalculadorEvidencia(new RelevanciaCompuesta(config), config, tabla);
-  const penalizacion = new PenalizacionGrado(config);
-  const estrategia = new RelevanciaNodosTresCapas(calculador, new RefuerzoEntreDirectos(config, tabla, penalizacion),
-    new DeduccionPorTipos(config, tabla, penalizacion, new CompatibilidadTemporal(config), calculador));
-  return { estrategia: estrategia, calculador: calculador };
+  return FabricaRelevancia.crear(config, JERARQUIA_PRUEBAS);
 }
 
 /**
