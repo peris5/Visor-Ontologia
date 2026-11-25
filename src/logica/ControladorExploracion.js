@@ -4,10 +4,7 @@ import { EstadoCarga } from './EstadoCarga.js';
 import { AjustadorUmbral } from './AjustadorUmbral.js';
 
 /**
- * ControladorExploracion
- *
- * El «controlador» del patrón modelo–vista–controlador: recibe lo que hace
- * el usuario (desde la escena 3D o desde los paneles), decide qué hay que
+ * Recibe lo que hace el usuario (desde la escena 3D o desde los paneles), decide qué hay que
  * hacer y se lo pide a quien corresponda:
  *  - el MODELO: GestorSubgrafos (subgrafos), Buscador (sugerencias),
  *    FiltroVisualizacion (qué se ve) e HistorialNavegacion (volver);
@@ -17,14 +14,8 @@ import { AjustadorUmbral } from './AjustadorUmbral.js';
  * llega aquí, y aquí se decide que hay que resaltarlo en la escena y
  * mostrar su información en el panel.
  *
- * Composición (◆): el filtro y el historial nacen y mueren con el controlador.
- *
- * Requisitos: RF-01 a RF-07 (búsqueda), RF-13 (umbral), RF-14 y RF-15 (aviso
- * de carga y de error), RF-27 (vista inicial), RF-28 y RF-29 (información),
- * RF-30 (navegar), RF-31 (volver), RF-32 y RF-33 (filtros).
- *
- * Desde el incremento 3b, al seleccionar una entidad también pide su
- * detalle (eventos, imágenes y fuentes) sin bloquear la vista.
+ * Al seleccionar una entidad también pide su detalle (eventos, imágenes y
+ * fuentes) sin bloquear la vista.
  */
 export class ControladorExploracion {
   #filtro;
@@ -39,12 +30,9 @@ export class ControladorExploracion {
   #umbral;
   #numeroCarga;
   #idDetalle;
-  #umbralDePartida;
   #ajustador;
 
   /**
-   * @param {GestorSubgrafos} gestor
-   * @param {Buscador} buscador
    * @param {number} umbralInicial - entre 0 y 1 (de /api/configuracion).
    * @param {number} nodosObjetivo - opcional (de /api/configuracion). Si se
    *   indica, cada entidad nueva se abre con el umbral que da más o menos
@@ -54,7 +42,6 @@ export class ControladorExploracion {
     this.#gestor = gestor;
     this.#buscador = buscador;
     this.#umbral = umbralInicial;
-    this.#umbralDePartida = umbralInicial;
     this.#ajustador = null;
     if (nodosObjetivo !== undefined && nodosObjetivo !== null) {
       this.#ajustador = new AjustadorUmbral(nodosObjetivo);
@@ -75,9 +62,6 @@ export class ControladorExploracion {
    * las vistas también necesitan al controlador (para avisarle de lo que
    * hace el usuario): primero se crea el controlador, después las vistas
    * con él, y al final se conectan.
-   *
-   * @param {EscenaGrafo} escena
-   * @param {InterfazUsuario} interfaz
    */
   conectar(escena, interfaz) {
     this.#escena = escena;
@@ -87,7 +71,6 @@ export class ControladorExploracion {
   /**
    * Empieza: pone el umbral en su control y carga la entidad inicial.
    *
-   * @param {string} idEntidadInicial
    * @returns {Promise<void>} termina cuando el primer subgrafo está cargado (o ha fallado).
    */
   async iniciar(idEntidadInicial) {
@@ -111,8 +94,6 @@ export class ControladorExploracion {
   /**
    * El subgrafo que se ve ahora (lo usa la barra de rendimiento para
    * contar nodos y relaciones y saber cuándo ha cambiado).
-   *
-   * @returns {Subgrafo|null}
    */
   getSubgrafoActual() {
     return this.#subgrafoActual;
@@ -122,7 +103,6 @@ export class ControladorExploracion {
    * Sugerencias para lo que se está escribiendo en el buscador. No pide
    * nada al servidor: el Buscador busca en el índice de nombres.
    *
-   * @param {string} texto
    * @param {string} tipo - un valor de TipoEntidad, o "" para todos.
    */
   buscar(texto, tipo) {
@@ -138,22 +118,14 @@ export class ControladorExploracion {
     this.#interfaz.mostrarSugerencias(sugerencias, textoLimpio);
   }
 
-  /**
-   * El usuario ha elegido una entidad en el buscador: es lo mismo que navegar a ella.
-   *
-   * @param {string} id
-   * @returns {Promise<void>}
-   */
+  /** El usuario ha elegido una entidad en el buscador: es lo mismo que navegar a ella. */
   async seleccionarEntidad(id) {
     await this.navegarA(id);
   }
 
   /**
-   * Cambia la entidad central (RF-30). La actual se apunta en el historial
+   * Cambia la entidad central. La actual se apunta en el historial
    * para poder volver a ella. Si ya es la actual, no hace nada.
-   *
-   * @param {string} id
-   * @returns {Promise<void>}
    */
   async navegarA(id) {
     const idActual = this.#idEntidadActual();
@@ -170,11 +142,7 @@ export class ControladorExploracion {
     await this.#cargarSubgrafo(id, true);
   }
 
-  /**
-   * Vuelve a la entidad anterior (RF-31), sin apuntarla otra vez en el historial.
-   *
-   * @returns {Promise<void>}
-   */
+  /** Vuelve a la entidad anterior, sin apuntarla otra vez en el historial. */
   async volver() {
     const idAnterior = this.#historial.volver();
     if (idAnterior === null) {
@@ -185,12 +153,11 @@ export class ControladorExploracion {
   }
 
   /**
-   * Cambia el umbral y recalcula el subgrafo de la misma entidad (RF-13).
-   * No toca el historial. Si el umbral sube, GestorSubgrafos no pedirá
-   * nada al servidor.
+   * Cambia el umbral y recalcula el subgrafo de la misma entidad.
+   * No toca el historial ni pide nada al servidor (ni subiendo ni bajando):
+   * el cálculo de la relevancia no depende del umbral.
    *
    * @param {number} valor - entre 0 y 1.
-   * @returns {Promise<void>}
    */
   async cambiarUmbral(valor) {
     if (typeof valor !== "number" || Number.isNaN(valor) || valor < 0 || valor > 1) {
@@ -208,7 +175,25 @@ export class ControladorExploracion {
   }
 
   /**
-   * Muestra u oculta un tipo de nodo (RF-32).
+   * Casilla «Mostrar deducidos» de la leyenda: muestra u oculta los nodos
+   * deducidos y recalcula el subgrafo de la misma entidad con el mismo
+   * umbral. No pide nada al servidor.
+   *
+   * @param {boolean} mostrar
+   */
+  async alternarDeducidos(mostrar) {
+    this.#gestor.setMostrarDeducidos(mostrar === true);
+    let id = this.#idEntidadActual();
+    if (id === null) {
+      id = this.#idSolicitado;
+    }
+    if (id !== null) {
+      await this.#cargarSubgrafo(id, false);
+    }
+  }
+
+  /**
+   * Muestra u oculta un tipo de nodo.
    *
    * @param {string} tipo - un valor de TipoEntidad.
    */
@@ -217,21 +202,15 @@ export class ControladorExploracion {
     this.#aplicarFiltro();
   }
 
-  /**
-   * Muestra u oculta un tipo de relación (RF-33).
-   *
-   * @param {TipoRelacion} tipo
-   */
+  /** Muestra u oculta un tipo de relación. */
   alternarFiltroRelacion(tipo) {
     this.#filtro.alternarTipoRelacion(tipo);
     this.#aplicarFiltro();
   }
 
   /**
-   * Botones «Todas» (true) y «Ninguna» (false) de la leyenda (RF-33):
+   * Botones «Todas» (true) y «Ninguna» (false) de la leyenda:
    * muestra u oculta todos los tipos de relación del subgrafo actual.
-   *
-   * @param {boolean} visible
    */
   mostrarTodasLasRelaciones(visible) {
     if (this.#subgrafoActual === null) {
@@ -244,11 +223,7 @@ export class ControladorExploracion {
     this.#aplicarFiltro();
   }
 
-  /**
-   * El usuario ha hecho clic en un nodo (RF-28): se resalta y se muestra su información.
-   *
-   * @param {NodoRelevante} nodo
-   */
+  /** El usuario ha hecho clic en un nodo: se resalta y se muestra su información. */
   seleccionarNodo(nodo) {
     if (this.#subgrafoActual === null) {
       return;
@@ -258,11 +233,7 @@ export class ControladorExploracion {
     this.#cargarDetalle(nodo.getEntidad().getId());
   }
 
-  /**
-   * El usuario ha hecho clic en una relación (RF-29).
-   *
-   * @param {Relacion} relacion
-   */
+  /** El usuario ha hecho clic en una relación. */
   seleccionarRelacion(relacion) {
     if (this.#subgrafoActual === null) {
       return;
@@ -285,15 +256,13 @@ export class ControladorExploracion {
     this.#interfaz.setModoDisposicion(modo);
   }
 
-  /**
-   * Vuelve a la vista inicial de la cámara (RF-27).
-   */
+  /** Vuelve a la vista inicial de la cámara. */
   restablecerVista() {
     this.#escena.restablecerCamara();
   }
 
   /**
-   * (Privado) Pide el subgrafo de una entidad y, cuando llega, lo muestra.
+   * Pide el subgrafo de una entidad y, cuando llega, lo muestra.
    *
    * Si el usuario pide otra cosa antes de que llegue (por ejemplo, elige
    * otra entidad muy deprisa), las respuestas pueden llegar desordenadas.
@@ -306,10 +275,6 @@ export class ControladorExploracion {
    * Con ajustar (al abrir una entidad: inicio, navegar y volver), si hay
    * ajustador, el umbral se elige para que salgan más o menos los mismos
    * nodos y se pone en el deslizador. Al mover el deslizador no se ajusta.
-   *
-   * @param {string} id
-   * @param {boolean} ajustar
-   * @returns {Promise<void>}
    */
   async #cargarSubgrafo(id, ajustar) {
     this.#idSolicitado = id;
@@ -321,7 +286,7 @@ export class ControladorExploracion {
     let subgrafo = null;
     try {
       if (conAjuste) {
-        subgrafo = await this.#gestor.obtenerSubgrafoAjustado(id, this.#ajustador, this.#umbralDePartida);
+        subgrafo = await this.#gestor.obtenerSubgrafoAjustado(id, this.#ajustador);
       } else {
         subgrafo = await this.#gestor.obtenerSubgrafo(id, this.#umbral);
       }
@@ -353,14 +318,11 @@ export class ControladorExploracion {
   }
 
   /**
-   * (Privado) Pide el detalle de una entidad (eventos, imágenes, fuentes) y
+   * Pide el detalle de una entidad (eventos, imágenes, fuentes) y
    * se lo da a la interfaz cuando llega. NO se espera (no tiene await quien
    * lo llama): mientras tanto la vista 3D sigue funcionando y el panel
    * muestra «Cargando…». Si cuando llega el usuario ya ha seleccionado otra
    * cosa, se ignora. Si falla, el panel muestra un aviso (el resto sigue).
-   *
-   * @param {string} idEntidad
-   * @returns {Promise<void>}
    */
   async #cargarDetalle(idEntidad) {
     this.#idDetalle = idEntidad;
@@ -379,7 +341,7 @@ export class ControladorExploracion {
   }
 
   /**
-   * (Privado) Aplica el filtro en la escena y actualiza la leyenda (que
+   * Aplica el filtro en la escena y actualiza la leyenda (que
    * cuenta lo que se ve).
    */
   #aplicarFiltro() {
@@ -391,16 +353,15 @@ export class ControladorExploracion {
   }
 
   /**
-   * (Privado) Los datos que necesita Leyenda.actualizar:
+   * Los datos que necesita Leyenda.actualizar:
    *   {
    *     nodos:      [{ tipo, cantidad, activo }],
-   *     relaciones: [{ tipo, cantidad, activo, visibles }]
+   *     relaciones: [{ tipo, cantidad, activo, visibles }],
+   *     mostrarDeducidos: si la casilla «Mostrar deducidos» está marcada
    *   }
    * cantidad: cuántos hay en el subgrafo; activo: si ese tipo se muestra
    * (no está ocultado en la leyenda); visibles: cuántas relaciones de ese
    * tipo se ven ahora.
-   *
-   * @returns {Object}
    */
   #datosLeyenda() {
     const cantidadPorTipoDeNodo = new Map();
@@ -409,8 +370,8 @@ export class ControladorExploracion {
       ControladorExploracion.#sumarUno(cantidadPorTipoDeNodo, nodos[i].getEntidad().getTipo());
     }
 
-    // La clave es el propio TipoRelacion: RepositorioVecindario crea uno
-    // solo por id, así que todas las relaciones de un tipo comparten objeto.
+    // La clave es el propio TipoRelacion: la caché (RepositorioVecindario)
+    // crea uno solo por id, así que todas las relaciones de un tipo comparten objeto.
     const cantidadPorTipoDeRelacion = new Map();
     const relaciones = this.#subgrafoActual.getRelaciones();
     for (let i = 0; i < relaciones.length; i++) {
@@ -418,7 +379,7 @@ export class ControladorExploracion {
     }
     const visiblesPorTipo = this.#escena.getRelacionesVisiblesPorTipo();
 
-    const datos = { nodos: [], relaciones: [] };
+    const datos = { nodos: [], relaciones: [], mostrarDeducidos: this.#gestor.getMostrarDeducidos() };
     for (const tipo of cantidadPorTipoDeNodo.keys()) {
       datos.nodos.push({
         tipo: tipo,
@@ -442,7 +403,7 @@ export class ControladorExploracion {
   }
 
   /**
-   * (Privado) Cambia el estado y se lo dice a la interfaz.
+   * Cambia el estado y se lo dice a la interfaz.
    *
    * @param {string} estado - un valor de EstadoCarga.
    */
@@ -452,10 +413,8 @@ export class ControladorExploracion {
   }
 
   /**
-   * (Privado) Id de la entidad central que se ve ahora, o null si todavía
+   * Id de la entidad central que se ve ahora, o null si todavía
    * no hay ningún subgrafo en pantalla.
-   *
-   * @returns {string|null}
    */
   #idEntidadActual() {
     if (this.#subgrafoActual === null) {
@@ -464,12 +423,7 @@ export class ControladorExploracion {
     return this.#subgrafoActual.getEntidadCentral().getId();
   }
 
-  /**
-   * (Privado) Suma 1 al contador de esa clave (empieza en 0 si no existía).
-   *
-   * @param {Map} contadores
-   * @param {*} clave
-   */
+  /** Suma 1 al contador de esa clave (empieza en 0 si no existía). */
   static #sumarUno(contadores, clave) {
     let cantidad = 0;
     if (contadores.has(clave)) {

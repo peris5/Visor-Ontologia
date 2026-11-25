@@ -4,23 +4,17 @@ import { Organizacion } from '../modelo/Organizacion.js';
 import { ObraDeArte } from '../modelo/ObraDeArte.js';
 
 /**
- * FabricaEntidades
+ * Crea la subclase de Entidad que corresponde a un tipo, así el resto del
+ * código no necesita hacer if/else con los tipos.
  *
- * Patrón Fábrica: crea la subclase de Entidad que corresponde a un tipo, así
- * el resto del código no necesita hacer if/else con los tipos.
- *
- * Desde el incremento 3b también crea la entidad a partir de un nodo en
- * bruto de Neo4j (crearDesdeNeo4j): el tipo sale de sus ETIQUETAS con la
+ * crearDesdeNeo4j crea la entidad a partir de un nodo en bruto de Neo4j: el tipo sale de sus ETIQUETAS con la
  * tabla etiquetasEntidad de la configuración (Person → PERSONA...), que
  * llega del servidor. Ninguna etiqueta de Neo4j está escrita aquí.
- *
- * Requisitos: RF-19 (tipo de nodo), RNF-16 (clasificación en la configuración).
  */
 export class FabricaEntidades {
   /**
    * @param {string} tipo - un valor de TipoEntidad.
    * @param {Object} datos - { id, propiedades, subtipos, idioma } (ver Entidad).
-   * @returns {Entidad}
    */
   static crearEntidad(tipo, datos) {
     if (tipo === TipoEntidad.PERSONA) {
@@ -42,10 +36,8 @@ export class FabricaEntidades {
    *
    * @param {string[]} etiquetas - las del nodo ("Person", "Creator", "Painter").
    * @param {Object} propiedades - las del nodo, en bruto.
-   * @param {string} id
    * @param {string} idioma - "es", "ca" o "en".
    * @param {Object} etiquetasEntidad - etiqueta → TipoEntidad (de la configuración).
-   * @returns {Entidad}
    */
   static crearDesdeNeo4j(etiquetas, propiedades, id, idioma, etiquetasEntidad) {
     let principal = null;
@@ -65,7 +57,7 @@ export class FabricaEntidades {
         subtipos.push(etiquetas[i]);
       }
     }
-    const datos = { id: id, propiedades: propiedades, subtipos: subtipos, idioma: idioma };
+    const datos = { id: id, propiedades: propiedades, subtipos: subtipos, idioma: idioma, etiquetaPrincipal: principal };
     return FabricaEntidades.crearEntidad(etiquetasEntidad[principal], datos);
   }
 }

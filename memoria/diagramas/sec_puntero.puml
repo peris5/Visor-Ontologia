@@ -1,0 +1,18 @@
+@startuml sec_puntero
+' Operación: etiqueta flotante al pasar el puntero.
+!include estilo.iuml
+actor Usuario
+participant ":Selector\nInteraccion" as SEL
+participant ":EscenaGrafo" as ESC
+
+Usuario -> SEL : mueve el puntero
+activate SEL
+SEL -> ESC : getObjetosSeleccionables()
+ESC --> SEL : objetos visibles
+alt hay un nodo o relación debajo
+  SEL -> SEL : ~#mostrarEtiqueta()
+else
+  SEL -> SEL : ocultarEtiqueta()
+end
+deactivate SEL
+@enduml

@@ -1,11 +1,7 @@
 /**
- * PaletaColores
- *
  * Da un color distinto a cada tipo de relación. Como los tipos no se conocen
  * de antemano, no podemos tener una lista fija: generamos los colores
  * con una fórmula a partir de un número (el índice del tipo).
- *
- * Requisitos: RF-20 y RF-39.
  */
 export class PaletaColores {
   /**
@@ -41,7 +37,6 @@ export class PaletaColores {
    * Es determinista: la misma lista en el mismo orden da siempre los mismos colores.
    * Si un id aparece repetido, conserva el color de la primera vez.
    *
-   * @param {string[]} idsTipos
    * @returns {Map<string, string>} id → color "#rrggbb".
    */
   static asignar(idsTipos) {
@@ -58,13 +53,12 @@ export class PaletaColores {
   }
 
   /**
-   * (Privado) Convierte un color HSL (tono, saturación, luminosidad)
+   * Convierte un color HSL (tono, saturación, luminosidad)
    * en el formato "#rrggbb". Es la fórmula estándar de conversión.
    *
    * @param {number} tono - de 0 a 360 grados.
    * @param {number} saturacion - de 0 a 1.
    * @param {number} luminosidad - de 0 a 1.
-   * @returns {string}
    */
   static #convertirHslAHexadecimal(tono, saturacion, luminosidad) {
     // "croma": cuánto color puro hay.
@@ -102,12 +96,7 @@ export class PaletaColores {
     return "#" + textoRojo + textoVerde + textoAzul;
   }
 
-  /**
-   * (Privado) Convierte un componente entre 0 y 1 en dos cifras hexadecimales ("00" a "ff").
-   *
-   * @param {number} componente
-   * @returns {string}
-   */
+  /** Convierte un componente entre 0 y 1 en dos cifras hexadecimales ("00" a "ff"). */
   static #componenteAHexadecimal(componente) {
     const valorDe0a255 = Math.round(componente * 255);
     let texto = valorDe0a255.toString(16);

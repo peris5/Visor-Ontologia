@@ -1,0 +1,52 @@
+@startuml sec_cargar
+' Operación: cargar la aplicación.
+!include estilo.iuml
+actor Usuario
+participant "Aplicacion" as APP
+participant ":ClienteServicio" as CLI
+participant "API (FastAPI)" as API
+participant ":RepositorioDatos" as REPO
+participant ":ControladorExploracion" as CTRL
+participant ":EscenaGrafo" as ESC
+participant ":InterfazUsuario" as UI
+
+Usuario -> APP : abre la página
+activate APP
+APP -> APP : main()
+APP -> CLI ** : new ClienteServicio(urlServicio)
+par Promise.all
+  APP -> CLI : obtenerConfiguracion()
+  CLI -> API : GET /api/configuracion
+  API --> CLI : { umbralPorDefecto, maxNodos, nodosObjetivo,\nentidadInicial, idioma, nombresTipos, etiquetasEntidad }
+else
+  APP -> CLI : obtenerNombres()
+  CLI -> API : GET /api/nombres
+  API -> REPO : obtener_nombres()
+  REPO --> API : [{ id, etiquetas, propiedades de nombre }]
+  API --> CLI : índice de nombres
+else
+  APP -> CLI : obtenerTipos()
+  CLI -> API : GET /api/tipos
+  API -> REPO : obtener_tipos()
+  REPO --> API : [{ id, padres }]
+  API --> CLI : tipos y jerarquía
+end
+CLI --> APP : configuración, nombres, tipos
+APP -> APP : ~#crearDependencias(configuracion, nombres)
+note right of APP
+  Único sitio con new de las clases principales
+  (inyección de dependencias): GestorSubgrafos,
+  Buscador, ControladorExploracion, EscenaGrafo,
+  InterfazUsuario.
+end note
+APP -> ESC : inicializar(contenedor, controlador)
+APP -> UI : inicializar(raiz, controlador, contexto)
+APP -> CTRL : conectar(escena, interfaz)
+APP -> CTRL : iniciar(entidadInicial)
+activate CTRL
+CTRL -> UI : setUmbral(umbral)
+CTRL -> CTRL : ~#cargarSubgrafo(entidadInicial, true)
+note right of CTRL : sigue como en «Explorar una entidad»
+deactivate CTRL
+deactivate APP
+@enduml

@@ -1,0 +1,46 @@
+@startuml paquetes
+' Paquetes y dependencias (de los import). En rojo, las que forman ciclo.
+!include estilo.iuml
+
+package "Navegador (src/)" {
+  package aplicacion
+  package interfaz
+  package vista3d
+  package logica
+  package datos
+  package modelo
+}
+
+package "Servidor (servidor/)" {
+  package "app.py" as app
+  package api
+  package "logica " as slogica
+  package "datos " as sdatos
+  package "modelo " as smodelo
+}
+
+aplicacion ..> interfaz
+aplicacion ..> vista3d
+aplicacion ..> logica
+aplicacion ..> datos
+interfaz ..> logica
+interfaz ..> vista3d
+interfaz ..> modelo
+vista3d ..> logica
+vista3d ..> modelo
+logica ..> modelo
+datos ..> modelo
+logica ..> datos #red
+datos ..> logica #red
+
+app ..> api
+app ..> sdatos
+app ..> slogica
+api ..> slogica
+api ..> smodelo
+sdatos ..> smodelo
+sdatos ..> slogica #red
+slogica ..> sdatos #red
+
+datos -[#2F5FA7,bold]-> app : HTTP
+@enduml

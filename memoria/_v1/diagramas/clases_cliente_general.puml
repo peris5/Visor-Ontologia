@@ -1,0 +1,123 @@
+@startuml clases_cliente_general
+' Diagrama de clases general del cliente: solo nombres y relaciones.
+!include estilo.iuml
+hide members
+skinparam nodesep 35
+skinparam ranksep 55
+
+package "aplicacion" {
+  class Aplicacion
+}
+
+package "interfaz" {
+  class InterfazUsuario
+  abstract class ComponenteUI
+  class PanelBusqueda
+  class PanelInformacion
+  class ControlUmbral
+  class ControlDisposicion
+  class Leyenda
+  class IndicadorEstado
+  class BarraNavegacion
+}
+
+package "logica" {
+  class ControladorExploracion
+  class GestorSubgrafos
+  class ConstructorSubgrafo
+  interface EstrategiaRelevancia <<interface>>
+  class RelevanciaDesdeBD
+  class CalculadorCentralidad
+  class AjustadorUmbral
+  class Buscador
+  class FiltroVisualizacion
+  class HistorialNavegacion
+  class DetectorComunidades
+  class PaletaColores
+  enum EstadoCarga <<enumeration>>
+}
+
+package "datos" {
+  class ClienteServicio
+  interface RepositorioDatos <<interface>>
+  class RepositorioVecindario
+  class FabricaEntidades
+}
+
+package "vista3d" {
+  class EscenaGrafo
+  class SimulacionFuerzas
+  class CalculadorDisposicion
+  class FabricaNodosVisuales
+  class NodoVisual
+  class EnlaceVisual
+  class SelectorInteraccion
+  enum ModoDisposicion <<enumeration>>
+}
+
+package "modelo" {
+  class Subgrafo
+  class NodoRelevante
+  abstract class Entidad
+  class Relacion
+  class TipoRelacion
+  class DetalleEntidad
+}
+
+Aplicacion --> ControladorExploracion
+Aplicacion --> EscenaGrafo
+Aplicacion --> InterfazUsuario
+Aplicacion --> ClienteServicio
+
+InterfazUsuario *-- PanelBusqueda
+InterfazUsuario *-- PanelInformacion
+InterfazUsuario *-- ControlUmbral
+InterfazUsuario *-- ControlDisposicion
+InterfazUsuario *-- Leyenda
+InterfazUsuario *-- IndicadorEstado
+InterfazUsuario *-- BarraNavegacion
+ComponenteUI <|-- PanelBusqueda
+ComponenteUI <|-- PanelInformacion
+ComponenteUI <|-- ControlUmbral
+ComponenteUI <|-- ControlDisposicion
+ComponenteUI <|-- Leyenda
+ComponenteUI <|-- IndicadorEstado
+ComponenteUI <|-- BarraNavegacion
+ComponenteUI --> ControladorExploracion : avisa >
+
+ControladorExploracion --> GestorSubgrafos
+ControladorExploracion --> Buscador
+ControladorExploracion *-- FiltroVisualizacion
+ControladorExploracion *-- HistorialNavegacion
+ControladorExploracion *-- AjustadorUmbral
+ControladorExploracion --> EscenaGrafo
+ControladorExploracion --> InterfazUsuario
+
+GestorSubgrafos --> ClienteServicio
+GestorSubgrafos ..> RepositorioVecindario : crea >
+GestorSubgrafos ..> ConstructorSubgrafo : crea >
+GestorSubgrafos o-- EstrategiaRelevancia
+ConstructorSubgrafo --> RepositorioDatos
+ConstructorSubgrafo --> EstrategiaRelevancia
+ConstructorSubgrafo *-- CalculadorCentralidad
+ConstructorSubgrafo ..> Subgrafo : crea >
+EstrategiaRelevancia <|.. RelevanciaDesdeBD
+RepositorioDatos <|.. RepositorioVecindario
+RepositorioVecindario ..> FabricaEntidades
+RepositorioVecindario ..> PaletaColores
+
+EscenaGrafo *-- SimulacionFuerzas
+EscenaGrafo *-- CalculadorDisposicion
+EscenaGrafo *-- FabricaNodosVisuales
+EscenaGrafo *-- SelectorInteraccion
+EscenaGrafo *-- DetectorComunidades
+EscenaGrafo *-- "0..*" NodoVisual
+EscenaGrafo *-- "0..*" EnlaceVisual
+SelectorInteraccion --> ControladorExploracion : avisa >
+
+Subgrafo o-- NodoRelevante
+Subgrafo o-- Relacion
+NodoRelevante --> Entidad
+Relacion --> Entidad
+Relacion --> TipoRelacion
+@enduml

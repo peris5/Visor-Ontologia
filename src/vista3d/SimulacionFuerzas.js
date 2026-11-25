@@ -1,6 +1,4 @@
 /**
- * SimulacionFuerzas
- *
  * Grafo dirigido por fuerzas programado a mano. Coloca los nodos del
  * subgrafo moviéndolos poco a poco, como si fueran bolas unidas por muelles:
  *
@@ -9,14 +7,14 @@
  *  2. MUELLES: cada par de entidades relacionadas está unido por un muelle
  *     que tira de ellas hasta una longitud de reposo. Las relaciones más
  *     relevantes tienen muelles más cortos y más fuertes, así que sus
- *     entidades acaban juntas y se forman grupos (cúmulos, RF-40).
- *  3. ATRACCIÓN HACIA UNA DIRECCIÓN (solo en el modo «Por grupos»): cada nodo que tiene una dirección objetivo es empujado hacia
- *     el punto de esa dirección que está a su distancia del centro. Como la
+ *     entidades acaban juntas y se forman grupos.
+ *  3. ATRACCIÓN HACIA UNA DIRECCIÓN (solo en el modo «Por grupos»): cada
+ *     nodo que tiene una dirección objetivo es empujado hacia el punto de esa dirección que está a su distancia del centro. Como la
  *     distancia la fija el paso 4, el efecto es que el nodo GIRA hacia su
  *     zona sin acercarse ni alejarse del centro.
  *  4. RESTRICCIÓN RADIAL: después de moverse, cada nodo se vuelve a colocar
  *     exactamente a su distancia del centro, que depende solo de su
- *     relevancia. Así LA DISTANCIA AL CENTRO SE LEE COMO RELEVANCIA (RF-17), y
+ *     relevancia. Así LA DISTANCIA AL CENTRO SE LEE COMO RELEVANCIA, y
  *     las fuerzas solo deciden en qué punto de esa esfera queda cada nodo.
  *
  * Cada paso multiplica las fuerzas por "alfa", la "temperatura" de la
@@ -25,9 +23,6 @@
  *
  * No usa Three.js: trabaja con objetos { x, y, z }, así se puede probar sin
  * tarjeta gráfica.
- *
- * Requisitos: RNF-28 (disposición por fuerzas), RF-17 (distancia según
- * relevancia), RF-40 (cúmulos de entidades muy relacionadas).
  */
 export class SimulacionFuerzas {
   static PARAMETROS_POR_DEFECTO = Object.freeze({
@@ -84,7 +79,6 @@ export class SimulacionFuerzas {
   /**
    * Prepara la simulación para un subgrafo nuevo.
    *
-   * @param {Subgrafo} subgrafo
    * @param {Map<string, {x:number, y:number, z:number}>|null} posicionesIniciales -
    *   opcional (las da CalculadorDisposicion). Se usa su dirección, pero cada
    *   nodo se coloca ya a su distancia del centro.
@@ -150,7 +144,6 @@ export class SimulacionFuerzas {
    * más cerca. Relevancia 1 → radioMinimo; relevancia 0 → radioMinimo + radioVariable.
    *
    * @param {number} relevancia - entre 0 y 1.
-   * @returns {number}
    */
   distanciaSegunRelevancia(relevancia) {
     return this.#parametros.radioMinimo + (1 - relevancia) * this.#parametros.radioVariable;
@@ -184,12 +177,7 @@ export class SimulacionFuerzas {
     }
   }
 
-  /**
-   * (Privado) Crea un nodo de simulación por cada NodoRelevante.
-   *
-   * @param {Subgrafo} subgrafo
-   * @param {Map|null} posicionesIniciales
-   */
+  /** Crea un nodo de simulación por cada NodoRelevante. */
   #crearNodos(subgrafo, posicionesIniciales) {
     const idCentral = subgrafo.getEntidadCentral().getId();
     const nodosDelSubgrafo = subgrafo.getNodos();
@@ -223,19 +211,21 @@ export class SimulacionFuerzas {
   }
 
   /**
-   * (Privado) Crea un muelle por cada PAR de entidades relacionadas.
-   *  - Si entre dos entidades hay varias relaciones, manda la más relevante
-   *    (un solo muelle por par, para que no tiren el doble).
+   * Crea un muelle por cada PAR de entidades relacionadas.
+   *  - Si el subgrafo trae sus muelles (getMuelles: los pone
+   *    ConstructorSubgrafo con lo que transmite cada pareja en el cálculo de
+   *    la relevancia), se usan esos: uno por pareja, con su peso.
+   *  - Si no (un subgrafo hecho a mano), se sacan de las relaciones: si
+   *    entre dos entidades hay varias, manda la más relevante (un solo
+   *    muelle por par, para que no tiren el doble).
    *  - No hay muelles con la central: su distancia ya la fija la restricción
    *    radial, y si tirara de todos los nodos se juntarían en un solo lado.
    *
-   * Cada muelle guarda su longitud de reposo y su fuerza:
+   * Cada muelle guarda su longitud de reposo y su fuerza (r = su peso):
    *    longitud = longitudMinima + (1 − r) · longitudVariable
-   *    fuerza   = rigidez · r ^ exponenteMuelle
-   * Con el exponente 2, una relación de 0,9 tira 0,81 y una de 0,3 solo 0,09:
-   * las relaciones fuertes mandan mucho más que las débiles.
-   *
-   * @param {Subgrafo} subgrafo
+   *    fuerza   = rigidez · r ^ exponenteMuelle            (4 · r² por defecto)
+   * Con el exponente 2, una pareja de 0,9 tira 0,81 y una de 0,3 solo 0,09:
+   * las fuertes mandan mucho más que las débiles.
    */
   #crearMuelles(subgrafo) {
     const idCentral = subgrafo.getEntidadCentral().getId();
@@ -244,7 +234,21 @@ export class SimulacionFuerzas {
     // clave del par → mejor relevancia entre las dos entidades.
     const mejorRelevanciaPorPar = new Map();
     const extremosPorPar = new Map();
-    for (let i = 0; i < relaciones.length; i++) {
+    const muellesDelSubgrafo = subgrafo.getMuelles();
+    if (muellesDelSubgrafo !== null) {
+      for (let i = 0; i < muellesDelSubgrafo.length; i++) {
+        const muelle = muellesDelSubgrafo[i];
+        const idA = muelle.nodoA.getEntidad().getId();
+        const idB = muelle.nodoB.getEntidad().getId();
+        const tocaLaCentral = idA === idCentral || idB === idCentral;
+        if (!tocaLaCentral && this.#indicePorId.has(idA) && this.#indicePorId.has(idB) && idA !== idB) {
+          const clave = idA + "|" + idB;
+          mejorRelevanciaPorPar.set(clave, muelle.peso);
+          extremosPorPar.set(clave, [idA, idB]);
+        }
+      }
+    }
+    for (let i = 0; muellesDelSubgrafo === null && i < relaciones.length; i++) {
       const relacion = relaciones[i];
       const idOrigen = relacion.getOrigen().getId();
       const idDestino = relacion.getDestino().getId();
@@ -277,7 +281,7 @@ export class SimulacionFuerzas {
   }
 
   /**
-   * (Privado) Repulsión: cada pareja de nodos a menos de distanciaRepulsion
+   * Repulsión: cada pareja de nodos a menos de distanciaRepulsion
    * se empuja. Más allá no se repelen: así los grupos de entidades muy
    * relacionadas pueden quedarse juntos y separados de los demás (cúmulos).
    *
@@ -321,7 +325,7 @@ export class SimulacionFuerzas {
   }
 
   /**
-   * (Privado) Muelles: cada muelle acerca o aleja sus dos extremos hacia su
+   * Muelles: cada muelle acerca o aleja sus dos extremos hacia su
    * longitud de reposo.
    *
    *  - Se usan las posiciones FUTURAS (posición + velocidad), como hace la
@@ -364,7 +368,7 @@ export class SimulacionFuerzas {
   }
 
   /**
-   * (Privado) Atracción hacia la dirección objetivo: cada nodo que la tiene
+   * Atracción hacia la dirección objetivo: cada nodo que la tiene
    * se empuja hacia el punto "dirección · radio" (su zona, a su misma
    * distancia del centro):
    *
@@ -387,7 +391,7 @@ export class SimulacionFuerzas {
   }
 
   /**
-   * (Privado) Movimiento de cada nodo:
+   * Movimiento de cada nodo:
    *  1. El rozamiento frena la velocidad (si no, oscilarían siempre).
    *  2. Se suma la velocidad a la posición.
    *  3. Restricción radial: se escala la posición para que su distancia al
@@ -419,9 +423,8 @@ export class SimulacionFuerzas {
   }
 
   /**
-   * (Privado) Pone el nodo a distancia "radio" del origen sin cambiar su dirección.
+   * Pone el nodo a distancia "radio" del origen sin cambiar su dirección.
    *
-   * @param {Object} nodo
    * @param {number} indice - para la posición por defecto si cae en el origen.
    */
   #recolocarEnSuRadio(nodo, indice) {
@@ -440,11 +443,10 @@ export class SimulacionFuerzas {
   }
 
   /**
-   * (Privado) Dirección por defecto de un nodo sin posición inicial: puntos
+   * Dirección por defecto de un nodo sin posición inicial: puntos
    * repartidos por una esfera de radio 1 siguiendo una espiral (espiral de
    * Fibonacci). Es determinista: el mismo índice da siempre el mismo punto.
    *
-   * @param {number} indice
    * @param {number} total - número de puntos de la espiral.
    * @returns {{x:number, y:number, z:number}}
    */
@@ -461,11 +463,7 @@ export class SimulacionFuerzas {
     return { x: Math.cos(angulo) * radioHorizontal, y: y, z: Math.sin(angulo) * radioHorizontal };
   }
 
-  /**
-   * (Privado) Longitud de un vector.
-   *
-   * @returns {number}
-   */
+  /** Longitud de un vector. */
   static #longitud(x, y, z) {
     return Math.sqrt(x * x + y * y + z * z);
   }

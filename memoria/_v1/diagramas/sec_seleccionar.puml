@@ -1,0 +1,45 @@
+@startuml sec_seleccionar
+' Operación: seleccionar un nodo o una relación.
+!include estilo.iuml
+actor Usuario
+participant ":SelectorInteraccion" as SEL
+participant ":ControladorExploracion" as CTRL
+participant ":EscenaGrafo" as ESC
+participant ":InterfazUsuario" as UI
+participant ":GestorSubgrafos" as GES
+participant ":ClienteServicio" as CLI
+
+Usuario -> SEL : clic en la escena
+activate SEL
+SEL -> SEL : onClic(evento)
+note right of SEL
+  Si el puntero se ha movido más de 5 px
+  era un giro de cámara: no se selecciona.
+end note
+SEL -> SEL : ~#detectarObjeto(evento) (Raycaster)
+alt es un NodoVisual
+  SEL -> CTRL : seleccionarNodo(nodo)
+  activate CTRL
+  CTRL -> ESC : resaltarNodo(id)
+  CTRL -> UI : mostrarEntidad(entidad, nodo, subgrafo)
+  CTRL ->> CTRL : ~#cargarDetalle(id)
+  deactivate CTRL
+  CTRL -> GES : obtenerDetalle(id)
+  activate GES
+  opt el detalle no está guardado
+    GES -> CLI : obtenerDetalle(id, contexto)
+    CLI -> CLI : GET /api/detalle/{id}
+    CLI --> GES : DetalleEntidad
+  end
+  GES --> CTRL : detalle
+  deactivate GES
+  opt sigue seleccionada la misma entidad
+    CTRL -> UI : mostrarDetalle(id, detalle)
+  end
+else es un EnlaceVisual
+  SEL -> CTRL : seleccionarRelacion(relacion)
+  CTRL -> ESC : resaltarRelacion(id)
+  CTRL -> UI : mostrarRelacion(relacion, subgrafo)
+end
+deactivate SEL
+@enduml

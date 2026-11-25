@@ -15,9 +15,6 @@ import { Subgrafo } from '../src/modelo/Subgrafo.js';
  *   C ── D (0.4)
  */
 
-/**
- * @returns {Subgrafo}
- */
 function crearSubgrafoDePrueba() {
   const tipo = new TipoRelacion("t", "T", "#ffffff");
   const central = new Persona({ id: "C" });

@@ -1,15 +1,22 @@
 import { ClienteServicio } from '../datos/ClienteServicio.js';
-import { RelevanciaDesdeBD } from '../logica/RelevanciaDesdeBD.js';
+import { RelevanciaCompuesta } from '../logica/RelevanciaCompuesta.js';
+import { CalculadorEvidencia } from '../logica/CalculadorEvidencia.js';
+import { TablaTransferencia } from '../logica/TablaTransferencia.js';
+import { RefuerzoEntreDirectos } from '../logica/RefuerzoEntreDirectos.js';
+import { PenalizacionGrado } from '../logica/PenalizacionGrado.js';
+import { CompatibilidadTemporal } from '../logica/CompatibilidadTemporal.js';
+import { DeduccionPorTipos } from '../logica/DeduccionPorTipos.js';
+import { RelevanciaNodosTresCapas } from '../logica/RelevanciaNodosTresCapas.js';
+import { RelevanciaNodosMejorCamino } from '../logica/RelevanciaNodosMejorCamino.js';
 import { GestorSubgrafos } from '../logica/GestorSubgrafos.js';
 import { Buscador } from '../logica/Buscador.js';
 import { ControladorExploracion } from '../logica/ControladorExploracion.js';
 import { EscenaGrafo } from '../vista3d/EscenaGrafo.js';
+import { NodoVisual } from '../vista3d/NodoVisual.js';
 import { InterfazUsuario } from '../interfaz/InterfazUsuario.js';
 import { FabricaEntidades } from '../datos/FabricaEntidades.js';
 
 /**
- * Aplicacion
- *
  * Arranca la página: crea todas las piezas, las conecta y empieza.
  *
  *   Aplicacion ──crea──▶ ControladorExploracion ◀──avisan── EscenaGrafo / InterfazUsuario
@@ -17,22 +24,16 @@ import { FabricaEntidades } from '../datos/FabricaEntidades.js';
  *                              ├──▶ Buscador (índice de nombres, en memoria)
  *                              └──▶ GestorSubgrafos ──▶ ClienteServicio ──▶ API Python
  *
- * Composición (◆): tiene el controlador, la escena, la interfaz, el
- * cliente, el gestor y el buscador.
- *
  * También lleva la barra de rendimiento (nodos, relaciones, fps, tiempo de
- * estabilización, tiempo de cálculo, datos recibidos y relevancias
- * asignadas o reutilizadas por el servidor), que se usará en las pruebas de
- * rendimiento del incremento 4.
+ * estabilización, tiempo de cálculo, datos recibidos y tandas, directos y
+ * deducidos).
  *
- * Desde el incremento 3b prepara también el CONTEXTO con el que se
- * interpretan los datos de Neo4j: idioma, nombres de los tipos y etiquetas
+ * Prepara también el CONTEXTO con el que se interpretan los datos de Neo4j: idioma, nombres de los tipos y etiquetas
  * de entidad (de /api/configuracion) y los tipos de relación con sus padres
  * (de /api/tipos).
  *
- * Requisitos: RNF-16 (configuración en un solo sitio), RNF-17 (inyección
- * de dependencias: cada pieza recibe las que usa), RF-15 (aviso si no hay
- * servidor), RNF-01 y RNF-29 (medidas de rendimiento).
+ * La relevancia se calcula SIEMPRE aquí, en el navegador (la base de datos
+ * no trae relevancias), con los parámetros de public/relevancia.json.
  */
 export class Aplicacion {
   static UMBRAL_POR_DEFECTO = 0.3;
@@ -70,12 +71,11 @@ export class Aplicacion {
   /**
    * Punto de entrada (lo llama main.js):
    *   1. Lee public/config.json para saber dónde está la API.
-   *   2. Pide a la vez la configuración, el índice de nombres y los tipos.
+   *   2. Pide a la vez la configuración, el índice de nombres, los tipos, la
+   *      jerarquía y los parámetros de la relevancia (public/relevancia.json).
    *   3. Crea y conecta todas las piezas.
    *   4. Carga la entidad inicial.
    * Si no hay servidor, muestra el aviso de error en la página.
-   *
-   * @returns {Promise<Aplicacion>}
    */
   static async main() {
     const aplicacion = new Aplicacion();
@@ -92,11 +92,15 @@ export class Aplicacion {
       const respuestas = await Promise.all([
         aplicacion.#cliente.obtenerConfiguracion(),
         aplicacion.#cliente.obtenerNombres(),
-        aplicacion.#cliente.obtenerTipos()
+        aplicacion.#cliente.obtenerTipos(),
+        aplicacion.#cliente.obtenerJerarquia(),
+        Aplicacion.#leerConfiguracionRelevancia()
       ]);
       const configuracion = respuestas[0];
       const nombres = respuestas[1];
       const tipos = respuestas[2];
+      const jerarquia = respuestas[3];
+      const relevancia = respuestas[4];
 
       aplicacion.#contexto = {
         idioma: configuracion.idioma,
@@ -104,7 +108,7 @@ export class Aplicacion {
         etiquetasEntidad: configuracion.etiquetasEntidad,
         tipos: tipos
       };
-      aplicacion.#crearDependencias(configuracion, nombres);
+      aplicacion.#crearDependencias(configuracion, nombres, relevancia, jerarquia);
       aplicacion.#iniciarBarraRendimiento();
       await aplicacion.#controlador.iniciar(configuracion.entidadInicial);
     } catch (error) {
@@ -114,9 +118,9 @@ export class Aplicacion {
   }
 
   /**
-   * (Privado) El ÚNICO sitio donde se hace "new" de las clases principales
-   * (además del cliente, ver main). Es la «inyección de dependencias»: en
-   * lugar de que cada clase cree las piezas que usa, se las dan ya hechas.
+   * El ÚNICO sitio donde se hace "new" de las clases principales
+   * (además del cliente, ver main): en lugar de que cada clase cree las
+   * piezas que usa, se las dan ya hechas.
    * Así, en las pruebas se le puede dar a cada clase un doble de prueba (por
    * ejemplo, un cliente falso que no va a la red), y para cambiar una pieza
    * (la estrategia de relevancia, el origen de los datos...) basta con
@@ -124,13 +128,24 @@ export class Aplicacion {
    *
    * @param {Object} configuracion - { umbralPorDefecto, maxNodos, entidadInicial, ... }
    * @param {Object[]} nombres - [{ id, etiquetas, propiedades }] (de /api/nombres)
+   * @param {Object} relevancia - public/relevancia.json
+   * @param {Object} jerarquia - etiqueta → padres (de /api/jerarquia)
    */
-  #crearDependencias(configuracion, nombres) {
+  #crearDependencias(configuracion, nombres, relevancia, jerarquia) {
     const umbral = Aplicacion.#leerUmbral(configuracion);
     const maxNodos = Aplicacion.#leerMaxNodos(configuracion);
 
-    // RelevanciaDesdeBD lee la relevancia que ya asignó el servidor.
-    this.#gestor = new GestorSubgrafos(this.#cliente, new RelevanciaDesdeBD(), maxNodos, this.#contexto);
+    // La relevancia: la de cada relación (RelevanciaCompuesta), la evidencia
+    // de cada pareja (CalculadorEvidencia) y la de los nodos (la estrategia
+    // elegida con estrategiaNodos).
+    const tabla = new TablaTransferencia(relevancia, jerarquia);
+    const calculador = new CalculadorEvidencia(new RelevanciaCompuesta(relevancia), relevancia, tabla);
+    const estrategiaNodos = Aplicacion.#crearEstrategiaNodos(relevancia, tabla, calculador);
+    if (typeof relevancia.opacidadMinima === "number") {
+      NodoVisual.setOpacidadMinima(relevancia.opacidadMinima);
+    }
+    this.#gestor = new GestorSubgrafos(this.#cliente, estrategiaNodos, calculador, maxNodos, this.#contexto,
+      relevancia.mostrarDeducidosPorDefecto !== false);
     this.#buscador = new Buscador(Aplicacion.#prepararIndice(nombres, this.#contexto));
     const nodosObjetivo = Aplicacion.#leerNodosObjetivo(configuracion, maxNodos);
     this.#controlador = new ControladorExploracion(this.#gestor, this.#buscador, umbral, nodosObjetivo);
@@ -146,18 +161,19 @@ export class Aplicacion {
   }
 
   /**
-   * (Privado) Arranca un bucle propio (requestAnimationFrame, el mismo ritmo
+   * Arranca un bucle propio (requestAnimationFrame, el mismo ritmo
    * al que el navegador dibuja) que actualiza la barra de rendimiento:
    *  - nodos y relaciones del subgrafo;
    *  - fps (fotogramas por segundo), medidos cada segundo;
    *  - «Estabilizado en X,X s»: lo que tarda la simulación de fuerzas en
-   *    quedarse quieta (RNF-29);
+   *    quedarse quieta;
    *  - «Subgrafo calculado en X ms»: lo que tarda GestorSubgrafos en
    *    construir el subgrafo, sin contar la red;
-   *  - «Datos recibidos: X KB»: lo que ocupaba el vecindario;
-   *  - «Relevancias asignadas: X · reutilizadas: Y»: en el último
-   *    vecindario, cuántas relevancias calculó y guardó el servidor y
-   *    cuántas ya estaban guardadas.
+   *  - «Datos recibidos: X KB»: lo que ocuparon las relaciones pedidas para
+   *    el último subgrafo (0 si todo estaba en la caché);
+   *  - «Tandas: X · Directos: Y · Deducidos: Z»: cuántas tandas de
+   *    peticiones hicieron falta (como mucho 2) y cuántos nodos directos y
+   *    deducidos se calcularon (ver GestorSubgrafos).
    */
   #iniciarBarraRendimiento() {
     this.#ultimaMedidaFps = performance.now();
@@ -173,7 +189,7 @@ export class Aplicacion {
   }
 
   /**
-   * (Privado) Lo que hace la barra de rendimiento en cada fotograma.
+   * Lo que hace la barra de rendimiento en cada fotograma.
    *
    * @param {number} ahora - milisegundos desde que se abrió la página.
    */
@@ -195,12 +211,12 @@ export class Aplicacion {
       this.#inicioSimulacion = performance.now();
       Aplicacion.#escribir("rendimientoGrafo", subgrafo.getNumeroNodos() + " nodos · " + subgrafo.getRelaciones().length + " relaciones");
       Aplicacion.#escribir("rendimientoCalculo", "Subgrafo calculado en " + Math.round(this.#gestor.getMilisegundosUltimoCalculo()) + " ms");
-      const kilobytes = this.#gestor.getBytesVecindario() / 1024;
+      const kilobytes = this.#gestor.getBytesRecibidos() / 1024;
       Aplicacion.#escribir("rendimientoDatos", "Datos recibidos: " + kilobytes.toFixed(1).replace(".", ",") + " KB");
       Aplicacion.#escribir("rendimientoEstabilizacion", "Estabilizando…");
-      const estadisticas = this.#gestor.getEstadisticasAsignacion();
-      Aplicacion.#escribir("rendimientoRelevancias", "Relevancias asignadas: " + estadisticas.asignadas +
-        " · reutilizadas: " + estadisticas.reutilizadas);
+      const estadisticas = this.#gestor.getEstadisticas();
+      Aplicacion.#escribir("rendimientoRelevancias", "Tandas: " + estadisticas.tandas + " · Directos: " +
+        estadisticas.directos + " · Deducidos: " + estadisticas.deducidos);
     }
 
     if (this.#inicioSimulacion !== null && this.#escena.estaEstabilizado()) {
@@ -211,7 +227,7 @@ export class Aplicacion {
   }
 
   /**
-   * (Privado) Convierte los nombres en bruto de /api/nombres en el índice
+   * Convierte los nombres en bruto de /api/nombres en el índice
    * del buscador: cada entidad con el nombre que se muestra (en el idioma
    * configurado), su tipo y todos sus nombres (los tres idiomas, y nombre y
    * apellidos por separado), para buscar en todos.
@@ -237,10 +253,8 @@ export class Aplicacion {
   }
 
   /**
-   * (Privado) Lee public/config.json (Vite lo copia tal cual al publicar,
+   * Lee public/config.json (Vite lo copia tal cual al publicar,
    * así se puede cambiar sin recompilar). Si no se puede leer, usa "/api".
-   *
-   * @returns {Promise<string>}
    */
   static async #leerUrlServicio() {
     try {
@@ -258,11 +272,38 @@ export class Aplicacion {
   }
 
   /**
-   * (Privado) El umbral de la configuración, si es un número entre 0 y 1.
-   *
-   * @param {Object} configuracion
-   * @returns {number}
+   * Lee public/relevancia.json (los parámetros de la relevancia; Vite lo
+   * copia tal cual al publicar, así se puede cambiar sin recompilar). Sin
+   * él no se puede calcular la relevancia, así que si falla la página no
+   * arranca.
    */
+  static async #leerConfiguracionRelevancia() {
+    let respuesta = null;
+    try {
+      respuesta = await fetch("./relevancia.json");
+    } catch (error) {
+      throw new Error("No se puede leer public/relevancia.json");
+    }
+    if (!respuesta.ok) {
+      throw new Error("No se puede leer public/relevancia.json");
+    }
+    return await respuesta.json();
+  }
+
+  /**
+   * La estrategia de los nodos según estrategiaNodos: "tresCapas" (por
+   * defecto) o "mejorCamino" (el cálculo anterior, para comparar).
+   */
+  static #crearEstrategiaNodos(relevancia, tabla, calculador) {
+    if (relevancia.estrategiaNodos === "mejorCamino") {
+      return new RelevanciaNodosMejorCamino(calculador);
+    }
+    const penalizacion = new PenalizacionGrado(relevancia);
+    return new RelevanciaNodosTresCapas(calculador, new RefuerzoEntreDirectos(relevancia, tabla, penalizacion),
+      new DeduccionPorTipos(relevancia, tabla, penalizacion, new CompatibilidadTemporal(relevancia), calculador));
+  }
+
+  /** El umbral de la configuración, si es un número entre 0 y 1. */
   static #leerUmbral(configuracion) {
     const umbral = configuracion.umbralPorDefecto;
     if (typeof umbral === "number" && umbral >= 0 && umbral <= 1) {
@@ -271,12 +312,7 @@ export class Aplicacion {
     return Aplicacion.UMBRAL_POR_DEFECTO;
   }
 
-  /**
-   * (Privado) El máximo de nodos de la configuración, si es un entero mayor que 0.
-   *
-   * @param {Object} configuracion
-   * @returns {number}
-   */
+  /** El máximo de nodos de la configuración, si es un entero mayor que 0. */
   static #leerMaxNodos(configuracion) {
     const maximo = configuracion.maxNodos;
     if (Number.isInteger(maximo) && maximo > 0) {
@@ -286,13 +322,9 @@ export class Aplicacion {
   }
 
   /**
-   * (Privado) Cuántos nodos, más o menos, se quieren al abrir una entidad
+   * Cuántos nodos, más o menos, se quieren al abrir una entidad
    * (ver AjustadorUmbral). Si la configuración no trae un entero mayor que
    * 0, 100. Nunca más que maxNodos (no podrían salir).
-   *
-   * @param {Object} configuracion
-   * @param {number} maxNodos
-   * @returns {number}
    */
   static #leerNodosObjetivo(configuracion, maxNodos) {
     let objetivo = Aplicacion.NODOS_OBJETIVO_POR_DEFECTO;
@@ -305,12 +337,7 @@ export class Aplicacion {
     return objetivo;
   }
 
-  /**
-   * (Privado) Escribe un texto en un elemento de la barra de rendimiento.
-   *
-   * @param {string} id
-   * @param {string} texto
-   */
+  /** Escribe un texto en un elemento de la barra de rendimiento. */
   static #escribir(id, texto) {
     const elemento = document.getElementById(id);
     if (elemento !== null) {
@@ -319,11 +346,9 @@ export class Aplicacion {
   }
 
   /**
-   * (Privado) Si la página no ha podido arrancar (por ejemplo, el servidor
+   * Si la página no ha podido arrancar (por ejemplo, el servidor
    * no contesta), todavía no existe la interfaz: el aviso se escribe en el
    * elemento #avisoArranque de index.html.
-   *
-   * @param {string} mensaje
    */
   static #mostrarErrorDeArranque(mensaje) {
     const aviso = document.getElementById("avisoArranque");

@@ -93,11 +93,39 @@ def test_un_intermediario_con_una_etiqueta_que_no_esta_en_el_diseno() -> None:
     assert relaciones[0]["padres"] == []
 
 
-def test_no_se_aplica_a_tipos_sin_relacion_ni_por_encima_del_limite() -> None:
+def test_no_se_aplica_a_tipos_sin_relacion_ni_por_encima_del_limite_de_evidencia() -> None:
     relaciones = crear_proyector().relaciones_de("ana")
     assert por_intermediario(relaciones, "nacimiento") == []
-    # El congreso tiene 4 participantes y el límite de la prueba es 3.
-    assert por_intermediario(relaciones, "congreso") == []
+    # La feria tiene 5 participantes y el límite de evidencia de la prueba es 4.
+    assert por_intermediario(relaciones, "feria") == []
+
+
+def test_por_encima_del_limite_para_dibujar_llega_como_evidencia() -> None:
+    relaciones = crear_proyector().relaciones_de("ana")
+    # El congreso tiene 4 participantes: más que el límite para dibujar (3),
+    # pero no que el de evidencia (4). Solo las parejas de Ana, no todas.
+    del_congreso = por_intermediario(relaciones, "congreso")
+    assert len(del_congreso) == 3
+    for relacion in del_congreso:
+        assert relacion["dibujable"] is False
+        assert relacion["participantes"] == 4
+        assert "ana" in [relacion["origen"], relacion["destino"]]
+
+
+def test_el_resto_se_dibuja_y_dice_cuantos_participan() -> None:
+    relaciones = crear_proyector().relaciones_de("ana")
+    for relacion in relaciones:
+        if relacion["idIntermedio"] != "congreso":
+            assert relacion["dibujable"] is True
+    assert por_intermediario(relaciones, "mentoria")[0]["participantes"] == 2
+    assert por_intermediario(relaciones, "r10")[0]["participantes"] == 2
+
+
+def test_ninguna_relacion_lleva_relevancia() -> None:
+    for relacion in crear_proyector().relaciones_de("ana"):
+        for clave in relacion:
+            assert not clave.startswith("relevan")
+            assert clave != "valor"
 
 
 def test_dos_intermediarios_entre_el_mismo_par_dan_dos_relaciones() -> None:
@@ -107,7 +135,7 @@ def test_dos_intermediarios_entre_el_mismo_par_dan_dos_relaciones() -> None:
         if relacion["origen"] == "ana" and relacion["destino"] == "luis":
             entre_ana_y_luis.append(relacion["tipo"])
     entre_ana_y_luis.sort()
-    assert entre_ana_y_luis == ["Commission", "Friendship", "Mentorship", "STUDENT_OF"]
+    assert entre_ana_y_luis == ["Commission", "Event", "Friendship", "Mentorship", "STUDENT_OF"]
 
 
 def test_las_relaciones_ignoradas_no_cuentan() -> None:

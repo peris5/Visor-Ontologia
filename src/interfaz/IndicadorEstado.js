@@ -1,15 +1,11 @@
 import { ComponenteUI, crear } from './ComponenteUI.js';
 
 /**
- * IndicadorEstado extends ComponenteUI
- *
  * El aviso de abajo: «Cargando…» mientras se prepara un subgrafo, o el
  * mensaje de error en rojo (con un botón para cerrarlo) si algo ha fallado.
  *
  * role="status" y aria-live="polite": los lectores de pantalla anuncian el
  * texto cuando cambia, sin interrumpir lo que estuvieran leyendo.
- *
- * Requisitos: RF-14 (aviso de carga), RF-15 (aviso de error), RNF-25.
  */
 export class IndicadorEstado extends ComponenteUI {
   #texto;
@@ -26,9 +22,7 @@ export class IndicadorEstado extends ComponenteUI {
     this.#botonCerrar = null;
   }
 
-  /**
-   * Dibuja el texto y el botón de cerrar (el indicador empieza oculto).
-   */
+  /** Dibuja el texto y el botón de cerrar (el indicador empieza oculto). */
   renderizar() {
     this._elemento.textContent = "";
     this.#texto = crear("span", { clase: "estado-texto" }, []);
@@ -47,9 +41,7 @@ export class IndicadorEstado extends ComponenteUI {
     this.ocultarEstado();
   }
 
-  /**
-   * Muestra «Cargando…».
-   */
+  /** Muestra «Cargando…». */
   mostrarCarga() {
     this._elemento.className = "indicador-estado estado-cargando";
     this.#texto.textContent = "Cargando…";
@@ -57,11 +49,7 @@ export class IndicadorEstado extends ComponenteUI {
     this._elemento.hidden = false;
   }
 
-  /**
-   * Muestra un error en rojo, con el botón para cerrarlo.
-   *
-   * @param {string} mensaje
-   */
+  /** Muestra un error en rojo, con el botón para cerrarlo. */
   mostrarError(mensaje) {
     this._elemento.className = "indicador-estado estado-error";
     this.#texto.textContent = mensaje;
@@ -69,9 +57,7 @@ export class IndicadorEstado extends ComponenteUI {
     this._elemento.hidden = false;
   }
 
-  /**
-   * Oculta el indicador.
-   */
+  /** Oculta el indicador. */
   ocultarEstado() {
     this._elemento.hidden = true;
     this.#texto.textContent = "";

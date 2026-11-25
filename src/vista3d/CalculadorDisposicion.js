@@ -2,8 +2,6 @@ import * as THREE from 'three';
 import { ModoDisposicion } from './ModoDisposicion.js';
 
 /**
- * CalculadorDisposicion
- *
  * Calcula las posiciones INICIALES de los nodos, antes de la simulación de
  * fuerzas. Partir de una colocación razonable tiene dos ventajas:
  *  - la simulación se estabiliza antes (los nodos ya empiezan cerca de su sitio);
@@ -19,8 +17,6 @@ import { ModoDisposicion } from './ModoDisposicion.js';
  * También calcula, según el modo de disposición, hacia qué DIRECCIÓN tiene
  * que ir cada nodo (direccionesObjetivo): SimulacionFuerzas los empuja hacia
  * ella sin cambiar su distancia al centro.
- *
- * Requisitos: RF-16 y RF-17 (colocación según la relevancia), RNF-28.
  */
 export class CalculadorDisposicion {
   #radioBase;
@@ -32,7 +28,6 @@ export class CalculadorDisposicion {
   }
 
   /**
-   * @param {Subgrafo} subgrafo
    * @returns {Map<string, THREE.Vector3>} id de la entidad → posición.
    */
   calcular(subgrafo) {
@@ -60,24 +55,19 @@ export class CalculadorDisposicion {
   }
 
   /**
-   * (Privado) Distancia al centro de un nodo de nivel 1:
+   * Distancia al centro de un nodo de nivel 1:
    * radioBase + (1 − relevancia) · separacionNivel.
-   *
-   * @param {number} relevancia
-   * @returns {number}
    */
   #distanciaSegunRelevancia(relevancia) {
     return this.#radioBase + (1 - relevancia) * this.#separacionNivel;
   }
 
   /**
-   * (Privado) Reparte puntos por una esfera con la espiral de Fibonacci:
+   * Reparte puntos por una esfera con la espiral de Fibonacci:
    * se avanza en altura de un polo al otro en pasos iguales y se gira un
    * "ángulo áureo" cada vez. Los puntos quedan muy uniformes y la posición
    * de cada uno depende solo de su orden.
    *
-   * @param {NodoRelevante[]} nodos
-   * @param {number} radio
    * @returns {THREE.Vector3[]} un punto por nodo, en el mismo orden.
    */
   #distribuirEnEsfera(nodos, radio) {
@@ -95,14 +85,11 @@ export class CalculadorDisposicion {
   }
 
   /**
-   * (Privado) Busca el padre de un nodo: entre los nodos ya colocados que
+   * Busca el padre de un nodo: entre los nodos ya colocados que
    * están relacionados con él y tienen un nivel menor, el de nivel más alto
    * (el inmediatamente anterior, que es por donde llegó la búsqueda) y, a
    * igualdad, el de mayor relevancia.
    *
-   * @param {NodoRelevante} nodo
-   * @param {Subgrafo} subgrafo
-   * @param {Map<string, THREE.Vector3>} posiciones
    * @returns {string|null} id del padre, o null si no hay ninguno.
    */
   #buscarPadre(nodo, subgrafo, posiciones) {
@@ -132,13 +119,7 @@ export class CalculadorDisposicion {
     return mejorPadre.getEntidad().getId();
   }
 
-  /**
-   * (Privado) ¿El candidato es mejor padre que el que teníamos?
-   *
-   * @param {NodoRelevante} candidato
-   * @param {NodoRelevante|null} actual
-   * @returns {boolean}
-   */
+  /** ¿El candidato es mejor padre que el que teníamos? */
   #esMejorPadre(candidato, actual) {
     if (actual === null) {
       return true;
@@ -150,14 +131,12 @@ export class CalculadorDisposicion {
   }
 
   /**
-   * (Privado) Coloca los nodos de un nivel (2 o más) alrededor de su padre:
+   * Coloca los nodos de un nivel (2 o más) alrededor de su padre:
    *    dirección = (dirección del padre + 0,8 · dirección de la espiral), normalizada
    *    posición  = padre + dirección · (3 + (1 − relevancia) · 6)
    * La dirección del padre empuja "hacia fuera" y la de la espiral separa a
    * los hermanos entre sí.
    *
-   * @param {Subgrafo} subgrafo
-   * @param {number} nivel
    * @param {Map<string, THREE.Vector3>} posiciones - se completa.
    */
   #colocarNivel(subgrafo, nivel, posiciones) {
@@ -187,12 +166,8 @@ export class CalculadorDisposicion {
   }
 
   /**
-   * (Privado) Nodos de un nivel, de más a menos relevantes (a igualdad, por id,
+   * Nodos de un nivel, de más a menos relevantes (a igualdad, por id,
    * para que el orden no dependa de cómo llegaron).
-   *
-   * @param {Subgrafo} subgrafo
-   * @param {number} nivel
-   * @returns {NodoRelevante[]}
    */
   #nodosDelNivel(subgrafo, nivel) {
     const todos = subgrafo.getNodos();
@@ -206,13 +181,7 @@ export class CalculadorDisposicion {
     return delNivel;
   }
 
-  /**
-   * (Privado) Para ordenar de más a menos relevante y, a igualdad, por id.
-   *
-   * @param {NodoRelevante} nodoA
-   * @param {NodoRelevante} nodoB
-   * @returns {number}
-   */
+  /** Para ordenar de más a menos relevante y, a igualdad, por id. */
   static #compararPorRelevancia(nodoA, nodoB) {
     if (nodoA.getRelevancia() !== nodoB.getRelevancia()) {
       return nodoB.getRelevancia() - nodoA.getRelevancia();
@@ -228,12 +197,7 @@ export class CalculadorDisposicion {
     return 0;
   }
 
-  /**
-   * (Privado) Nivel más alto del subgrafo.
-   *
-   * @param {Subgrafo} subgrafo
-   * @returns {number}
-   */
+  /** Nivel más alto del subgrafo. */
   #nivelMaximo(subgrafo) {
     const nodos = subgrafo.getNodos();
     let maximo = 0;
@@ -257,7 +221,6 @@ export class CalculadorDisposicion {
    *    quedan libres.
    * La central nunca sale (está fija en el centro).
    *
-   * @param {Subgrafo} subgrafo
    * @param {string} modo - un valor de ModoDisposicion.
    * @param {Map<string, number>|null} grupos - id → número de grupo
    *   (DetectorComunidades); solo hace falta en POR_GRUPOS.
@@ -287,12 +250,7 @@ export class CalculadorDisposicion {
     return direcciones;
   }
 
-  /**
-   * (Privado) Cuántos nodos tiene cada grupo (posición = número de grupo).
-   *
-   * @param {Map<string, number>} grupos
-   * @returns {number[]}
-   */
+  /** Cuántos nodos tiene cada grupo (posición = número de grupo). */
   static #tamanosDeGrupo(grupos) {
     const tamanos = [];
     for (const numero of grupos.values()) {
@@ -305,10 +263,9 @@ export class CalculadorDisposicion {
   }
 
   /**
-   * (Privado) N puntos repartidos por una esfera de radio 1 (espiral de
+   * N puntos repartidos por una esfera de radio 1 (espiral de
    * Fibonacci). Con un solo punto, delante de la cámara.
    *
-   * @param {number} cantidad
    * @returns {{x:number, y:number, z:number}[]}
    */
   static #puntosEnEsfera(cantidad) {

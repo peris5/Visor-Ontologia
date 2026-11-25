@@ -6,58 +6,135 @@ import { Periodo } from '../modelo/Periodo.js';
 import { PaletaColores } from '../logica/PaletaColores.js';
 
 /**
- * RepositorioVecindario implements RepositorioDatos
+ * La CACHÉ en memoria de las relaciones que ha enviado el servidor
+ * (POST /api/relaciones). Va acumulando lo que llega en cada tanda, y
+ * recuerda de qué entidades tiene YA TODAS las relaciones (las que se
+ * pidieron): de las demás solo tiene las que comparten con alguna pedida.
  *
- * Repositorio EN MEMORIA con el vecindario que ha enviado el servidor
- * (GET /api/vecindario/{id}). ConstructorSubgrafo le pide entidades y
- * relaciones como antes, pero ninguna de esas peticiones sale a la red:
- * todos los datos ya están aquí. Así, construir un subgrafo cuesta UNA sola
- * petición al servidor en lugar de una por cada nodo que se expande.
+ * ConstructorSubgrafo y las estrategias de relevancia le piden entidades y
+ * relaciones, pero ninguna de esas peticiones sale a la red: todo está aquí.
+ * Así, volver a una entidad ya visitada o mover el umbral no cuesta ninguna
+ * petición.
  *
- * Desde el incremento 3b el vecindario tiene la forma de Neo4j:
+ * Cada respuesta tiene la forma de Neo4j:
  *   {
- *     idCentral, umbral, recortado, relevanciasAsignadas, relevanciasReutilizadas,
+ *     ids:        [ ids de las entidades pedidas ],
  *     entidades:  [ { id, etiquetas, propiedades } ],              (en bruto)
- *     relaciones: [ { id, idIntermedio, origen, destino, tipo, padres,
- *                     valor, roles, periodo, lugar, fecha } ]       (derivadas)
+ *     relaciones: [ { id, idIntermedio, origen, destino, tipo, padres, roles,
+ *                     nombre, periodo, lugar, fecha, participantes, dibujable } ]
  *   }
- * y para interpretarlo hace falta el CONTEXTO, que se recibe al arrancar:
+ * (sin relevancias: las calcula el navegador) y para interpretarla hace
+ * falta el CONTEXTO, que se recibe al arrancar:
  *   { idioma, nombresTipos, etiquetasEntidad }   (de /api/configuracion)
  *   { tipos: [ { id, padres } ] }               (de /api/tipos)
- *
- * Requisitos: RNF-17 (acceso a datos separado); RF-20 y RF-39 (da nombre y
- * color a los tipos de relación, que no se conocen de antemano).
  */
 export class RepositorioVecindario extends RepositorioDatos {
+  // Tipo de las aristas sintéticas que añade ConstructorSubgrafo.
+  static TIPO_COINCIDENCIAS = "COINCIDENCIAS";
+
   #entidades;
   #tipos;
+  #padresPorTipo;
   #relaciones;
   #relacionesPorEntidad;
+  #completas;
   #contexto;
 
   /**
-   * @param {Object} datosVecindario - el JSON de /api/vecindario.
+   * @param {Object|null} datosIniciales - una respuesta de /api/relaciones
+   *   para empezar, o null para empezar vacío.
    * @param {Object} contexto - { idioma, nombresTipos, etiquetasEntidad, tipos }.
    */
-  constructor(datosVecindario, contexto) {
+  constructor(datosIniciales, contexto) {
     super();
-    if (datosVecindario === undefined || datosVecindario === null) {
-      throw new Error("El repositorio necesita los datos de un vecindario.");
-    }
-    if (!Array.isArray(datosVecindario.entidades) || !Array.isArray(datosVecindario.relaciones)) {
-      throw new Error("El vecindario debe tener una lista 'entidades' y una lista 'relaciones'.");
-    }
     if (contexto === undefined || contexto === null || contexto.etiquetasEntidad === undefined) {
       throw new Error("El repositorio necesita el contexto (idioma, nombresTipos, etiquetasEntidad y tipos).");
     }
     this.#contexto = contexto;
-
-    // El orden importa: las relaciones necesitan las entidades y los tipos.
-    this.#entidades = this.#cargarEntidades(datosVecindario.entidades);
-    this.#tipos = this.#descubrirTipos(datosVecindario.relaciones);
-    this.#relaciones = this.#cargarRelaciones(datosVecindario.relaciones);
+    this.#entidades = new Map();
+    this.#relaciones = new Map();
     this.#relacionesPorEntidad = new Map();
-    this.#indexar();
+    this.#completas = new Set();
+    this.#tipos = new Map();
+    this.#padresPorTipo = new Map();
+    this.#prepararTipos();
+    if (datosIniciales !== undefined && datosIniciales !== null) {
+      this.incorporar(datosIniciales);
+    }
+  }
+
+  /**
+   * Añade una respuesta de /api/relaciones. Lo que ya estaba no se repite.
+   * Las entidades pedidas (ids) quedan marcadas como completas.
+   *
+   * @param {Object} datos - { ids, entidades, relaciones }
+   */
+  incorporar(datos) {
+    if (datos === undefined || datos === null || !Array.isArray(datos.entidades) ||
+      !Array.isArray(datos.relaciones)) {
+      throw new Error("Las relaciones recibidas deben tener una lista 'entidades' y una lista 'relaciones'.");
+    }
+    this.#cargarEntidades(datos.entidades);
+    this.#anadirTiposNuevos(datos.relaciones);
+    for (let i = 0; i < datos.relaciones.length; i++) {
+      if (!this.#relaciones.has(datos.relaciones[i].id)) {
+        const relacion = this.#crearRelacion(datos.relaciones[i]);
+        this.#relaciones.set(relacion.getId(), relacion);
+        this.#apuntarEnElIndice(relacion.getOrigen().getId(), relacion);
+        if (relacion.getDestino().getId() !== relacion.getOrigen().getId()) {
+          this.#apuntarEnElIndice(relacion.getDestino().getId(), relacion);
+        }
+      }
+    }
+    if (Array.isArray(datos.ids)) {
+      for (let i = 0; i < datos.ids.length; i++) {
+        this.#completas.add(datos.ids[i]);
+      }
+    }
+  }
+
+  /**
+   * @returns {boolean} true si ya se tienen TODAS las relaciones de la entidad.
+   */
+  tieneCompletas(idEntidad) {
+    return this.#completas.has(idEntidad);
+  }
+
+  /**
+   * @returns {Entidad|null} la entidad (sin esperar), o null si no está.
+   */
+  entidad(id) {
+    if (this.#entidades.has(id)) {
+      return this.#entidades.get(id);
+    }
+    return null;
+  }
+
+  /**
+   * Las relaciones de la entidad que hay en la caché (todas, si
+   * tieneCompletas), sin esperar.
+   *
+   * @returns {Relacion[]} copia.
+   */
+  relacionesDe(idEntidad) {
+    const copia = [];
+    if (this.#relacionesPorEntidad.has(idEntidad)) {
+      const delIndice = this.#relacionesPorEntidad.get(idEntidad);
+      for (let i = 0; i < delIndice.length; i++) {
+        copia.push(delIndice[i]);
+      }
+    }
+    return copia;
+  }
+
+  /**
+   * @returns {TipoRelacion|null} el tipo con ese id (también COINCIDENCIAS).
+   */
+  getTipo(idTipo) {
+    if (this.#tipos.has(idTipo)) {
+      return this.#tipos.get(idTipo);
+    }
+    return null;
   }
 
   /**
@@ -68,7 +145,6 @@ export class RepositorioVecindario extends RepositorioDatos {
    * @param {string} texto - "" devuelve todas.
    * @param {string|null} tipo - un valor de TipoEntidad, o null para todos.
    * @param {number|null} limite - máximo de resultados, o null para sin límite.
-   * @returns {Promise<Entidad[]>}
    */
   async buscarEntidades(texto, tipo, limite) {
     let textoEnMinusculas = "";
@@ -79,13 +155,12 @@ export class RepositorioVecindario extends RepositorioDatos {
     if (typeof limite === "number" && limite > 0) {
       hayLimite = true;
     }
-
     const resultados = [];
     for (const entidad of this.#entidades.values()) {
       if (hayLimite && resultados.length >= limite) {
         break;
       }
-      if (this.#cumpleLaBusqueda(entidad, textoEnMinusculas, tipo)) {
+      if (RepositorioVecindario.#cumpleLaBusqueda(entidad, textoEnMinusculas, tipo)) {
         resultados.push(entidad);
       }
     }
@@ -93,72 +168,38 @@ export class RepositorioVecindario extends RepositorioDatos {
   }
 
   /**
-   * @param {string} id
-   * @returns {Promise<Entidad|null>} la entidad, o null si no está en el vecindario.
+   * @returns {Promise<Entidad|null>} la entidad, o null si no está en la caché.
    */
   async obtenerEntidad(id) {
-    if (this.#entidades.has(id)) {
-      return this.#entidades.get(id);
-    }
-    return null;
+    return this.entidad(id);
   }
 
   /**
-   * Relaciones donde la entidad es el origen O el destino
-   * (el grafo se recorre en los dos sentidos).
+   * Relaciones donde la entidad es el origen O el destino.
    *
-   * @param {string} idEntidad
    * @returns {Promise<Relacion[]>} lista vacía si la entidad no está.
    */
   async obtenerRelaciones(idEntidad) {
-    // Se devuelve una copia para que quien la reciba no pueda cambiar el
-    // índice sin querer.
-    const relacionesDeLaEntidad = [];
-    if (this.#relacionesPorEntidad.has(idEntidad)) {
-      const delIndice = this.#relacionesPorEntidad.get(idEntidad);
-      for (let i = 0; i < delIndice.length; i++) {
-        relacionesDeLaEntidad.push(delIndice[i]);
-      }
-    }
-    return relacionesDeLaEntidad;
+    return this.relacionesDe(idEntidad);
   }
 
   /**
    * @returns {Promise<TipoRelacion[]>} todos los tipos, ordenados por id.
    */
   async obtenerTiposRelacion() {
-    const listaDeTipos = [];
-    for (const tipo of this.#tipos.values()) {
-      listaDeTipos.push(tipo);
+    const ids = [];
+    for (const id of this.#tipos.keys()) {
+      ids.push(id);
     }
-    return listaDeTipos;
+    ids.sort();
+    const lista = [];
+    for (let i = 0; i < ids.length; i++) {
+      lista.push(this.#tipos.get(ids[i]));
+    }
+    return lista;
   }
 
-  /**
-   * (Privado) Prepara relacionesPorEntidad: para cada entidad, las
-   * relaciones en las que participa (como origen o como destino), en el
-   * orden en que llegaron. Se hace UNA vez; sin el índice, obtenerRelaciones
-   * tendría que recorrer todas las relaciones cada vez que se expande un nodo.
-   */
-  #indexar() {
-    for (let i = 0; i < this.#relaciones.length; i++) {
-      const relacion = this.#relaciones[i];
-      const idOrigen = relacion.getOrigen().getId();
-      const idDestino = relacion.getDestino().getId();
-      this.#apuntarEnElIndice(idOrigen, relacion);
-      // Una relación de una entidad consigo misma solo se apunta una vez.
-      if (idDestino !== idOrigen) {
-        this.#apuntarEnElIndice(idDestino, relacion);
-      }
-    }
-  }
-
-  /**
-   * (Privado) Añade la relación a la lista de esa entidad en el índice.
-   *
-   * @param {string} idEntidad
-   * @param {Relacion} relacion
-   */
+  /** Añade la relación a la lista de esa entidad en el índice. */
   #apuntarEnElIndice(idEntidad, relacion) {
     if (!this.#relacionesPorEntidad.has(idEntidad)) {
       this.#relacionesPorEntidad.set(idEntidad, []);
@@ -166,115 +207,96 @@ export class RepositorioVecindario extends RepositorioDatos {
     this.#relacionesPorEntidad.get(idEntidad).push(relacion);
   }
 
-  /**
-   * (Privado) ¿La entidad cumple el tipo y contiene el texto en su nombre?
-   *
-   * @param {Entidad} entidad
-   * @param {string} textoEnMinusculas
-   * @param {string|null} tipo
-   * @returns {boolean}
-   */
-  #cumpleLaBusqueda(entidad, textoEnMinusculas, tipo) {
+  /** ¿La entidad cumple el tipo y contiene el texto en su nombre? */
+  static #cumpleLaBusqueda(entidad, textoEnMinusculas, tipo) {
     if (tipo !== null && tipo !== undefined && entidad.getTipo() !== tipo) {
       return false;
     }
-    const nombreEnMinusculas = entidad.getNombre().toLowerCase();
-    return nombreEnMinusculas.includes(textoEnMinusculas);
+    return entidad.getNombre().toLowerCase().includes(textoEnMinusculas);
   }
 
   /**
-   * (Privado) Crea las entidades a partir de sus etiquetas y propiedades
-   * (FabricaEntidades.crearDesdeNeo4j) y las guarda por id.
-   *
-   * @param {Object[]} listaDeDatos - [{ id, etiquetas, propiedades }]
-   * @returns {Map<string, Entidad>}
+   * Crea las entidades nuevas a partir de sus etiquetas y propiedades
+   * (FabricaEntidades.crearDesdeNeo4j). Las que ya estaban se conservan (así
+   * cada entidad es siempre el mismo objeto).
    */
   #cargarEntidades(listaDeDatos) {
-    const entidades = new Map();
     for (let i = 0; i < listaDeDatos.length; i++) {
       const datos = listaDeDatos[i];
-      const entidad = FabricaEntidades.crearDesdeNeo4j(datos.etiquetas, datos.propiedades, datos.id,
-        this.#contexto.idioma, this.#contexto.etiquetasEntidad);
-      if (entidades.has(entidad.getId())) {
-        throw new Error("Hay dos entidades con el mismo id: " + entidad.getId() + ".");
+      if (!this.#entidades.has(datos.id)) {
+        const entidad = FabricaEntidades.crearDesdeNeo4j(datos.etiquetas, datos.propiedades, datos.id,
+          this.#contexto.idioma, this.#contexto.etiquetasEntidad);
+        this.#entidades.set(entidad.getId(), entidad);
       }
-      entidades.set(entidad.getId(), entidad);
     }
-    return entidades;
   }
 
   /**
-   * (Privado) Crea UN TipoRelacion por id, con su nombre, sus padres y su color.
+   * Crea UN TipoRelacion por id, con su nombre, sus padres y su color, para
+   * todos los tipos de /api/tipos y el de las aristas sintéticas
+   * (COINCIDENCIAS).
    *
-   * ¿Por qué los colores se reparten sobre TODOS los tipos (los de
-   * /api/tipos) y ordenados alfabéticamente? PaletaColores.asignar da el
-   * color 0 al primer id, el 1 al segundo... Si se usaran solo los tipos de
-   * este vecindario, o en el orden en que aparecen, un mismo tipo saldría de
-   * colores distintos según la entidad. Con la lista completa y ordenada, un
-   * tipo tiene siempre el mismo color. Si un tipo no estuviera en esa lista
-   * (por ejemplo, porque apareció después), se añade.
-   *
-   * @param {Object[]} listaDeRelaciones
-   * @returns {Map<string, TipoRelacion>} ordenado por id.
+   * ¿Por qué los colores se reparten sobre TODOS los tipos y ordenados
+   * alfabéticamente? PaletaColores.asignar da el color 0 al primer id, el 1
+   * al segundo... Si se usaran solo los tipos de una entidad, o en el orden
+   * en que aparecen, un mismo tipo saldría de colores distintos según la
+   * entidad. Con la lista completa y ordenada, un tipo tiene siempre el
+   * mismo color.
    */
-  #descubrirTipos(listaDeRelaciones) {
-    // Paso 1: ids y padres de todos los tipos conocidos y de los de las relaciones.
-    const padresPorId = new Map();
+  #prepararTipos() {
     if (Array.isArray(this.#contexto.tipos)) {
       for (let i = 0; i < this.#contexto.tipos.length; i++) {
-        const tipo = this.#contexto.tipos[i];
-        padresPorId.set(tipo.id, tipo.padres);
+        this.#padresPorTipo.set(this.#contexto.tipos[i].id, this.#contexto.tipos[i].padres);
       }
     }
+    this.#padresPorTipo.set(RepositorioVecindario.TIPO_COINCIDENCIAS, []);
+    this.#crearTiposQueFaltan();
+  }
+
+  /**
+   * Si llega un tipo que no estaba en /api/tipos (por ejemplo, porque
+   * apareció después), se añade. Los tipos que ya existían no cambian de
+   * color ni de objeto.
+   */
+  #anadirTiposNuevos(listaDeRelaciones) {
+    let hayNuevos = false;
     for (let i = 0; i < listaDeRelaciones.length; i++) {
       const relacion = listaDeRelaciones[i];
-      if (!padresPorId.has(relacion.tipo)) {
-        padresPorId.set(relacion.tipo, relacion.padres);
+      if (!this.#padresPorTipo.has(relacion.tipo)) {
+        this.#padresPorTipo.set(relacion.tipo, relacion.padres);
+        hayNuevos = true;
       }
     }
-    const idsDeTipos = [];
-    for (const idTipo of padresPorId.keys()) {
-      idsDeTipos.push(idTipo);
+    if (hayNuevos) {
+      this.#crearTiposQueFaltan();
     }
+  }
 
-    // Paso 2: orden alfabético. sort() sin función ordena los textos por
-    // sus caracteres, de la "A" a la "z".
-    idsDeTipos.sort();
-
-    // Paso 3: un color para cada uno y el objeto TipoRelacion.
-    const coloresPorId = PaletaColores.asignar(idsDeTipos);
+  /** Crea los TipoRelacion que aún no existen (colores sobre la lista completa y ordenada). */
+  #crearTiposQueFaltan() {
+    const ids = [];
+    for (const id of this.#padresPorTipo.keys()) {
+      ids.push(id);
+    }
+    // sort() sin función ordena los textos por sus caracteres, de la "A" a la "z".
+    ids.sort();
+    const colores = PaletaColores.asignar(ids);
     const nombresTipos = this.#contexto.nombresTipos;
-    const tipos = new Map();
-    for (let i = 0; i < idsDeTipos.length; i++) {
-      const idTipo = idsDeTipos[i];
-      const nombre = TipoRelacion.nombrar(idTipo, nombresTipos);
-      const padres = padresPorId.get(idTipo);
-      const sinNombreDeFamilia = new TipoRelacion(idTipo, nombre, "", padres);
-      const nombreFamilia = TipoRelacion.nombrar(sinNombreDeFamilia.getFamilia(), nombresTipos);
-      tipos.set(idTipo, new TipoRelacion(idTipo, nombre, coloresPorId.get(idTipo), padres, nombreFamilia));
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      if (!this.#tipos.has(id)) {
+        const nombre = TipoRelacion.nombrar(id, nombresTipos);
+        const padres = this.#padresPorTipo.get(id);
+        const sinNombreDeFamilia = new TipoRelacion(id, nombre, "", padres);
+        const nombreFamilia = TipoRelacion.nombrar(sinNombreDeFamilia.getFamilia(), nombresTipos);
+        this.#tipos.set(id, new TipoRelacion(id, nombre, colores.get(id), padres, nombreFamilia));
+      }
     }
-    return tipos;
   }
 
   /**
-   * (Privado) Convierte cada relación del JSON en una Relacion.
-   *
-   * @param {Object[]} listaDeRelaciones
-   * @returns {Relacion[]}
-   */
-  #cargarRelaciones(listaDeRelaciones) {
-    const relaciones = [];
-    for (let i = 0; i < listaDeRelaciones.length; i++) {
-      relaciones.push(this.#crearRelacion(listaDeRelaciones[i]));
-    }
-    return relaciones;
-  }
-
-  /**
-   * (Privado) Crea una Relacion comprobando que sus entidades existen.
-   *
-   * @param {Object} datos - { id, idIntermedio, origen, destino, tipo, valor, roles, periodo, lugar, fecha }
-   * @returns {Relacion}
+   * Crea una Relacion comprobando que sus entidades existen. Su valor de
+   * partida es 0: la relevancia la calcula RelevanciaCompuesta.
    */
   #crearRelacion(datos) {
     if (!this.#entidades.has(datos.origen)) {
@@ -283,15 +305,16 @@ export class RepositorioVecindario extends RepositorioDatos {
     if (!this.#entidades.has(datos.destino)) {
       throw new Error("La relación " + datos.id + " usa una entidad que no existe: " + datos.destino + ".");
     }
-    const origen = this.#entidades.get(datos.origen);
-    const destino = this.#entidades.get(datos.destino);
-    const tipo = this.#tipos.get(datos.tipo);
-    return new Relacion(datos.id, origen, destino, tipo, datos.valor, {
-      idIntermedio: datos.idIntermedio,
-      roles: datos.roles,
-      periodo: Periodo.desdePropiedades(datos.periodo),
-      lugar: datos.lugar,
-      fecha: datos.fecha
-    });
+    return new Relacion(datos.id, this.#entidades.get(datos.origen), this.#entidades.get(datos.destino),
+      this.#tipos.get(datos.tipo), 0, {
+        idIntermedio: datos.idIntermedio,
+        roles: datos.roles,
+        nombre: datos.nombre,
+        periodo: Periodo.desdePropiedades(datos.periodo),
+        lugar: datos.lugar,
+        fecha: datos.fecha,
+        participantes: datos.participantes,
+        dibujable: datos.dibujable
+      });
   }
 }

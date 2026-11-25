@@ -1,6 +1,4 @@
 /**
- * Buscador
- *
  * Busca entidades por su nombre en el índice de nombres que la página
  * descarga UNA vez al arrancar (GET /api/nombres). Como todo está en
  * memoria, las sugerencias salen al instante, sin preguntar al servidor
@@ -11,15 +9,10 @@
  *  - a erratas de hasta distanciaMaxima letras ("picaso" encuentra
  *    "Pablo Picasso").
  *
- * Desde el incremento 3b cada entidad puede tener VARIOS nombres (en
+ * Cada entidad puede tener VARIOS nombres (en
  * castellano, valenciano e inglés; nombre y apellidos por separado): se
  * busca en todos, así «Museu» y «Museo» encuentran la misma organización.
  * Las sugerencias muestran el nombre en el idioma configurado.
- *
- * Requisitos: RF-01 (buscar por nombre), RF-02 (sugerencias mientras se
- * escribe), RF-03 (filtro por tipo), RF-04 (sin distinguir mayúsculas ni
- * tildes), RF-05 (tolerante a erratas), RF-06 (sin resultados), RNF-03
- * (sugerencias rápidas), RNF-13 (entrada acotada a 100 caracteres).
  */
 export class Buscador {
   static LONGITUD_MAXIMA_TEXTO = 100;
@@ -82,7 +75,6 @@ export class Buscador {
   /**
    * Sugerencias mientras se escribe (hasta maxSugerencias).
    *
-   * @param {string} texto
    * @param {string} tipo - un valor de TipoEntidad, o "" para todos.
    * @returns {Object[]} [{ id, nombre, tipo }]
    */
@@ -109,10 +101,6 @@ export class Buscador {
    *        quitarla   → tabla[i-1][j]   + 1
    *        añadir una → tabla[i][j-1]   + 1
    *  - La respuesta es la última celda: tabla[a.length][b.length].
-   *
-   * @param {string} a
-   * @param {string} b
-   * @returns {number}
    */
   distanciaEdicion(a, b) {
     const tabla = [];
@@ -147,13 +135,10 @@ export class Buscador {
   }
 
   /**
-   * (Privado) Hace la búsqueda: prepara el texto, se queda con las
+   * Hace la búsqueda: prepara el texto, se queda con las
    * entidades que coinciden, las ordena y devuelve las primeras.
    *
-   * @param {string} texto
    * @param {string} tipo - "" para todos.
-   * @param {number} limite
-   * @returns {Object[]}
    */
   #consultar(texto, tipo, limite) {
     if (typeof texto !== "string") {
@@ -163,7 +148,7 @@ export class Buscador {
     if (textoLimpio.length < this.#longitudMinima) {
       return [];
     }
-    // RNF-13: nadie puede hacer trabajar al buscador con un texto enorme.
+    // Se corta el texto para que nadie haga trabajar al buscador con uno enorme.
     if (textoLimpio.length > Buscador.LONGITUD_MAXIMA_TEXTO) {
       textoLimpio = textoLimpio.substring(0, Buscador.LONGITUD_MAXIMA_TEXTO);
     }
@@ -196,7 +181,7 @@ export class Buscador {
   }
 
   /**
-   * (Privado) Prepara un texto para compararlo (RF-04):
+   * Prepara un texto para compararlo:
    *  1. Minúsculas.
    *  2. Sin tildes ni diéresis. normalize("NFD") separa cada letra de su
    *     acento: "é" pasa a ser "e" seguida de una "marca de acento", que es
@@ -207,9 +192,6 @@ export class Buscador {
    *     sin ñ.
    *  3. Los espacios repetidos (o tabuladores) se convierten en uno solo, y
    *     se quitan los del principio y el final.
-   *
-   * @param {string} texto
-   * @returns {string}
    */
   #normalizar(texto) {
     if (typeof texto !== "string") {
@@ -238,13 +220,7 @@ export class Buscador {
     return resultado.trim();
   }
 
-  /**
-   * (Privado) ¿Coincide alguno de los nombres de la entidad?
-   *
-   * @param {string} textoNormalizado
-   * @param {string[]} normalizados
-   * @returns {boolean}
-   */
+  /** ¿Coincide alguno de los nombres de la entidad? */
   #coincideAlguno(textoNormalizado, normalizados) {
     for (let i = 0; i < normalizados.length; i++) {
       if (this.#coincide(textoNormalizado, normalizados[i])) {
@@ -254,13 +230,7 @@ export class Buscador {
     return false;
   }
 
-  /**
-   * (Privado) La mejor (la menor) puntuación de los nombres de la entidad.
-   *
-   * @param {string} textoNormalizado
-   * @param {string[]} normalizados
-   * @returns {number}
-   */
+  /** La mejor (la menor) puntuación de los nombres de la entidad. */
   #puntuarMejor(textoNormalizado, normalizados) {
     let mejor = this.#puntuar(textoNormalizado, normalizados[0]);
     for (let i = 1; i < normalizados.length; i++) {
@@ -273,12 +243,8 @@ export class Buscador {
   }
 
   /**
-   * (Privado) ¿El nombre coincide con el texto? Basta con una de estas
+   * ¿El nombre coincide con el texto? Basta con una de estas
    * condiciones (los dos textos ya están normalizados):
-   *
-   * @param {string} textoNormalizado
-   * @param {string} nombreNormalizado
-   * @returns {boolean}
    */
   #coincide(textoNormalizado, nombreNormalizado) {
     // 1. El nombre contiene el texto ("picas" en "pablo picasso").
@@ -302,16 +268,12 @@ export class Buscador {
   }
 
   /**
-   * (Privado) Lo bien que coincide un nombre con el texto (menos es mejor):
+   * Lo bien que coincide un nombre con el texto (menos es mejor):
    *   0  el nombre es exactamente el texto;
    *   1  el nombre empieza por el texto;
    *   2  alguna palabra del nombre empieza por el texto;
    *   3  el nombre contiene el texto;
    *   4 + distancia  se ha encontrado por una errata.
-   *
-   * @param {string} textoNormalizado
-   * @param {string} nombreNormalizado
-   * @returns {number}
    */
   #puntuar(textoNormalizado, nombreNormalizado) {
     if (nombreNormalizado === textoNormalizado) {
@@ -340,12 +302,8 @@ export class Buscador {
   }
 
   /**
-   * (Privado) La menor distancia entre el texto y alguna palabra del nombre
+   * La menor distancia entre el texto y alguna palabra del nombre
    * o el comienzo del nombre con la misma longitud que el texto.
-   *
-   * @param {string} textoNormalizado
-   * @param {string} nombreNormalizado
-   * @returns {number}
    */
   #distanciaAPalabraOComienzo(textoNormalizado, nombreNormalizado) {
     const comienzo = nombreNormalizado.substring(0, textoNormalizado.length);
@@ -361,7 +319,7 @@ export class Buscador {
   }
 
   /**
-   * (Privado) Ordena los encontrados: primero los de menor puntuación y, a
+   * Ordena los encontrados: primero los de menor puntuación y, a
    * igual puntuación, por orden alfabético.
    *
    * Se usa sort con una función de comparación (como en Leyenda): sort la
@@ -370,7 +328,6 @@ export class Buscador {
    * calcula ANTES, una vez por elemento, y no dentro de la comparación
    * (sort compara cada elemento muchas veces).
    *
-   * @param {string} textoNormalizado
    * @param {Object[]} resultados - entradas del índice.
    * @returns {Object[]} nueva lista ordenada.
    */
@@ -393,11 +350,10 @@ export class Buscador {
   }
 
   /**
-   * (Privado) Función de comparación para sort (ver ordenarPorCoincidencia).
+   * Función de comparación para sort (ver ordenarPorCoincidencia).
    *
    * @param {Object} a - { entrada, puntuacion }
    * @param {Object} b - { entrada, puntuacion }
-   * @returns {number}
    */
   static #compararPorCoincidencia(a, b) {
     if (a.puntuacion !== b.puntuacion) {

@@ -1,8 +1,6 @@
 import { ComponenteUI, crear } from './ComponenteUI.js';
 
 /**
- * BarraNavegacion extends ComponenteUI
- *
  * Los botones «← Volver» (a la entidad anterior; deshabilitado si no hay
  * historial) y «Vista inicial» (vuelve a colocar la cámara).
  *
@@ -10,15 +8,10 @@ import { ComponenteUI, crear } from './ComponenteUI.js';
  * No funcionan mientras se escribe en un campo (el buscador, el desplegable
  * o el deslizador), porque allí esas teclas ya tienen otro uso (Inicio
  * lleva al principio del texto o al mínimo del deslizador).
- *
- * Requisitos: RF-27 (vista inicial), RF-31 (volver), RNF-25 (teclado).
  */
 export class BarraNavegacion extends ComponenteUI {
   #botonVolver;
 
-  /**
-   * @param {ControladorExploracion} controlador
-   */
   constructor(controlador) {
     super(controlador, "nav", "barra-navegacion");
     this._elemento.setAttribute("aria-label", "Navegación");
@@ -33,9 +26,7 @@ export class BarraNavegacion extends ComponenteUI {
     });
   }
 
-  /**
-   * Dibuja los dos botones.
-   */
+  /** Dibuja los dos botones. */
   renderizar() {
     this._elemento.textContent = "";
     this.#botonVolver = crear("button", {
@@ -72,9 +63,7 @@ export class BarraNavegacion extends ComponenteUI {
     this.#botonVolver.disabled = !habilitado;
   }
 
-  /**
-   * (Privado) Botón «← Volver» o Alt + ←.
-   */
+  /** Botón «← Volver» o Alt + ←. */
   #onVolver() {
     if (this.#botonVolver.disabled || this._controlador === null) {
       return;
@@ -82,20 +71,14 @@ export class BarraNavegacion extends ComponenteUI {
     this._controlador.volver();
   }
 
-  /**
-   * (Privado) Botón «Vista inicial» o tecla Inicio.
-   */
+  /** Botón «Vista inicial» o tecla Inicio. */
   #onRestablecerVista() {
     if (this._controlador !== null) {
       this._controlador.restablecerVista();
     }
   }
 
-  /**
-   * (Privado) Atajos de teclado.
-   *
-   * @param {KeyboardEvent} evento
-   */
+  /** Atajos de teclado. */
   #onTecla(evento) {
     if (BarraNavegacion.#seEstaEscribiendo()) {
       return;
@@ -111,11 +94,7 @@ export class BarraNavegacion extends ComponenteUI {
     }
   }
 
-  /**
-   * (Privado) ¿Tiene el foco un campo donde se escribe o se elige algo?
-   *
-   * @returns {boolean}
-   */
+  /** ¿Tiene el foco un campo donde se escribe o se elige algo? */
   static #seEstaEscribiendo() {
     const elemento = document.activeElement;
     if (elemento === null) {

@@ -1,0 +1,40 @@
+@startuml sec_explorar_servidor
+' Operación: explorar una entidad (servidor, incremento 4).
+' RepositorioNeo4j y AlmacenRelevanciasNeo4j son las clases previstas.
+!include estilo.iuml
+participant ":app" as API
+participant ":Cache\nRespuestas" as CACHE
+participant ":Repositorio\nNeo4j" as REPO
+participant ":Asignador\nRelevancia" as ASIG
+participant ":Relevancia\nPorTipo" as EST
+database "Neo4j" as BD
+
+[-> API : GET /api/vecindario
+activate API
+API -> CACHE : obtener(clave, preparar)
+activate CACHE
+opt no está en la caché
+  CACHE -> REPO : obtener_vecindario(id, u, max)
+  activate REPO
+  loop cada nivel (anchura)
+    REPO -> BD : intermediarios y participantes
+    loop cada intermediario nuevo
+      REPO -> ASIG : obtener(id_i, tipo)
+      activate ASIG
+      ASIG -> BD : leer relevancia
+      alt falta o versión antigua
+        ASIG -> EST : calcular_relevancia(tipo)
+        ASIG -> BD : guardar (SET condicional)
+      end
+      ASIG --> REPO : valor
+      deactivate ASIG
+    end
+  end
+  REPO --> CACHE : Vecindario
+  deactivate REPO
+end
+CACHE --> API : JSON
+deactivate CACHE
+[<-- API : 200 JSON
+deactivate API
+@enduml

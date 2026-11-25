@@ -1,4 +1,4 @@
-"""Configuracion (traducción de src/logica/Configuracion.js, ampliada)."""
+"""Configuracion: los ajustes del servidor (servidor/configuracion.json)."""
 import json
 import math
 from pathlib import Path
@@ -10,15 +10,12 @@ class Configuracion:
 
     Los ajustes sencillos (umbral, máximos, entidad inicial...) tienen un
     valor por defecto si faltan o no son válidos. Los que describen la base
-    de datos (clasificación de etiquetas, pesos, nombres de los tipos...) no
+    de datos (clasificación de etiquetas, límites, nombres de los tipos...) no
     se pueden inventar: comprobar() los revisa al arrancar y, si falta
     alguno, el servidor no arranca y dice cuál falta.
 
-    IMPORTANTE: cuando haya base de datos real (incremento 4), su usuario y
-    su contraseña NO irán en configuracion.json (que se sube a Git), sino en
+    IMPORTANTE: el usuario y la contraseña de la base de datos real NO irán en configuracion.json (que se sube a Git), sino en
     variables de entorno (por ejemplo, en un archivo .env que Git ignora).
-
-    Requisitos: RNF-16.
     """
 
     # Papeles que puede tener un nodo auxiliar (ver papelesAuxiliares).
@@ -30,7 +27,6 @@ class Configuracion:
     MAX_NODOS_POR_DEFECTO = 150
     NODOS_OBJETIVO_POR_DEFECTO = 100
     ENTIDAD_INICIAL_POR_DEFECTO = ""
-    MAX_ENTIDADES_VECINDARIO_POR_DEFECTO = 2000
 
     def __init__(self) -> None:
         # Mientras no se llame a cargar, todos los getters dan el valor por defecto.
@@ -52,7 +48,7 @@ class Configuracion:
 
     def comprobar(self) -> None:
         """Comprueba que están todos los ajustes que describen la base de
-        datos (ANALISIS_BD_NEO4J.md §3.1 y §4.3). Si falta alguno o no tiene
+        datos. Si falta alguno o no tiene
         la forma esperada, lanza ValueError con la lista de problemas.
         """
         problemas: list[str] = []
@@ -62,16 +58,14 @@ class Configuracion:
         self.__comprobar_lista("tiposSinRelacion", problemas)
         self.__comprobar_lista("relacionesIgnoradas", problemas)
         self.__comprobar_entero_positivo("maxParticipantesIntermediario", problemas)
-        self.__comprobar_diccionario("pesosRelevancia", problemas)
-        self.__comprobar_numero_entre_0_y_1("pesoPorDefecto", problemas)
-        self.__comprobar_entero_positivo("versionPesos", problemas)
+        self.__comprobar_entero_positivo("maxParticipantesEvidencia", problemas)
         self.__comprobar_texto("idioma", problemas)
         self.__comprobar_diccionario("nombresTipos", problemas)
 
         # Estas dos solo se pueden mirar si lo anterior está bien.
         if len(problemas) == 0:
             self.__comprobar_papeles(problemas)
-            self.__comprobar_pesos(problemas)
+            self.__comprobar_limites_de_participantes(problemas)
         if len(problemas) > 0:
             raise ValueError("La configuración (servidor/configuracion.json) no está completa: "
                              + "; ".join(problemas) + ".")
@@ -108,16 +102,6 @@ class Configuracion:
             return Configuracion.NODOS_OBJETIVO_POR_DEFECTO
         return objetivo
 
-    def get_max_entidades_vecindario(self) -> int:
-        """Máximo de entidades de un vecindario (2000 si falta o no es válido).
-        Lo fija solo el servidor, para que nadie pueda pedir la base de datos
-        entera (RNF-13).
-        """
-        maximo = self.__datos.get("maxEntidadesVecindario")
-        if not isinstance(maximo, int) or isinstance(maximo, bool) or maximo < 1:
-            return Configuracion.MAX_ENTIDADES_VECINDARIO_POR_DEFECTO
-        return maximo
-
     def get_entidad_inicial(self) -> str:
         """Id de la entidad que se muestra al empezar ("" si no hay)."""
         return self.__leer_texto("entidadInicial", Configuracion.ENTIDAD_INICIAL_POR_DEFECTO)
@@ -149,20 +133,16 @@ class Configuracion:
         return self.__datos["relacionesIgnoradas"]
 
     def get_max_participantes_intermediario(self) -> int:
-        """Un intermediario con más entidades que esto no crea relaciones."""
+        """Un intermediario con más entidades que esto da relaciones que NO se
+        dibujan (dibujable: false), aunque cuentan como evidencia.
+        """
         return self.__datos["maxParticipantesIntermediario"]
 
-    def get_pesos_relevancia(self) -> dict[str, float]:
-        """Tipo → peso (relevancia) para RelevanciaPorTipo."""
-        return self.__datos["pesosRelevancia"]
-
-    def get_peso_por_defecto(self) -> float:
-        """Peso de un tipo sin peso propio ni padre con peso."""
-        return self.__datos["pesoPorDefecto"]
-
-    def get_version_pesos(self) -> int:
-        """Versión de la tabla de pesos (se sube al cambiar un peso)."""
-        return self.__datos["versionPesos"]
+    def get_max_participantes_evidencia(self) -> int:
+        """Un intermediario con más entidades que esto se ignora del todo (sus
+        relaciones ni se dibujan ni cuentan como evidencia).
+        """
+        return self.__datos["maxParticipantesEvidencia"]
 
     def get_nombres_tipos(self) -> dict[str, str]:
         """Tipo → nombre en castellano ("Marriage" → "Matrimonio")."""
@@ -200,11 +180,6 @@ class Configuracion:
         if not isinstance(valor, int) or isinstance(valor, bool) or valor < 1:
             problemas.append("falta '" + nombre + "' (un número entero mayor que 0)")
 
-    def __comprobar_numero_entre_0_y_1(self, nombre: str, problemas: list[str]) -> None:
-        """(Privado) El ajuste tiene que ser un número entre 0 y 1."""
-        if not Configuracion.__es_numero_entre_0_y_1(self.__datos.get(nombre)):
-            problemas.append("falta '" + nombre + "' (un número entre 0 y 1)")
-
     def __comprobar_texto(self, nombre: str, problemas: list[str]) -> None:
         """(Privado) El ajuste tiene que ser un texto no vacío."""
         valor = self.__datos.get(nombre)
@@ -231,12 +206,12 @@ class Configuracion:
             if not encontrado:
                 problemas.append("ninguna etiqueta tiene el papel '" + papel + "' en papelesAuxiliares")
 
-    def __comprobar_pesos(self, problemas: list[str]) -> None:
-        """(Privado) Todos los pesos tienen que estar entre 0 y 1."""
-        pesos = self.__datos["pesosRelevancia"]
-        for tipo in pesos:
-            if not Configuracion.__es_numero_entre_0_y_1(pesos[tipo]):
-                problemas.append("el peso de '" + tipo + "' no está entre 0 y 1")
+    def __comprobar_limites_de_participantes(self, problemas: list[str]) -> None:
+        """(Privado) maxParticipantesEvidencia no puede ser menor que
+        maxParticipantesIntermediario (lo que se dibuja también es evidencia).
+        """
+        if self.__datos["maxParticipantesEvidencia"] < self.__datos["maxParticipantesIntermediario"]:
+            problemas.append("'maxParticipantesEvidencia' no puede ser menor que 'maxParticipantesIntermediario'")
 
     @staticmethod
     def __es_numero_entre_0_y_1(valor: Any) -> bool:

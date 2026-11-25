@@ -7,22 +7,23 @@ import { DetalleEntidad } from '../modelo/DetalleEntidad.js';
 import { FabricaEntidades } from './FabricaEntidades.js';
 
 /**
- * ClienteServicio
- *
  * Lo único del navegador que sabe que existe un servidor. Pide los datos a
- * la API de Python. Los vecindarios los devuelve tal cual (los convierte
+ * la API de Python. Las relaciones las devuelve tal cual (las convierte
  * RepositorioVecindario); el detalle de una entidad, ya convertido en un
  * DetalleEntidad.
  *
  * Peticiones:
- *  - la configuración, los tipos y el índice de nombres, UNA vez al abrir la página;
- *  - un vecindario cada vez que cambia la entidad central (o baja el umbral);
+ *  - la configuración, los tipos, la jerarquía y el índice de nombres, UNA
+ *    vez al abrir la página;
+ *  - las relaciones de unas entidades (POST /api/relaciones), en trozos de
+ *    200 ids como mucho (ver GestorSubgrafos: como mucho 2 tandas por
+ *    entidad nueva);
  *  - el detalle de una entidad al seleccionarla.
- *
- * Requisitos: RNF-17 (el acceso a los datos está separado del resto),
- * RNF-13 (los parámetros van codificados en la URL), RF-39 (tipos).
  */
 export class ClienteServicio {
+  // Máximo de ids por petición (el mismo límite que el servidor).
+  static MAX_IDS_POR_PETICION = 200;
+
   #urlBase;
   #bytesUltimaRespuesta;
 
@@ -47,7 +48,7 @@ export class ClienteServicio {
   }
 
   /**
-   * Los tipos de relación que hay en los datos, con sus padres (RF-39).
+   * Los tipos de relación que hay en los datos, con sus padres.
    *
    * @returns {Promise<Object[]>} [{ id, padres }]
    */
@@ -66,30 +67,65 @@ export class ClienteServicio {
   }
 
   /**
-   * Los datos en bruto alrededor de una entidad (ver RepositorioVecindario).
+   * Cada etiqueta con sus padres (los IS_A), del más cercano al más lejano.
    *
-   * @param {string} idEntidad - id de la entidad central.
-   * @param {number} umbral - entre 0 y 1.
-   * @returns {Promise<Object>} { idCentral, umbral, recortado, entidades, relaciones,
-   *   relevanciasAsignadas, relevanciasReutilizadas }
+   * @returns {Promise<Object>} { etiqueta: [padres] }
    */
-  async obtenerVecindario(idEntidad, umbral) {
-    // URLSearchParams escribe los parámetros con el formato correcto para
-    // una URL. encodeURIComponent hace lo mismo con el id, que va dentro de
-    // la ruta: así un id con caracteres raros ("/", "?", espacios...) no
-    // puede cambiar la petición.
-    const parametros = new URLSearchParams();
-    parametros.set("umbral", String(umbral));
-    const ruta = "/vecindario/" + encodeURIComponent(idEntidad) + "?" + parametros.toString();
-    return await this.#pedir(ruta);
+  async obtenerJerarquia() {
+    return await this.#pedir("/jerarquia");
+  }
+
+  /**
+   * TODAS las relaciones de esas entidades (las que se dibujan y las que
+   * solo son evidencia) y las entidades de sus extremos, en bruto (ver
+   * RepositorioVecindario). Si hay más de 200 ids, se piden en trozos de
+   * 200 y se juntan las respuestas en una sola.
+   *
+   * @param {string[]} ids - ids de las entidades.
+   * @returns {Promise<Object>} { ids, entidades, relaciones }
+   */
+  async obtenerRelaciones(ids) {
+    const juntas = { ids: [], entidades: [], relaciones: [] };
+    const entidadesVistas = new Set();
+    const relacionesVistas = new Set();
+    let bytes = 0;
+    for (let inicio = 0; inicio < ids.length; inicio = inicio + ClienteServicio.MAX_IDS_POR_PETICION) {
+      const trozo = ids.slice(inicio, inicio + ClienteServicio.MAX_IDS_POR_PETICION);
+      const respuesta = await this.#pedir("/relaciones", { ids: trozo });
+      bytes = bytes + this.#bytesUltimaRespuesta;
+      ClienteServicio.#anadirSinRepetir(juntas.ids, null, respuesta.ids);
+      ClienteServicio.#anadirSinRepetir(juntas.entidades, entidadesVistas, respuesta.entidades);
+      ClienteServicio.#anadirSinRepetir(juntas.relaciones, relacionesVistas, respuesta.relaciones);
+    }
+    this.#bytesUltimaRespuesta = bytes;
+    return juntas;
+  }
+
+  /**
+   * Añade los elementos a la lista sin repetir. Con vistos, se comparan por
+   * su id (entidades y relaciones); sin él, por su valor (ids).
+   */
+  static #anadirSinRepetir(lista, vistos, elementos) {
+    if (!Array.isArray(elementos)) {
+      return;
+    }
+    for (let i = 0; i < elementos.length; i++) {
+      const elemento = elementos[i];
+      if (vistos === null) {
+        if (!lista.includes(elemento)) {
+          lista.push(elemento);
+        }
+      } else if (!vistos.has(elemento.id)) {
+        vistos.add(elemento.id);
+        lista.push(elemento);
+      }
+    }
   }
 
   /**
    * El detalle de una entidad (eventos, imágenes, fuentes y ubicación).
    *
-   * @param {string} idEntidad
    * @param {Object} contexto - { idioma, etiquetasEntidad } (para los nombres).
-   * @returns {Promise<DetalleEntidad>}
    */
   async obtenerDetalle(idEntidad, contexto) {
     const json = await this.#pedir("/detalle/" + encodeURIComponent(idEntidad));
@@ -103,7 +139,6 @@ export class ClienteServicio {
    *
    * @param {Object} json - { id, eventos, imagenes, fuentes, ubicacion }
    * @param {Object} contexto - { idioma, etiquetasEntidad }
-   * @returns {DetalleEntidad}
    */
   static convertirDetalle(json, contexto) {
     const idioma = contexto.idioma;
@@ -158,18 +193,16 @@ export class ClienteServicio {
   }
 
   /**
-   * Tamaño de la última respuesta recibida, para la barra de rendimiento
-   * («Datos recibidos: X KB»), que se usará en las pruebas de rendimiento
-   * del incremento 4.
-   *
-   * @returns {number} bytes.
+   * Tamaño de la última respuesta recibida (en obtenerRelaciones, la suma de
+   * todos sus trozos), para la barra de rendimiento («Datos recibidos: X KB»).
    */
   getBytesUltimaRespuesta() {
     return this.#bytesUltimaRespuesta;
   }
 
   /**
-   * (Privado) Hace una petición GET a la API y devuelve el JSON.
+   * Hace una petición a la API y devuelve el JSON: GET si no hay cuerpo;
+   * POST con el cuerpo en JSON si lo hay.
    *
    * Errores:
    *  - Si el servidor no contesta, "No se puede conectar con el servidor".
@@ -180,12 +213,20 @@ export class ClienteServicio {
    *    también es "No se puede conectar con el servidor".
    *
    * @param {string} ruta - lo que va detrás de urlBase, p. ej. "/salud".
-   * @returns {Promise<Object>}
+   * @param {Object} cuerpo - opcional: lo que se envía en un POST.
    */
-  async #pedir(ruta) {
+  async #pedir(ruta, cuerpo) {
     let respuesta = null;
     try {
-      respuesta = await fetch(this.#urlBase + ruta);
+      if (cuerpo === undefined) {
+        respuesta = await fetch(this.#urlBase + ruta);
+      } else {
+        respuesta = await fetch(this.#urlBase + ruta, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(cuerpo)
+        });
+      }
     } catch (error) {
       throw new Error("No se puede conectar con el servidor");
     }

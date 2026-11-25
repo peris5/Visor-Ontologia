@@ -1,30 +1,22 @@
 {
-  "_comentario": "Configuración del servidor (RNF-16). Las credenciales de la base de datos real NO irán aquí, sino en variables de entorno (archivo .env, que no se sube a Git). Las etiquetas y tipos se escriben tal cual están en la BD, con sus erratas (Ubication, Employement, coworking...).",
+  "_comentario": "Configuración del servidor. El servidor solo da acceso a los datos: la relevancia la calcula siempre el navegador (los pesos están en public/relevancia.json). Las credenciales de la base de datos real NO irán aquí, sino en variables de entorno (archivo .env, que no se sube a Git). Las etiquetas y tipos se escriben tal cual están en la BD, con sus erratas (Ubication, Employement, coworking...).",
   "origenDatos": "simulado",
   "umbralPorDefecto": 0.3,
   "maxNodos": 150,
   "_comentarioNodosObjetivo": "Al cargar cada entidad, el navegador elige el umbral inicial para que salgan más o menos estos nodos (nunca más de maxNodos). Después el usuario puede moverlo con el deslizador.",
   "nodosObjetivo": 30,
-  "maxEntidadesVecindario": 2000,
   "entidadInicial": "n1",
   "idioma": "es",
 
-  "_comentarioEtiquetas": "Clasificación de las etiquetas de Neo4j (ANALISIS_BD_NEO4J.md §3.1). Lo que no es entidad ni auxiliar es un intermediario. papelesAuxiliares dice para qué sirve cada auxiliar (así ninguna etiqueta está escrita en el código).",
+  "_comentarioEtiquetas": "Clasificación de las etiquetas de Neo4j. Lo que no es entidad ni auxiliar es un intermediario. papelesAuxiliares dice para qué sirve cada auxiliar (así ninguna etiqueta está escrita en el código).",
   "etiquetasEntidad": { "Person": "PERSONA", "Organization": "ORGANIZACION", "HeritageItem": "OBRA_DE_ARTE" },
   "etiquetasAuxiliares": ["Period", "Ubication", "Image", "ExternalSource"],
   "papelesAuxiliares": { "Period": "periodo", "Ubication": "lugar", "Image": "imagen", "ExternalSource": "fuente" },
   "tiposSinRelacion": ["Birth", "Death", "Live"],
   "relacionesIgnoradas": ["IS_A", "IS_IN", "LOCATED_IN", "HAS_IMAGE", "HAS_EXTERNAL_SOURCE", "PROMPTED", "TRIGGERED", "LED_TO"],
+  "_comentarioParticipantes": "Un intermediario (evento o relación) con hasta maxParticipantesIntermediario entidades da relaciones que se dibujan (dibujable: true). Con más, y hasta maxParticipantesEvidencia, sus relaciones llegan al navegador solo como evidencia (dibujable: false): cuentan para la relevancia pero no se dibujan. Con más de maxParticipantesEvidencia se ignora: una coincidencia entre cientos de personas no dice nada.",
   "maxParticipantesIntermediario": 10,
-
-  "_comentarioPesos": "Pesos de RelevanciaPorTipo (ANALISIS_BD_NEO4J.md §4.3). PROPUESTA pendiente de validar con el tutor. Si se cambia algún peso, hay que subir versionPesos: las relevancias automáticas antiguas se recalculan al volver a recorrerlas.",
-  "pesosRelevancia": {
-    "Marriage": 0.95, "Filiation": 0.90, "Mentorship": 0.85, "Friendship": 0.75, "Related": 0.70,
-    "coworking": 0.65, "Employement": 0.60, "Professional": 0.55, "Relationship": 0.50,
-    "Creation": 0.90, "Fund": 0.85, "Work": 0.60, "Wedding": 0.60, "Exposition": 0.50, "Event": 0.40
-  },
-  "pesoPorDefecto": 0.5,
-  "versionPesos": 1,
+  "maxParticipantesEvidencia": 200,
 
   "_comentarioNombres": "Nombre en castellano de cada tipo. Un tipo que no esté aquí (por ejemplo, uno nuevo de la BD) se nombra solo a partir de su id.",
   "nombresTipos": {
@@ -33,6 +25,7 @@
     "Related": "Parentesco", "Relationship": "Relación", "Paint": "Pintura", "Design": "Diseño",
     "Creation": "Creación", "Fund": "Fundación", "Exposition": "Exposición", "Work": "Trabajo",
     "Wedding": "Boda", "Event": "Evento", "Creator": "Creador/a", "Painter": "Pintor/a",
-    "Designer": "Diseñador/a", "Book": "Libro", "API": "API", "Web": "Web"
+    "Designer": "Diseñador/a", "Book": "Libro", "API": "API", "Web": "Web",
+    "COINCIDENCIAS": "Coincidencias en eventos"
   }
 }

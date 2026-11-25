@@ -1,15 +1,10 @@
 import { ComponenteUI, crear } from './ComponenteUI.js';
 
 /**
- * ControlUmbral extends ComponenteUI
- *
  * El deslizador del umbral de relevancia, de 0,05 en 0,05, con su valor a
  * la vista. Mientras se arrastra solo cambia el número que se ve; el
  * subgrafo se recalcula al SOLTAR (evento "change"), para no rehacer la
  * escena decenas de veces por segundo.
- *
- * Requisitos: RF-13 (cambiar el umbral), RNF-25 (se maneja con las flechas
- * del teclado, tiene su etiqueta).
  */
 export class ControlUmbral extends ComponenteUI {
   static ID_DESLIZADOR = "deslizadorUmbral";
@@ -21,9 +16,6 @@ export class ControlUmbral extends ComponenteUI {
   #deslizador;
   #textoValor;
 
-  /**
-   * @param {ControladorExploracion} controlador
-   */
   constructor(controlador) {
     super(controlador, "div", "control-umbral");
     this.#minimo = 0.05;
@@ -33,9 +25,7 @@ export class ControlUmbral extends ComponenteUI {
     this.#textoValor = null;
   }
 
-  /**
-   * Dibuja la etiqueta, el valor, el deslizador y la ayuda.
-   */
+  /** Dibuja la etiqueta, el valor, el deslizador y la ayuda. */
   renderizar() {
     this._elemento.textContent = "";
     this.#textoValor = crear("output", { clase: "valor-umbral", for: ControlUmbral.ID_DESLIZADOR }, []);
@@ -90,9 +80,7 @@ export class ControlUmbral extends ComponenteUI {
     }
   }
 
-  /**
-   * (Privado) El usuario ha soltado el deslizador: se avisa al controlador.
-   */
+  /** El usuario ha soltado el deslizador: se avisa al controlador. */
   #onCambio() {
     this.#valor = Number(this.#deslizador.value);
     this.#mostrarValor(this.#valor);
@@ -101,11 +89,7 @@ export class ControlUmbral extends ComponenteUI {
     }
   }
 
-  /**
-   * (Privado) Escribe el valor con dos decimales y coma: 0.3 → "0,30".
-   *
-   * @param {number} valor
-   */
+  /** Escribe el valor con dos decimales y coma: 0.3 → "0,30". */
   #mostrarValor(valor) {
     this.#textoValor.textContent = valor.toFixed(2).replace(".", ",");
   }

@@ -1,0 +1,32 @@
+@startuml clases_logica_subgrafo
+' Paquete logica (cliente), parte 1: obtención y cálculo del subgrafo.
+' Buscador, PaletaColores y DetectorComunidades no tienen relaciones
+' dentro del paquete y se describen en el texto.
+!include estilo.iuml
+
+class GestorSubgrafos {
+  + obtenerSubgrafo(id, umbral)
+  + obtenerSubgrafoAjustado(id)
+  + obtenerDetalle(id)
+}
+class ConstructorSubgrafo {
+  + construir(id)
+}
+interface EstrategiaRelevancia <<interface>> {
+  + calcularRelevanciaRelacion(r)
+  + calcularRelevanciaNodo(p, r)
+}
+class RelevanciaDesdeBD
+class CalculadorCentralidad {
+  + calcular(subgrafo)
+}
+class AjustadorUmbral {
+  + elegir(relevancias)
+}
+
+GestorSubgrafos ..> ConstructorSubgrafo : crea
+GestorSubgrafos ..> AjustadorUmbral
+ConstructorSubgrafo --> EstrategiaRelevancia
+ConstructorSubgrafo *-- CalculadorCentralidad
+EstrategiaRelevancia <|.. RelevanciaDesdeBD
+@enduml

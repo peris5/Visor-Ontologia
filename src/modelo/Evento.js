@@ -1,14 +1,10 @@
 /**
- * Evento
- *
  * Un nodo intermediario en el que participa una entidad, visto desde ella:
  * un evento (nacimiento, creación de una obra, exposición...) o una relación
  * (matrimonio, mentoría...). Forma parte del detalle de la entidad.
  *
  * El tipo es la etiqueta más específica del nodo ("Birth", "Marriage"...);
  * su nombre para mostrar lo pone quien lo muestra, con nombresTipos.
- *
- * Requisitos: RF-28 (información del nodo).
  */
 export class Evento {
   #id;
@@ -43,9 +39,6 @@ export class Evento {
     this.#sinRelacion = datos.sinRelacion === true;
   }
 
-  /**
-   * @returns {string}
-   */
   getId() {
     return this.#id;
   }
@@ -78,9 +71,6 @@ export class Evento {
     return this.#rol;
   }
 
-  /**
-   * @returns {Periodo|null}
-   */
   getPeriodo() {
     return this.#periodo;
   }
@@ -113,11 +103,7 @@ export class Evento {
     return this.#sinRelacion;
   }
 
-  /**
-   * Cuándo: la fecha si la hay; si no, el texto del periodo.
-   *
-   * @returns {string}
-   */
+  /** Cuándo: la fecha si la hay; si no, el texto del periodo. */
   getCuando() {
     if (this.#fecha !== "") {
       return this.#fecha;
@@ -128,12 +114,7 @@ export class Evento {
     return "";
   }
 
-  /**
-   * (Privado) Copia de una lista ([] si no lo es).
-   *
-   * @param {*} valor
-   * @returns {Array}
-   */
+  /** Copia de una lista ([] si no lo es). */
   static #lista(valor) {
     const copia = [];
     if (Array.isArray(valor)) {
@@ -144,12 +125,7 @@ export class Evento {
     return copia;
   }
 
-  /**
-   * (Privado) El valor si es un texto; si no, "".
-   *
-   * @param {*} valor
-   * @returns {string}
-   */
+  /** El valor si es un texto; si no, "". */
   static #texto(valor) {
     if (typeof valor === "string") {
       return valor;

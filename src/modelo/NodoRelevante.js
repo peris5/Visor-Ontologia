@@ -1,28 +1,28 @@
 import { Entidad } from './Entidad.js';
+import { ResultadoRelevanciaNodo } from './ResultadoRelevanciaNodo.js';
+import { OrigenRelevancia } from './OrigenRelevancia.js';
 
 /**
- * NodoRelevante
- *
- * Una entidad dentro de un subgrafo, junto con los datos que solo tienen
- * sentido en ese subgrafo:
- *  - relevancia: producto de las relevancias del camino desde la central.
- *  - nivel: número de saltos desde la entidad central (la central es 0).
+ * Una entidad dentro de un subgrafo, con los datos que solo tienen sentido
+ * en ese subgrafo:
+ *  - relevancia: la que calcula la EstrategiaRelevanciaNodos.
+ *  - nivel: número de saltos desde la entidad central (la central es 0, los
+ *    nodos directos 1 y los deducidos 2).
  *  - centralidad: importancia del nodo dentro del subgrafo (entre 0 y 1).
- *
- * Requisitos: RF-08 a RF-12 (relevancia y nivel) y RF-37 (centralidad).
+ *  - resultado: el ResultadoRelevanciaNodo con el origen y la explicación
+ *    de su relevancia (null si se ha creado sin él, como la central).
  */
 export class NodoRelevante {
   #entidad;
   #relevancia;
   #nivel;
   #centralidad;
+  #resultado;
 
   /**
-   * @param {Entidad} entidad
-   * @param {number} relevancia - entre 0 y 1.
-   * @param {number} nivel - saltos desde la entidad central.
+   * @param {ResultadoRelevanciaNodo} resultado - opcional.
    */
-  constructor(entidad, relevancia, nivel) {
+  constructor(entidad, relevancia, nivel, resultado) {
     if (!(entidad instanceof Entidad)) {
       throw new Error("Un NodoRelevante necesita una Entidad.");
     }
@@ -31,40 +31,56 @@ export class NodoRelevante {
     this.#nivel = nivel;
     // La centralidad se calcula al final, cuando el subgrafo está completo.
     this.#centralidad = 0;
+    this.#resultado = null;
+    if (resultado instanceof ResultadoRelevanciaNodo) {
+      this.#resultado = resultado;
+    }
   }
 
-  /**
-   * @returns {Entidad}
-   */
   getEntidad() {
     return this.#entidad;
   }
 
-  /**
-   * @returns {number}
-   */
   getRelevancia() {
     return this.#relevancia;
   }
 
-  /**
-   * @returns {number}
-   */
   getNivel() {
     return this.#nivel;
   }
 
-  /**
-   * @returns {number} entre 0 y 1.
-   */
   getCentralidad() {
     return this.#centralidad;
   }
 
-  /**
-   * @param {number} valor - centralidad calculada por CalculadorCentralidad.
-   */
   setCentralidad(valor) {
     this.#centralidad = valor;
+  }
+
+  /**
+   * @returns {ResultadoRelevanciaNodo|null}
+   */
+  getResultado() {
+    return this.#resultado;
+  }
+
+  /**
+   * @returns {string} un valor de OrigenRelevancia (CENTRAL en el nivel 0 si no hay resultado).
+   */
+  getOrigen() {
+    if (this.#resultado !== null) {
+      return this.#resultado.getOrigen();
+    }
+    if (this.#nivel === 0) {
+      return OrigenRelevancia.CENTRAL;
+    }
+    return OrigenRelevancia.DECLARADA;
+  }
+
+  /**
+   * @returns {boolean} true si el nodo es deducido (capa 3).
+   */
+  esDeducido() {
+    return this.getOrigen() === OrigenRelevancia.DEDUCIDA;
   }
 }

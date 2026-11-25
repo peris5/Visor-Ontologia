@@ -2,8 +2,6 @@ import { ComponenteUI, crear } from './ComponenteUI.js';
 import { TipoEntidad } from '../modelo/TipoEntidad.js';
 
 /**
- * PanelBusqueda extends ComponenteUI
- *
  * El buscador: un campo de texto, un desplegable para elegir el tipo y una
  * lista de sugerencias que aparece mientras se escribe.
  *
@@ -18,11 +16,6 @@ import { TipoEntidad } from '../modelo/TipoEntidad.js';
  *        abierta), aria-controls (cuál es la lista) y aria-activedescendant
  *        (qué sugerencia está marcada, aunque el foco siga en el campo);
  *      · la lista tiene role="listbox" y cada sugerencia role="option".
- *
- * Requisitos: RF-01 (buscar por nombre), RF-02 (sugerencias), RF-03
- * (filtro por tipo), RF-06 (sin resultados), RF-07 (elegir una entidad del
- * resultado), RNF-03 (rapidez), RNF-13 (máximo 100 caracteres), RNF-25
- * (teclado y lectores de pantalla).
  */
 export class PanelBusqueda extends ComponenteUI {
   static MILISEGUNDOS_ESPERA = 150;
@@ -37,9 +30,6 @@ export class PanelBusqueda extends ComponenteUI {
   #sugerencias;
   #indiceActivo;
 
-  /**
-   * @param {ControladorExploracion} controlador
-   */
   constructor(controlador) {
     super(controlador, "div", "panel-busqueda");
     this._elemento.setAttribute("role", "search");
@@ -61,9 +51,7 @@ export class PanelBusqueda extends ComponenteUI {
     });
   }
 
-  /**
-   * Dibuja el campo, el desplegable de tipo y la lista (vacía y cerrada).
-   */
+  /** Dibuja el campo, el desplegable de tipo y la lista (vacía y cerrada). */
   renderizar() {
     this._elemento.textContent = "";
 
@@ -143,9 +131,7 @@ export class PanelBusqueda extends ComponenteUI {
     this.#abrirLista();
   }
 
-  /**
-   * Aviso de que no hay ninguna entidad con ese nombre (RF-06).
-   */
+  /** Aviso de que no hay ninguna entidad con ese nombre. */
   mostrarSinResultados() {
     this.#sugerencias = [];
     this.#lista.textContent = "";
@@ -159,7 +145,7 @@ export class PanelBusqueda extends ComponenteUI {
   }
 
   /**
-   * (Privado) Se ha escrito algo: se espera 150 ms sin teclear y se busca.
+   * Se ha escrito algo: se espera 150 ms sin teclear y se busca.
    * Cada letra nueva cancela la espera anterior (clearTimeout) y empieza
    * otra, así solo se busca cuando el usuario hace una pausa.
    */
@@ -173,9 +159,7 @@ export class PanelBusqueda extends ComponenteUI {
     }, PanelBusqueda.MILISEGUNDOS_ESPERA);
   }
 
-  /**
-   * (Privado) Busca sin esperar (y cancela la espera pendiente, si la hay).
-   */
+  /** Busca sin esperar (y cancela la espera pendiente, si la hay). */
   #buscarYa() {
     if (this.#temporizador !== null) {
       clearTimeout(this.#temporizador);
@@ -186,11 +170,7 @@ export class PanelBusqueda extends ComponenteUI {
     }
   }
 
-  /**
-   * (Privado) Teclas especiales del campo de búsqueda.
-   *
-   * @param {KeyboardEvent} evento
-   */
+  /** Teclas especiales del campo de búsqueda. */
   #onTeclado(evento) {
     if (evento.key === "ArrowDown") {
       evento.preventDefault();
@@ -207,7 +187,7 @@ export class PanelBusqueda extends ComponenteUI {
   }
 
   /**
-   * (Privado) Intro: elige la sugerencia marcada o, si no hay ninguna, la
+   * Intro: elige la sugerencia marcada o, si no hay ninguna, la
    * primera. Si todavía no había pasado la espera de 150 ms, primero se busca.
    */
   #elegirConIntro() {
@@ -224,11 +204,7 @@ export class PanelBusqueda extends ComponenteUI {
     this.#onSeleccionar(this.#sugerencias[posicion]);
   }
 
-  /**
-   * (Privado) Marca la sugerencia siguiente (paso = 1) o la anterior (paso = −1).
-   *
-   * @param {number} paso
-   */
+  /** Marca la sugerencia siguiente (paso = 1) o la anterior (paso = −1). */
   #mover(paso) {
     if (this.#sugerencias.length === 0) {
       return;
@@ -247,11 +223,9 @@ export class PanelBusqueda extends ComponenteUI {
   }
 
   /**
-   * (Privado) Marca visualmente una sugerencia y se lo dice a los lectores
+   * Marca visualmente una sugerencia y se lo dice a los lectores
    * de pantalla con aria-activedescendant y aria-selected. El foco sigue en
    * el campo de texto, para poder seguir escribiendo.
-   *
-   * @param {number} indice
    */
   #marcar(indice) {
     const opciones = this.#lista.querySelectorAll("[role=option]");
@@ -270,7 +244,7 @@ export class PanelBusqueda extends ComponenteUI {
   }
 
   /**
-   * (Privado) Se ha elegido una entidad: se pone su nombre en el campo, se
+   * Se ha elegido una entidad: se pone su nombre en el campo, se
    * cierra la lista y se avisa al controlador.
    *
    * @param {Object} entrada - { id, nombre, tipo }
@@ -284,11 +258,9 @@ export class PanelBusqueda extends ComponenteUI {
   }
 
   /**
-   * (Privado) Una sugerencia: símbolo del tipo, nombre y tipo en texto.
+   * Una sugerencia: símbolo del tipo, nombre y tipo en texto.
    *
    * @param {Object} entrada - { id, nombre, tipo }
-   * @param {number} indice
-   * @returns {HTMLElement}
    */
   #crearSugerencia(entrada, indice) {
     const opcion = crear("li", {
@@ -310,17 +282,13 @@ export class PanelBusqueda extends ComponenteUI {
     return opcion;
   }
 
-  /**
-   * (Privado) Abre la lista de sugerencias.
-   */
+  /** Abre la lista de sugerencias. */
   #abrirLista() {
     this.#lista.hidden = false;
     this.#campoTexto.setAttribute("aria-expanded", "true");
   }
 
-  /**
-   * (Privado) Cierra la lista de sugerencias.
-   */
+  /** Cierra la lista de sugerencias. */
   #ocultarLista() {
     if (this.#lista === null) {
       return;

@@ -1,0 +1,42 @@
+@startuml clases_vista3d
+' Paquete vista3d (cliente).
+!include estilo.iuml
+
+class EscenaGrafo {
+  + mostrarSubgrafo(subgrafo)
+  + aplicarFiltro(filtro)
+  + setModoDisposicion(modo)
+  - animar()
+}
+class SimulacionFuerzas {
+  + iniciar(subgrafo)
+  + paso()
+}
+class CalculadorDisposicion
+class SelectorInteraccion {
+  + onClic(evento)
+}
+class FabricaNodosVisuales {
+  + crear(nodo)
+}
+abstract class NodoVisual {
+  + resaltar(activo)
+  # {abstract} _crearGeometria()
+  # {abstract} _getColor()
+}
+class NodoPersona
+class NodoOrganizacion
+class NodoObra
+class EnlaceVisual
+
+EscenaGrafo *-- SimulacionFuerzas
+EscenaGrafo *-- CalculadorDisposicion
+EscenaGrafo *-- SelectorInteraccion
+EscenaGrafo *-- FabricaNodosVisuales
+EscenaGrafo *-- "*" NodoVisual
+EscenaGrafo *-- "*" EnlaceVisual
+FabricaNodosVisuales ..> NodoVisual : crea
+NodoVisual <|-- NodoPersona
+NodoVisual <|-- NodoOrganizacion
+NodoVisual <|-- NodoObra
+@enduml

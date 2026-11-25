@@ -1,23 +1,24 @@
 import * as THREE from 'three';
 
 /**
- * EnlaceVisual
- *
  * La línea 3D de una Relacion entre dos NodoVisual.
- *  - Su color es el del tipo de relación (RF-20).
+ *  - Su color es el del tipo de relación.
  *  - Su opacidad depende de la relevancia: las relaciones más relevantes se
- *    ven más intensas (RF-21).
+ *    ven más intensas.
  *  - Si entre dos entidades hay varias relaciones, cada una se dibuja como
- *    una curva separada de las demás, para que se vean todas (RF-38).
+ *    una curva separada de las demás, para que se vean todas.
+ *  - Las aristas COINCIDENCIAS, y las de cualquier pareja SIN relación
+ *    declarada (solo coinciden en eventos), se dibujan con línea
+ *    DISCONTINUA (LineDashedMaterial). Así no depende solo del color (RNF-26).
  *
  * La línea siempre tiene 17 puntos (16 segmentos). Con una sola relación los
  * puntos quedan en línea recta; con varias, forman una curva de Bézier.
- *
- * Requisitos: RF-20, RF-21, RF-38.
  */
 export class EnlaceVisual {
   static NUMERO_DE_PUNTOS = 17;
   static SEPARACION_ENTRE_CURVAS = 1.6;
+  static LONGITUD_TRAZO = 0.8;
+  static LONGITUD_HUECO = 0.6;
 
   #relacion;
   #origen;
@@ -25,16 +26,16 @@ export class EnlaceVisual {
   #linea;
   #desplazamiento;
   #opacidadBase;
+  #discontinua;
 
   /**
-   * @param {Relacion} relacion
-   * @param {NodoVisual} origen
-   * @param {NodoVisual} destino
    * @param {number} indice - posición de esta relación entre las del mismo par (0, 1, 2...).
    * @param {number} total - número de relaciones entre esas dos entidades.
+   * @param {boolean} discontinua - opcional: true para dibujarla discontinua.
    */
-  constructor(relacion, origen, destino, indice, total) {
+  constructor(relacion, origen, destino, indice, total, discontinua) {
     this.#relacion = relacion;
+    this.#discontinua = discontinua === true;
     this.#origen = origen;
     this.#destino = destino;
 
@@ -46,43 +47,49 @@ export class EnlaceVisual {
     const geometria = new THREE.BufferGeometry();
     const coordenadas = new Float32Array(EnlaceVisual.NUMERO_DE_PUNTOS * 3);
     geometria.setAttribute("position", new THREE.BufferAttribute(coordenadas, 3));
-    const material = new THREE.LineBasicMaterial({
-      color: relacion.getTipo().getColor(),
-      transparent: true,
-      opacity: this.#opacidadBase
-    });
+    let material = null;
+    if (this.#discontinua) {
+      material = new THREE.LineDashedMaterial({
+        color: relacion.getTipo().getColor(),
+        transparent: true,
+        opacity: this.#opacidadBase,
+        dashSize: EnlaceVisual.LONGITUD_TRAZO,
+        gapSize: EnlaceVisual.LONGITUD_HUECO
+      });
+    } else {
+      material = new THREE.LineBasicMaterial({
+        color: relacion.getTipo().getColor(),
+        transparent: true,
+        opacity: this.#opacidadBase
+      });
+    }
     this.#linea = new THREE.Line(geometria, material);
     // Así, al hacer clic en la línea (SelectorInteraccion), se llega a su relación.
     this.#linea.userData.visual = this;
     this.actualizar();
   }
 
-  /**
-   * @returns {Relacion}
-   */
   getRelacion() {
     return this.#relacion;
   }
 
-  /**
-   * @returns {THREE.Line}
-   */
   getLinea() {
     return this.#linea;
   }
 
-  /**
-   * @returns {NodoVisual}
-   */
   getOrigen() {
     return this.#origen;
   }
 
-  /**
-   * @returns {NodoVisual}
-   */
   getDestino() {
     return this.#destino;
+  }
+
+  /**
+   * @returns {boolean} true si se dibuja con línea discontinua.
+   */
+  esDiscontinua() {
+    return this.#discontinua;
   }
 
   /**
@@ -115,14 +122,16 @@ export class EnlaceVisual {
       atributo.setXYZ(i, x, y, z);
     }
     atributo.needsUpdate = true;
+    // La línea discontinua necesita saber la distancia recorrida en cada
+    // punto de la curva para colocar los trazos; cambia al moverse los nodos.
+    if (this.#discontinua) {
+      this.#linea.computeLineDistances();
+    }
     // Three.js usa la esfera envolvente para decidir si la línea está en
     // pantalla; si no se recalcula, la línea podría desaparecer al moverse.
     this.#linea.geometry.computeBoundingSphere();
   }
 
-  /**
-   * @param {boolean} visible
-   */
   setVisible(visible) {
     this.#linea.visible = visible;
   }
@@ -138,27 +147,22 @@ export class EnlaceVisual {
     }
   }
 
-  /**
-   * Libera la geometría y el material (memoria de la tarjeta gráfica).
-   */
+  /** Libera la geometría y el material (memoria de la tarjeta gráfica). */
   liberar() {
     this.#linea.geometry.dispose();
     this.#linea.material.dispose();
   }
 
   /**
-   * (Privado) Opacidad = 0,25 + 0,75 · relevancia: incluso las relaciones
+   * Opacidad = 0,25 + 0,75 · relevancia: incluso las relaciones
    * poco relevantes se ven un poco, y las de relevancia 1 son opacas.
-   *
-   * @param {number} relevancia
-   * @returns {number}
    */
   #calcularOpacidad(relevancia) {
     return 0.25 + 0.75 * relevancia;
   }
 
   /**
-   * (Privado) Dirección perpendicular a la línea, de longitud 1:
+   * Dirección perpendicular a la línea, de longitud 1:
    * producto vectorial de la dirección de la línea con (0, 1, 0), o con
    * (1, 0, 0) si la línea es vertical (entonces el primero da 0).
    *
@@ -166,8 +170,6 @@ export class EnlaceVisual {
    * id mayor (como en getClavePar), no de origen a destino. Si no, una
    * relación A→B y otra B→A tendrían perpendiculares opuestas y sus curvas
    * podrían caer una encima de otra.
-   *
-   * @returns {THREE.Vector3}
    */
   #direccionPerpendicular() {
     let primero = this.#origen;

@@ -1,4 +1,4 @@
-"""«enumeration» TipoEntidad (traducción de src/modelo/TipoEntidad.js)."""
+"""TipoEntidad: los tres tipos de entidad."""
 from enum import Enum
 
 
@@ -7,8 +7,6 @@ class TipoEntidad(Enum):
 
     Una enumeración de Python (Enum) no se puede ampliar ni cambiar por error,
     que es lo que esperamos de una enumeración.
-
-    Requisitos: modelo de dominio usado en RF-08 a RF-12.
     """
 
     PERSONA = "PERSONA"

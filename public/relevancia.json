@@ -1,0 +1,48 @@
+{
+  "perfil": "artistico",
+  "estrategiaNodos": "tresCapas",
+  "pesosRelevancia": {
+    "Creation": 1.00, "Mentorship": 0.95, "coworking": 0.85, "Fund": 0.85,
+    "Exposition": 0.70, "Employement": 0.65, "Professional": 0.60, "Work": 0.60,
+    "Friendship": 0.50, "Marriage": 0.50, "Related": 0.45, "Filiation": 0.45,
+    "Wedding": 0.20, "Event": 0.30
+  },
+  "pesoPorDefecto": 0.40,
+  "pesosPorRol": { "Mentorship.maestro": 0.95, "Mentorship.aprendiz": 0.60 },
+  "rolesEquivalentes": {
+    "maestro": ["maestro", "maestra", "mestre", "mestra", "teacher", "master"],
+    "aprendiz": ["aprendiz", "alumno", "alumna", "discípulo", "discípula", "deixeble", "student", "apprentice"]
+  },
+  "betaParticipantes": 1,
+  "factorTiempoMinimo": 0.5,
+  "tauTiempoAnios": 25,
+  "factorTiempoSinFecha": 0.9,
+  "tiposSinTiempo": ["Creation", "Mentorship", "Related"],
+  "tablaTransferencia": {
+    "Mentorship:maestro>Creation": 0.8, "Mentorship:aprendiz>Creation": 0.5,
+    "Mentorship:maestro>Mentorship": 0.6, "Mentorship:aprendiz>Mentorship": 0.3,
+    "Mentorship>Creation": 0.8, "Mentorship>Mentorship": 0.6,
+    "Creation>Exposition": 0.8, "coworking>Creation": 0.6, "Marriage>Creation": 0.5,
+    "Employement>Employement": 0.5, "Exposition>Creation": 0.4, "Friendship>Friendship": 0.4,
+    "Exposition>Exposition": 0.3, "Friendship>Marriage": 0.3, "Friendship>Creation": 0.2
+  },
+  "transferenciaPorDefecto": 0.3,
+  "factorEntidad": { "Creator": 1.0, "HeritageItem": 1.0, "Organization": 0.8, "Person": 0.6 },
+  "tiposCoincidencia": ["Exposition", "Work", "Wedding", "Event"],
+  "probabilidadCoincidencia": 0.4,
+  "rho": 0.5,
+  "cierreTriadico": 0.3,
+  "delta": 0.7,
+  "gradoReferencia": 10,
+  "paresTemporales": {
+    "Mentorship>Creation": "antesODurante", "Mentorship>Mentorship": "solapa",
+    "Employement>Employement": "solapa", "Friendship>Marriage": "solapa"
+  },
+  "margenAnios": 5,
+  "factorFueraDeTiempo": 0.3,
+  "transferenciaSinFecha": 1.0,
+  "umbralDirecto": 0.05,
+  "maxDirectos": 1000,
+  "mostrarDeducidosPorDefecto": true,
+  "opacidadMinima": 0.25
+}

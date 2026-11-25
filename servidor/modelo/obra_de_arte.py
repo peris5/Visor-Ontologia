@@ -1,4 +1,4 @@
-"""ObraDeArte extends Entidad (traducción de src/modelo/ObraDeArte.js)."""
+"""ObraDeArte (la misma clase que src/modelo/ObraDeArte.js)."""
 from typing import Any
 
 from servidor.modelo.entidad import Entidad
@@ -6,10 +6,7 @@ from servidor.modelo.tipo_entidad import TipoEntidad
 
 
 class ObraDeArte(Entidad):
-    """Una obra de arte del grafo (pintura, escultura, edificio...).
-
-    Requisitos: modelo de dominio usado en RF-08 a RF-12.
-    """
+    """Una obra de arte del grafo (pintura, escultura, edificio...)."""
 
     def __init__(self, datos: dict[str, Any]) -> None:
         """datos: los de Entidad más fechaCreacion y tecnica (opcionales)."""

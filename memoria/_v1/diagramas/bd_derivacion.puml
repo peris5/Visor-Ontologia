@@ -1,0 +1,74 @@
+@startuml bd_derivacion
+' Antes / después de la regla de relaciones derivadas (ProyectorRelaciones).
+' Arriba: el grafo tal como está en REFRACTS. Abajo: lo que recibe el visor.
+!include estilo.iuml
+skinparam object {
+  BackgroundColor #FFFFFF
+  BorderColor #333333
+}
+left to right direction
+
+package "Grafo REFRACTS (Neo4j)" as Antes {
+  object "ana : Person" as ana {
+    name = "Ana"
+  }
+  object "luis : Person" as luis {
+    name = "Luis"
+  }
+  object "m1 : Relationship:Related:Marriage" as m1 {
+    relevance = 0.95
+    relevanceSource = "auto"
+    relevanceVersion = 1
+  }
+  object "c1 : Event:Creation:Paint" as c1 {
+    relevance = 0.90
+    relevanceSource = "auto"
+    relevanceVersion = 1
+  }
+  object "retrato : HeritageItem" as retrato {
+    name_es = "Retrato de Luis"
+  }
+  object "p1 : Period" as p1 {
+    from = 1902
+    to = 1930
+  }
+
+  ana --> m1 : HAS_ROLE_IN\nrole = "esposa"
+  luis --> m1 : HAS_ROLE_IN\nrole = "esposo"
+  m1 --> p1 : OCURRED_DURING
+  ana --> c1 : PARTICIPATES_IN\nrole = "autora"
+  c1 --> retrato : PRODUCED
+}
+
+package "Grafo derivado (visor)" as Despues {
+  object "r1 : Relacion" as r1 {
+    id = "m1|ana|luis"
+    idIntermedio = "m1"
+    tipo = Marriage
+    valor = 0.95
+    roles = {ana: esposa, luis: esposo}
+    periodo = 1902–1930
+  }
+  object "r2 : Relacion" as r2 {
+    id = "c1|ana|retrato"
+    idIntermedio = "c1"
+    tipo = Paint
+    valor = 0.90
+    roles = {ana: autora}
+  }
+  object "Ana : Persona" as ana2
+  object "Luis : Persona" as luis2
+  object "Retrato de Luis : ObraDeArte" as retrato2
+
+  ana2 -- r1
+  r1 -- luis2
+  ana2 -- r2
+  r2 -- retrato2
+}
+
+note bottom of Despues
+  Una relación por cada pareja de entidades unidas por un
+  intermediario. Tipo = etiqueta más específica del intermediario.
+  valor = su propiedad relevance (asignada y guardada por el servidor).
+end note
+@enduml

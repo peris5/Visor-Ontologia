@@ -1,9 +1,7 @@
 /**
- * «abstract» Entidad
- *
  * Cualquier elemento del grafo de patrimonio que se dibuja como un nodo: una
- * persona, una organización o una obra. Desde el incremento 3b se crea a
- * partir de las propiedades EN BRUTO de un nodo de Neo4j:
+ * persona, una organización o una obra. Se crea a partir de las
+ * propiedades EN BRUTO de un nodo de Neo4j:
  *
  *  - nombres: un Map idioma → texto, sacado de name_es, name_ca y name_en
  *    (las personas los tienen distintos: ver Persona). getNombre() da el del
@@ -16,9 +14,6 @@
  *
  * Es abstracta: no se puede hacer new Entidad(...). Solo se crean
  * Persona, Organizacion u ObraDeArte (normalmente con FabricaEntidades).
- *
- * Requisitos: modelo de dominio de RF-08 a RF-12; RF-28 (información del
- * nodo); RNF-10 y RF-34 (nombres en varios idiomas).
  */
 export class Entidad {
   static NOMBRE_VACIO = "(sin nombre)";
@@ -30,13 +25,15 @@ export class Entidad {
   #idioma;
   #subtipos;
   #atributos;
+  #etiquetaPrincipal;
 
   /**
    * @param {Object} datos - {
    *     id: texto (obligatorio),
    *     propiedades: objeto con las propiedades del nodo de Neo4j,
    *     subtipos: lista de etiquetas (opcional),
-   *     idioma: "es", "ca" o "en" (opcional; "es" si no se indica)
+   *     idioma: "es", "ca" o "en" (opcional; "es" si no se indica),
+   *     etiquetaPrincipal: la etiqueta de Neo4j de su tipo, p. ej. "Person" (opcional)
    *   }
    */
   constructor(datos) {
@@ -66,8 +63,30 @@ export class Entidad {
         this.#subtipos.push(datos.subtipos[i]);
       }
     }
+    this.#etiquetaPrincipal = "";
+    if (typeof datos.etiquetaPrincipal === "string") {
+      this.#etiquetaPrincipal = datos.etiquetaPrincipal;
+    }
     this.#nombres = Entidad.#leerNombres(propiedades);
     this.#atributos = this.#leerDesconocidas(propiedades);
+  }
+
+  /**
+   * Todas las etiquetas de Neo4j de la entidad: la principal (si se conoce)
+   * y los subtipos. Las usa TablaTransferencia para el factor de cada tipo
+   * de entidad (Painter → Creator → 1,0).
+   *
+   * @returns {string[]} copia.
+   */
+  getEtiquetas() {
+    const etiquetas = [];
+    if (this.#etiquetaPrincipal !== "") {
+      etiquetas.push(this.#etiquetaPrincipal);
+    }
+    for (let i = 0; i < this.#subtipos.length; i++) {
+      etiquetas.push(this.#subtipos[i]);
+    }
+    return etiquetas;
   }
 
   /**
@@ -80,8 +99,6 @@ export class Entidad {
   /**
    * Nombre para mostrar: en el idioma configurado o, si no lo tiene, en el
    * primero que haya (es → ca → en). Persona lo cambia por «nombre apellidos».
-   *
-   * @returns {string}
    */
   getNombre() {
     if (this.#nombres.has(this.#idioma)) {
@@ -106,8 +123,6 @@ export class Entidad {
   /**
    * Todos los nombres de la entidad, sin repetir, para el buscador: así
    * «Museu» y «Museo» encuentran la misma organización.
-   *
-   * @returns {string[]}
    */
   getTodosLosNombres() {
     const todos = [];
@@ -151,7 +166,6 @@ export class Entidad {
   /**
    * Método abstracto: cada subclase devuelve su tipo.
    *
-   * @abstract
    * @returns {string} un valor de TipoEntidad.
    */
   getTipo() {
@@ -162,10 +176,6 @@ export class Entidad {
    * El nombre de un nodo cualquiera de Neo4j (un lugar, un evento...) a
    * partir de sus propiedades: name_<idioma>, después es → ca → en, y si no,
    * "name". "" si no tiene ninguno.
-   *
-   * @param {Object} propiedades
-   * @param {string} idioma
-   * @returns {string}
    */
   static nombreEnIdioma(propiedades, idioma) {
     if (propiedades === undefined || propiedades === null) {
@@ -186,10 +196,8 @@ export class Entidad {
   }
 
   /**
-   * (Protegido) Las propiedades que la subclase conoce y usa (las demás van
+   * Las propiedades que la subclase conoce y usa (las demás van
    * a los atributos). Las subclases la amplían.
-   *
-   * @returns {string[]}
    */
   _propiedadesConocidas() {
     const conocidas = [];
@@ -200,7 +208,7 @@ export class Entidad {
   }
 
   /**
-   * (Protegido) Añade un atributo al Map solo si tiene contenido,
+   * Añade un atributo al Map solo si tiene contenido,
    * para no llenar la ficha de campos vacíos.
    *
    * @param {Map<string, *>} atributos - Map al que se añade.
@@ -214,11 +222,10 @@ export class Entidad {
   }
 
   /**
-   * (Protegido) Devuelve el valor si es un texto; si no, un texto vacío.
+   * Devuelve el valor si es un texto; si no, un texto vacío.
    * Así los campos que no vienen en los datos quedan como "" y no como undefined.
    *
    * @param {*} valor - valor leído de los datos.
-   * @returns {string}
    */
   static _textoOVacio(valor) {
     if (typeof valor === "string") {
@@ -227,24 +234,14 @@ export class Entidad {
     return "";
   }
 
-  /**
-   * (Protegido) Añade el texto a la lista si no está vacío ni repetido.
-   *
-   * @param {string[]} lista
-   * @param {string} texto
-   */
+  /** Añade el texto a la lista si no está vacío ni repetido. */
   static _anadirSinRepetir(lista, texto) {
     if (texto !== "" && texto !== Entidad.NOMBRE_VACIO && !lista.includes(texto)) {
       lista.push(texto);
     }
   }
 
-  /**
-   * (Privado) Nombres name_es, name_ca y name_en que tengan contenido.
-   *
-   * @param {Object} propiedades
-   * @returns {Map<string, string>}
-   */
+  /** Nombres name_es, name_ca y name_en que tengan contenido. */
   static #leerNombres(propiedades) {
     const nombres = new Map();
     for (let i = 0; i < Entidad.ORDEN_IDIOMAS.length; i++) {
@@ -258,12 +255,9 @@ export class Entidad {
   }
 
   /**
-   * (Privado) Las propiedades que la clase no conoce, con contenido.
+   * Las propiedades que la clase no conoce, con contenido.
    * _propiedadesConocidas es de la subclase: se puede llamar desde aquí
    * porque no usa ningún campo privado de la subclase (aún no existen).
-   *
-   * @param {Object} propiedades
-   * @returns {Map<string, *>}
    */
   #leerDesconocidas(propiedades) {
     const conocidas = this._propiedadesConocidas();

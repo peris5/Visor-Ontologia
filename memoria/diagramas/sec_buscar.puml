@@ -1,0 +1,23 @@
+@startuml sec_buscar
+' Operación: buscar una entidad.
+!include estilo.iuml
+actor Usuario
+participant ":PanelBusqueda" as PB
+participant ":Controlador\nExploracion" as CTRL
+participant ":Buscador" as BUS
+
+Usuario -> PB : escribe
+PB -> PB : espera 150 ms
+PB -> CTRL : buscar(texto, tipo)
+activate CTRL
+CTRL -> BUS : sugerir(texto, tipo)
+activate BUS
+loop cada nombre del índice
+  BUS -> BUS : ~#coincide(texto, nombre)
+end
+BUS --> CTRL : hasta 8 sugerencias
+deactivate BUS
+CTRL -> PB : mostrarSugerencias(lista)
+note right : a través de InterfazUsuario
+deactivate CTRL
+@enduml

@@ -1,6 +1,4 @@
 /**
- * DetectorComunidades
- *
  * Encuentra los GRUPOS de entidades muy relacionadas entre sí dentro de un
  * subgrafo (por ejemplo, un taller: el maestro, sus alumnos y sus obras), con
  * el algoritmo de PROPAGACIÓN DE ETIQUETAS:
@@ -22,14 +20,11 @@
  *    id) y, si dos etiquetas empatan, gana la que ya tenía el nodo o, si no,
  *    la menor. Así la misma entidad da siempre los mismos grupos.
  *  - Los grupos se numeran de mayor a menor tamaño (el 0 es el más grande).
- *
- * Requisitos: RF-40 (cúmulos de entidades muy relacionadas).
  */
 export class DetectorComunidades {
   static MAX_VUELTAS = 20;
 
   /**
-   * @param {Subgrafo} subgrafo
    * @returns {Map<string, number>} id de la entidad → número de grupo (la
    *   central no está). Un nodo sin vecinos (salvo la central) queda solo
    *   en su grupo.
@@ -68,13 +63,9 @@ export class DetectorComunidades {
   }
 
   /**
-   * (Privado) Para cada nodo (menos la central), sus vecinos con el peso de
+   * Para cada nodo (menos la central), sus vecinos con el peso de
    * la relación: la suma de las relevancias si hay varias relaciones entre
    * los dos.
-   *
-   * @param {Subgrafo} subgrafo
-   * @param {string} idCentral
-   * @returns {Map<string, Map<string, number>>}
    */
   #pesosEntreVecinos(subgrafo, idCentral) {
     const vecinos = new Map();
@@ -99,14 +90,11 @@ export class DetectorComunidades {
   }
 
   /**
-   * (Privado) La etiqueta que más pesa entre los vecinos del nodo. Si no
+   * La etiqueta que más pesa entre los vecinos del nodo. Si no
    * tiene vecinos, se queda con la suya. Si hay empate, gana la que ya tenía
    * o, si no está entre las empatadas, la menor (orden alfabético).
    *
-   * @param {string} id
    * @param {Map<string, number>} vecinosDelNodo - id del vecino → peso.
-   * @param {Map<string, string>} etiquetas
-   * @returns {string}
    */
   #etiquetaMasPesada(id, vecinosDelNodo, etiquetas) {
     const pesoPorEtiqueta = new Map();
@@ -137,12 +125,10 @@ export class DetectorComunidades {
   }
 
   /**
-   * (Privado) Convierte las etiquetas en números de grupo, del grupo más
+   * Convierte las etiquetas en números de grupo, del grupo más
    * grande (0) al más pequeño; a igual tamaño, por etiqueta.
    *
    * @param {string[]} orden - ids de los nodos.
-   * @param {Map<string, string>} etiquetas
-   * @returns {Map<string, number>}
    */
   #numerarGrupos(orden, etiquetas) {
     const miembrosPorEtiqueta = new Map();
@@ -170,12 +156,11 @@ export class DetectorComunidades {
   }
 
   /**
-   * (Privado) Para ordenar los grupos: primero los más grandes; a igual
+   * Para ordenar los grupos: primero los más grandes; a igual
    * tamaño, por etiqueta.
    *
    * @param {Object} a - { etiqueta, miembros }
    * @param {Object} b - { etiqueta, miembros }
-   * @returns {number}
    */
   static #compararGrupos(a, b) {
     if (a.miembros.length !== b.miembros.length) {
@@ -190,13 +175,7 @@ export class DetectorComunidades {
     return 0;
   }
 
-  /**
-   * (Privado) Suma el peso a la clave (empieza en 0 si no existía).
-   *
-   * @param {Map<string, number>} mapa
-   * @param {string} clave
-   * @param {number} peso
-   */
+  /** Suma el peso a la clave (empieza en 0 si no existía). */
   static #sumarPeso(mapa, clave, peso) {
     let actual = 0;
     if (mapa.has(clave)) {

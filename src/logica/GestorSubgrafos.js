@@ -1,200 +1,169 @@
 import { RepositorioVecindario } from '../datos/RepositorioVecindario.js';
 import { ConstructorSubgrafo } from './ConstructorSubgrafo.js';
-import { AjustadorUmbral } from './AjustadorUmbral.js';
 
 /**
- * GestorSubgrafos
+ * Une las piezas para obtener un subgrafo y evita peticiones innecesarias.
+ * Para cada entidad central, obtenerSubgrafo:
  *
- * Une las piezas para obtener un subgrafo y evita peticiones innecesarias:
- *   1. Pide al servidor (ClienteServicio) el vecindario de la entidad.
- *   2. Lo mete en un RepositorioVecindario (en memoria).
- *   3. Construye el subgrafo con ConstructorSubgrafo, exactamente igual que
- *      en el incremento 1.
+ *   1. Pide las relaciones de la entidad central (si la caché no las tiene ya).
+ *   2. Calcula la evidencia con cada vecino y elige los nodos DIRECTOS
+ *      (evidencia ≥ umbralDirecto). Si hay más de maxDirectos, se queda con
+ *      los de más evidencia y avisa en la consola.
+ *   3. Pide EN UNA SOLA TANDA (ClienteServicio la parte en trozos de 200 ids)
+ *      las relaciones de los directos que la caché aún no tiene completas.
+ *   4. Calcula las relevancias con la estrategia de nodos y construye el
+ *      subgrafo (ConstructorSubgrafo).
  *
- * Reutilización: si se pide la MISMA entidad con un umbral IGUAL O MAYOR
- * que el del vecindario guardado, no se pide nada al servidor. ¿Por qué se
- * puede? Con un umbral mayor, todo nodo que lo supere supera también el
- * umbral anterior, y (como se explica en el servidor, en
- * RepositorioDatos.obtener_vecindario) las relaciones de su camino también.
- * Así que el vecindario guardado ya contiene todo lo necesario. Con un
- * umbral MENOR podrían faltar relaciones (las que están entre los dos
- * umbrales), así que hay que pedir otro.
+ * ¿Por qué el resultado es EXACTO con solo esas dos tandas? La relevancia en
+ * tres capas solo mira, como mucho, a dos saltos de la central:
+ *  - la evidencia de la central con cada vecino (capa 0) sale de las
+ *    relaciones de la central (tanda 1);
+ *  - el refuerzo (capas 1 y 2) solo mira las relaciones entre directos:
+ *    salen de las relaciones de los directos (tanda 2);
+ *  - la deducción (capa 3) solo llega a los vecinos de los directos, y la
+ *    evidencia de cada directo con sus vecinos también está en la tanda 2.
+ *  - el grado de cada directo (la penalización h de los intermediarios muy
+ *    conectados) es EXACTO: tras la tanda 2 se tienen TODAS sus relaciones.
+ * Nada más influye en el cálculo, así que tener más relaciones no cambiaría
+ * ningún número. (Antes, con el producto del mejor camino, hacía falta
+ * buscar por rondas sin saber hasta dónde llegar.)
  *
- * Por eso subir el umbral muchas veces no le cuesta nada al servidor.
+ * Consecuencias:
+ *  - cambiar el umbral (subirlo o bajarlo) no pide nada: el cálculo no
+ *    depende del umbral, solo qué nodos se muestran;
+ *  - volver a una entidad ya visitada no pide nada: está en la caché;
+ *  - mostrar u ocultar los deducidos no pide nada;
+ *  - cada entidad nueva necesita como mucho 2 tandas.
  *
  * Al abrir una entidad, obtenerSubgrafoAjustado elige además el umbral
  * para que salgan más o menos los mismos nodos (AjustadorUmbral).
  *
- * Desde el incremento 3b también guarda las estadísticas de asignación de
- * relevancias del último vecindario (cuántas asignó el servidor y cuántas
- * reutilizó) y da el detalle de una entidad (guardándolo para no pedirlo dos
- * veces).
- *
- * Requisitos: RF-08 a RF-13 (el subgrafo se calcula en el cliente), RNF-05
- * (el servidor trabaja lo mínimo).
+ * También da el detalle de una entidad (guardándolo para no pedirlo dos veces).
  */
 export class GestorSubgrafos {
   #cliente;
-  #estrategia;
+  #estrategiaNodos;
+  #calculador;
   #maxNodos;
-  #vecindarioGuardado;
-  #idGuardado;
-  #umbralGuardado;
-  #milisegundosUltimoCalculo;
-  #bytesVecindario;
+  #cache;
   #contexto;
-  #estadisticas;
+  #mostrarDeducidos;
   #detalles;
+  #estadisticas;
+  #milisegundosUltimoCalculo;
+  #bytesRecibidos;
 
   /**
    * @param {ClienteServicio} cliente - quien pide los datos al servidor
    *   (en las pruebas, un doble que cuenta las peticiones).
-   * @param {EstrategiaRelevancia} estrategia
+   * @param {EstrategiaRelevanciaNodos} estrategiaNodos
+   * @param {CalculadorEvidencia} calculador - elige los nodos directos.
    * @param {number} maxNodos - máximo de nodos del subgrafo (de /api/configuracion).
    * @param {Object} contexto - { idioma, nombresTipos, etiquetasEntidad, tipos }
-   *   para interpretar los vecindarios (ver RepositorioVecindario).
+   *   para interpretar las relaciones (ver RepositorioVecindario).
+   * @param {boolean} mostrarDeducidos - opcional; true si no se indica.
    */
-  constructor(cliente, estrategia, maxNodos, contexto) {
+  constructor(cliente, estrategiaNodos, calculador, maxNodos, contexto, mostrarDeducidos) {
     this.#cliente = cliente;
-    this.#estrategia = estrategia;
+    this.#estrategiaNodos = estrategiaNodos;
+    this.#calculador = calculador;
     this.#maxNodos = maxNodos;
-    this.#vecindarioGuardado = null;
-    this.#idGuardado = null;
-    this.#umbralGuardado = null;
-    this.#milisegundosUltimoCalculo = 0;
-    this.#bytesVecindario = 0;
     this.#contexto = contexto;
-    this.#estadisticas = { asignadas: 0, reutilizadas: 0 };
+    this.#cache = new RepositorioVecindario(null, contexto);
+    this.#mostrarDeducidos = mostrarDeducidos !== false;
     this.#detalles = new Map();
+    this.#estadisticas = { tandas: 0, directos: 0, deducidos: 0 };
+    this.#milisegundosUltimoCalculo = 0;
+    this.#bytesRecibidos = 0;
   }
 
   /**
-   * El subgrafo de una entidad con un umbral. Pide un vecindario nuevo solo
-   * si hace falta (ver necesitaPedir).
+   * El subgrafo de una entidad con un umbral (ver los pasos en la
+   * explicación de la clase).
    *
-   * @param {string} idEntidad
    * @param {number} umbral - entre 0 y 1.
-   * @returns {Promise<Subgrafo>}
    */
   async obtenerSubgrafo(idEntidad, umbral) {
-    let vecindario = this.#vecindarioGuardado;
-    if (this.#necesitaPedir(idEntidad, umbral)) {
-      vecindario = await this.#cliente.obtenerVecindario(idEntidad, umbral);
-      this.#guardar(idEntidad, umbral, vecindario);
-    }
-
-    // Se mide solo el cálculo, sin la red (para las pruebas de rendimiento).
-    // Se usa la variable local "vecindario" y no la guardada porque, mientras
-    // se esperaba al servidor, otra petición podría haber guardado otra.
-    const inicio = performance.now();
-    const repositorio = new RepositorioVecindario(vecindario, this.#contexto);
-    const constructor = new ConstructorSubgrafo(repositorio, this.#estrategia, umbral, this.#maxNodos);
-    const subgrafo = await constructor.construir(idEntidad);
-    this.#milisegundosUltimoCalculo = performance.now() - inicio;
-    return subgrafo;
+    const tandas = await this.#cargar(idEntidad);
+    return this.#construir(idEntidad, umbral, tandas);
   }
 
   /**
    * El subgrafo de una entidad con el umbral que da más o menos los nodos
    * que quiere el ajustador (ver AjustadorUmbral). El umbral elegido se lee
-   * con subgrafo.getUmbral().
-   *
-   * Primero pide el vecindario con umbralDePartida (el de la configuración).
-   * Si con TODO ese vecindario no se llega al objetivo (una entidad poco
-   * conectada), pide otro con el umbral mínimo del deslizador y vuelve a
-   * elegir. Así las entidades muy conectadas no traen un vecindario enorme
-   * que no se va a usar.
-   *
-   * @param {string} idEntidad
-   * @param {AjustadorUmbral} ajustador
-   * @param {number} umbralDePartida - entre 0 y 1.
-   * @returns {Promise<Subgrafo>}
+   * con subgrafo.getUmbral(). Como el cálculo no depende del umbral, con las
+   * mismas dos tandas se conocen las relevancias de TODOS los nodos.
    */
-  async obtenerSubgrafoAjustado(idEntidad, ajustador, umbralDePartida) {
-    let eleccion = await this.#elegirUmbral(idEntidad, ajustador, umbralDePartida);
-    const faltanNodos = eleccion.nodosDelVecindario < ajustador.getNodosObjetivo();
-    if (faltanNodos && eleccion.umbralDelVecindario > AjustadorUmbral.MINIMO) {
-      eleccion = await this.#elegirUmbral(idEntidad, ajustador, AjustadorUmbral.MINIMO);
+  async obtenerSubgrafoAjustado(idEntidad, ajustador) {
+    const tandas = await this.#cargar(idEntidad);
+    const completo = new ConstructorSubgrafo(this.#cache, this.#estrategiaNodos, this.#calculador, 0, this.#maxNodos,
+      this.#mostrarDeducidos);
+    await completo.construir(idEntidad);
+    const relevancias = [];
+    for (const [id, resultado] of completo.getResultados()) {
+      const seMuestra = this.#mostrarDeducidos || !resultado.esDeducido();
+      if (id !== idEntidad && seMuestra) {
+        relevancias.push(resultado.getRelevancia());
+      }
     }
-    return this.obtenerSubgrafo(idEntidad, eleccion.umbral);
+    const eleccion = ajustador.elegir(relevancias, 0, this.#maxNodos);
+    return this.#construir(idEntidad, eleccion.umbral, tandas);
   }
 
   /**
-   * (Privado) Pide el vecindario si hace falta, calcula la relevancia de
-   * TODOS sus nodos (un subgrafo sin máximo con el umbral del vecindario) y
-   * le pide al ajustador el umbral.
-   *
-   * @param {string} idEntidad
-   * @param {AjustadorUmbral} ajustador
-   * @param {number} umbralPedido
-   * @returns {Promise<Object>} { umbral, nodosDelVecindario, umbralDelVecindario }
+   * Muestra u oculta los nodos deducidos en los próximos subgrafos (no pide nada).
    */
-  async #elegirUmbral(idEntidad, ajustador, umbralPedido) {
-    if (this.#necesitaPedir(idEntidad, umbralPedido)) {
-      const recibido = await this.#cliente.obtenerVecindario(idEntidad, umbralPedido);
-      this.#guardar(idEntidad, umbralPedido, recibido);
-    }
-    // Se copian a variables locales por si otra petición guarda otro
-    // vecindario mientras se construye (ver obtenerSubgrafo).
-    const vecindario = this.#vecindarioGuardado;
-    const umbralDelVecindario = this.#umbralGuardado;
+  setMostrarDeducidos(mostrar) {
+    this.#mostrarDeducidos = mostrar === true;
+  }
 
-    const repositorio = new RepositorioVecindario(vecindario, this.#contexto);
-    const sinMaximo = Math.max(1, vecindario.entidades.length);
-    const constructor = new ConstructorSubgrafo(repositorio, this.#estrategia, umbralDelVecindario, sinMaximo);
-    const completo = await constructor.construir(idEntidad);
+  getMostrarDeducidos() {
+    return this.#mostrarDeducidos;
+  }
 
-    const relevancias = [];
-    const nodos = completo.getNodos();
-    for (let i = 0; i < nodos.length; i++) {
-      if (nodos[i].getEntidad().getId() !== idEntidad) {
-        relevancias.push(nodos[i].getRelevancia());
-      }
-    }
-    const eleccion = ajustador.elegir(relevancias, umbralDelVecindario, this.#maxNodos);
+  /**
+   * Para la barra de rendimiento: del último subgrafo, cuántas tandas de
+   * peticiones hicieron falta (0 si todo estaba en la caché), cuántos nodos
+   * directos y deducidos se calcularon.
+   *
+   * @returns {Object} { tandas, directos, deducidos }
+   */
+  getEstadisticas() {
     return {
-      umbral: eleccion.umbral,
-      nodosDelVecindario: completo.getNumeroNodos(),
-      umbralDelVecindario: umbralDelVecindario
+      tandas: this.#estadisticas.tandas,
+      directos: this.#estadisticas.directos,
+      deducidos: this.#estadisticas.deducidos
     };
   }
 
   /**
    * Cuánto tardó el último cálculo del subgrafo, sin contar la red
    * (para la barra de rendimiento).
-   *
-   * @returns {number} milisegundos.
    */
   getMilisegundosUltimoCalculo() {
     return this.#milisegundosUltimoCalculo;
   }
 
   /**
-   * Cuánto ocupaba el vecindario con el que se ha calculado el último
-   * subgrafo (para la barra de rendimiento).
-   *
-   * @returns {number} bytes.
+   * Cuántos bytes se recibieron para el último subgrafo (0 si no hizo falta
+   * pedir nada).
    */
-  getBytesVecindario() {
-    return this.#bytesVecindario;
+  getBytesRecibidos() {
+    return this.#bytesRecibidos;
   }
 
   /**
-   * Cuántas relevancias asignó el servidor y cuántas reutilizó en el último
-   * vecindario que se pidió (para la barra de rendimiento).
+   * La caché de relaciones (para las pruebas).
    *
-   * @returns {Object} { asignadas, reutilizadas }
+   * @returns {RepositorioVecindario}
    */
-  getEstadisticasAsignacion() {
-    return { asignadas: this.#estadisticas.asignadas, reutilizadas: this.#estadisticas.reutilizadas };
+  getCache() {
+    return this.#cache;
   }
 
   /**
    * El detalle de una entidad. Se pide al servidor solo la primera vez; las
    * siguientes se reutiliza.
-   *
-   * @param {string} idEntidad
-   * @returns {Promise<DetalleEntidad>}
    */
   async obtenerDetalle(idEntidad) {
     if (this.#detalles.has(idEntidad)) {
@@ -206,70 +175,71 @@ export class GestorSubgrafos {
   }
 
   /**
-   * (Privado) ¿Hay que pedir un vecindario nuevo al servidor?
-   * No, si es la misma entidad y el umbral es igual o mayor que el del
-   * vecindario guardado (ver la explicación de la clase).
+   * Pasos 1 a 3: carga en la caché lo que falte de la central y de sus
+   * directos.
    *
-   * @param {string} idEntidad
-   * @param {number} umbral
-   * @returns {boolean}
+   * @returns {Promise<number>} cuántas tandas han hecho falta (0, 1 o 2).
    */
-  #necesitaPedir(idEntidad, umbral) {
-    if (this.#vecindarioGuardado === null) {
-      return true;
+  async #cargar(idEntidad) {
+    let tandas = 0;
+    this.#bytesRecibidos = 0;
+    if (!this.#cache.tieneCompletas(idEntidad)) {
+      await this.#pedirTanda([idEntidad]);
+      tandas = tandas + 1;
     }
-    if (idEntidad !== this.#idGuardado) {
-      return true;
+    const central = this.#cache.entidad(idEntidad);
+    if (central === null) {
+      throw new Error("No existe ninguna entidad con el id \"" + idEntidad + "\".");
     }
-    if (umbral < this.#umbralGuardado) {
-      return true;
+    const eleccion = this.#calculador.elegirDirectos(central, this.#cache.relacionesDe(idEntidad));
+    if (eleccion.descartados > 0) {
+      console.warn("La entidad " + idEntidad + " tiene " + (eleccion.directos.length + eleccion.descartados) +
+        " nodos directos: solo se usan los " + eleccion.directos.length + " de más evidencia (maxDirectos).");
     }
-    return false;
+    const faltan = [];
+    for (let i = 0; i < eleccion.directos.length; i++) {
+      const id = eleccion.directos[i].getId();
+      if (!this.#cache.tieneCompletas(id)) {
+        faltan.push(id);
+      }
+    }
+    if (faltan.length > 0) {
+      await this.#pedirTanda(faltan);
+      tandas = tandas + 1;
+    }
+    return tandas;
   }
 
-  /**
-   * (Privado) Guarda el vecindario recibido para poder reutilizarlo.
-   *
-   * Se guarda el umbral que dice la respuesta, no el pedido: el servidor lo
-   * redondea hacia abajo a 2 decimales (0,349 → 0,34), y el vecindario vale
-   * para cualquier umbral igual o mayor que ese.
-   *
-   * @param {string} idEntidad
-   * @param {number} umbralPedido
-   * @param {Object} vecindario - el JSON de /api/vecindario.
-   */
-  #guardar(idEntidad, umbralPedido, vecindario) {
-    let umbralDelVecindario = umbralPedido;
-    if (typeof vecindario.umbral === "number" && vecindario.umbral <= umbralPedido) {
-      umbralDelVecindario = vecindario.umbral;
+  /** Pide las relaciones de esas entidades y las mete en la caché. */
+  async #pedirTanda(ids) {
+    const respuesta = await this.#cliente.obtenerRelaciones(ids);
+    this.#cache.incorporar(respuesta);
+    this.#bytesRecibidos = this.#bytesRecibidos + this.#cliente.getBytesUltimaRespuesta();
+  }
+
+  /** Paso 4: el subgrafo con las relaciones ya cargadas, y sus estadísticas. */
+  async #construir(idEntidad, umbral, tandas) {
+    // Se mide solo el cálculo, sin la red (para las pruebas de rendimiento).
+    const inicio = performance.now();
+    const constructor = new ConstructorSubgrafo(this.#cache, this.#estrategiaNodos, this.#calculador, umbral,
+      this.#maxNodos, this.#mostrarDeducidos);
+    const subgrafo = await constructor.construir(idEntidad);
+    this.#milisegundosUltimoCalculo = performance.now() - inicio;
+
+    let directos = 0;
+    let deducidos = 0;
+    for (const [id, resultado] of constructor.getResultados()) {
+      if (resultado.esDeducido()) {
+        deducidos = deducidos + 1;
+      } else if (id !== idEntidad) {
+        directos = directos + 1;
+      }
     }
-    this.#vecindarioGuardado = vecindario;
-    this.#idGuardado = idEntidad;
-    this.#umbralGuardado = umbralDelVecindario;
-    this.#bytesVecindario = this.#cliente.getBytesUltimaRespuesta();
     this.#estadisticas = {
-      asignadas: GestorSubgrafos.#numero(vecindario.relevanciasAsignadas),
-      reutilizadas: GestorSubgrafos.#numero(vecindario.relevanciasReutilizadas)
+      tandas: tandas,
+      directos: directos,
+      deducidos: deducidos
     };
-
-    if (vecindario.recortado === true) {
-      // El servidor ha llegado a su máximo de entidades: el subgrafo podría
-      // no ser exactamente el que saldría con todos los datos.
-      console.warn("El vecindario de " + idEntidad + " (umbral " + umbralDelVecindario +
-        ") ha llegado recortado: el servidor ha alcanzado su máximo de entidades.");
-    }
-  }
-
-  /**
-   * (Privado) El valor si es un número; si no, 0.
-   *
-   * @param {*} valor
-   * @returns {number}
-   */
-  static #numero(valor) {
-    if (typeof valor === "number") {
-      return valor;
-    }
-    return 0;
+    return subgrafo;
   }
 }

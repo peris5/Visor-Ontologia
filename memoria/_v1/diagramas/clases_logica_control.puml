@@ -1,0 +1,65 @@
+@startuml clases_logica_control
+' Paquete logica (cliente), parte 2: control de la exploración (MVC).
+!include estilo.iuml
+
+class ControladorExploracion {
+  - subgrafoActual : Subgrafo
+  - estado : EstadoCarga
+  - idSolicitado : string
+  - umbral : number
+  - umbralDePartida : number
+  - numeroCarga : number
+  - idDetalle : string
+  + conectar(escena : EscenaGrafo, interfaz : InterfazUsuario)
+  + iniciar(idEntidadInicial : string) : Promise
+  + buscar(texto : string, tipo : string)
+  + seleccionarEntidad(id : string) : Promise
+  + navegarA(id : string) : Promise
+  + volver() : Promise
+  + cambiarUmbral(valor : number) : Promise
+  + alternarFiltroNodo(tipo : TipoEntidad)
+  + alternarFiltroRelacion(tipo : TipoRelacion)
+  + mostrarTodasLasRelaciones(visible : boolean)
+  + seleccionarNodo(nodo : NodoRelevante)
+  + seleccionarRelacion(relacion : Relacion)
+  + cambiarDisposicion(modo : ModoDisposicion)
+  + restablecerVista()
+  - cargarSubgrafo(id : string, ajustar : boolean) : Promise
+  - cargarDetalle(idEntidad : string) : Promise
+  - aplicarFiltro()
+  - datosLeyenda() : Object
+}
+
+class FiltroVisualizacion {
+  - tiposNodoVisibles : Set<TipoEntidad>
+  - tiposRelacionOcultos : Set<TipoRelacion>
+  + alternarTipoNodo(tipo)
+  + alternarTipoRelacion(tipo)
+  + setTipoRelacionActivo(tipo, activo : boolean)
+  + esVisibleNodo(nodo, idCentral) : boolean
+  + esVisibleRelacion(relacion, idCentral) : boolean
+}
+
+class HistorialNavegacion {
+  - pila : string[]
+  + registrar(idEntidad : string)
+  + volver() : string
+  + puedeVolver() : boolean
+}
+
+enum EstadoCarga <<enumeration>> {
+  INACTIVO
+  CARGANDO
+  LISTO
+  ERROR
+}
+
+ControladorExploracion *-- "1" FiltroVisualizacion
+ControladorExploracion *-- "1" HistorialNavegacion
+ControladorExploracion *-- "0..1" "AjustadorUmbral"
+ControladorExploracion --> "1" "GestorSubgrafos"
+ControladorExploracion --> "1" "Buscador"
+ControladorExploracion --> "1" "EscenaGrafo\n(vista3d)" : vista 3D >
+ControladorExploracion --> "1" "InterfazUsuario\n(interfaz)" : vista 2D >
+ControladorExploracion ..> EstadoCarga
+@enduml

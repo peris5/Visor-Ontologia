@@ -2,8 +2,6 @@ import { ComponenteUI, crear } from './ComponenteUI.js';
 import { TipoRelacion } from '../modelo/TipoRelacion.js';
 
 /**
- * PanelInformacion extends ComponenteUI
- *
  * El panel de la derecha. Muestra la información de lo que el usuario ha
  * seleccionado:
  *  - de una ENTIDAD: nombre, tipo y subtipos («Persona · Pintor/a ·
@@ -24,10 +22,6 @@ import { TipoRelacion } from '../modelo/TipoRelacion.js';
  *
  * aria-live="polite": los lectores de pantalla leen el contenido nuevo
  * cuando cambia, sin interrumpir lo que estuvieran leyendo.
- *
- * Requisitos: RF-28 (información del nodo), RF-29 (de la relación), RF-30
- * (explorar su red), RF-38 (varias relaciones entre el mismo par), RNF-25
- * (texto alternativo de las imágenes), RNF-27 (fuentes).
  */
 export class PanelInformacion extends ComponenteUI {
   // Los datos de vida de una persona (tiposSinRelacion de la configuración)
@@ -53,7 +47,6 @@ export class PanelInformacion extends ComponenteUI {
   #nombreEntidadMostrada;
 
   /**
-   * @param {ControladorExploracion} controlador
    * @param {Object} contexto - { nombresTipos } (opcional; sin él, los
    *   nombres de los tipos son los automáticos).
    */
@@ -70,9 +63,7 @@ export class PanelInformacion extends ComponenteUI {
     this.#nombreEntidadMostrada = "";
   }
 
-  /**
-   * Dibuja el panel vacío (y oculto) con su botón de cerrar.
-   */
+  /** Dibuja el panel vacío (y oculto) con su botón de cerrar. */
   renderizar() {
     this._elemento.textContent = "";
     const botonCerrar = crear("button", {
@@ -95,9 +86,7 @@ export class PanelInformacion extends ComponenteUI {
    * Muestra la información de una entidad del subgrafo. El detalle llega
    * después con mostrarDetalle (mientras tanto, «Cargando…»).
    *
-   * @param {Entidad} entidad
    * @param {NodoRelevante} nodo - su nodo en el subgrafo.
-   * @param {Subgrafo} subgrafo
    */
   mostrarEntidad(entidad, nodo, subgrafo) {
     this.#contenido.textContent = "";
@@ -117,7 +106,8 @@ export class PanelInformacion extends ComponenteUI {
       PanelInformacion.#anadirDato(datos, PanelInformacion.#nombreDelAtributo(clave),
         PanelInformacion.#textoDelValor(atributos.get(clave)));
     }
-    PanelInformacion.#anadirDato(datos, "Relevancia", PanelInformacion.#enPorcentaje(nodo.getRelevancia()));
+    PanelInformacion.#anadirDato(datos, "Relevancia (S)", PanelInformacion.#enPorcentaje(nodo.getRelevancia()));
+    this.#anadirOrigen(datos, nodo, subgrafo);
     PanelInformacion.#anadirDato(datos, "Nivel", PanelInformacion.#textoDelNivel(nodo.getNivel()));
     PanelInformacion.#anadirDato(datos, "Centralidad", PanelInformacion.#enPorcentaje(nodo.getCentralidad()));
     PanelInformacion.#anadirDato(datos, "Relaciones en el subgrafo", String(relaciones.length));
@@ -131,6 +121,8 @@ export class PanelInformacion extends ComponenteUI {
       });
       this.#contenido.appendChild(botonExplorar);
     }
+
+    this.#mostrarEventosNoDibujados(entidad, subgrafo);
 
     // El detalle se rellena cuando llegue (mostrarDetalle).
     this.#detalle = crear("div", { clase: "informacion-detalle" }, [
@@ -153,9 +145,6 @@ export class PanelInformacion extends ComponenteUI {
   /**
    * Rellena el detalle de la entidad que se está mostrando. Si el detalle
    * es de otra (el usuario ya ha seleccionado otra cosa), no hace nada.
-   *
-   * @param {string} idEntidad
-   * @param {DetalleEntidad} detalle
    */
   mostrarDetalle(idEntidad, detalle) {
     if (idEntidad !== this.#idEntidadMostrada || this.#detalle === null) {
@@ -168,12 +157,7 @@ export class PanelInformacion extends ComponenteUI {
     this.#mostrarFuentes(detalle);
   }
 
-  /**
-   * Aviso, dentro del panel, de que no se ha podido cargar el detalle.
-   *
-   * @param {string} idEntidad
-   * @param {string} mensaje
-   */
+  /** Aviso, dentro del panel, de que no se ha podido cargar el detalle. */
   mostrarErrorDetalle(idEntidad, mensaje) {
     if (idEntidad !== this.#idEntidadMostrada || this.#detalle === null) {
       return;
@@ -186,12 +170,7 @@ export class PanelInformacion extends ComponenteUI {
     }, []));
   }
 
-  /**
-   * Muestra la información de una relación del subgrafo.
-   *
-   * @param {Relacion} relacion
-   * @param {Subgrafo} subgrafo
-   */
+  /** Muestra la información de una relación del subgrafo. */
   mostrarRelacion(relacion, subgrafo) {
     this.#contenido.textContent = "";
     this.#idEntidadMostrada = null;
@@ -225,11 +204,21 @@ export class PanelInformacion extends ComponenteUI {
     if (relacion.getFecha() !== null) {
       PanelInformacion.#anadirDato(datos, "Fecha", relacion.getFecha());
     }
-    PanelInformacion.#anadirDato(datos, "Relevancia", PanelInformacion.#enPorcentaje(relacion.getRelevancia()) +
-      " (asignada según el tipo de relación)");
+    if (relacion.esSintetica()) {
+      PanelInformacion.#anadirDato(datos, "Qué es", relacion.getTexto() +
+        " (no hay ninguna relación que se pueda dibujar)");
+      PanelInformacion.#anadirDato(datos, "Evidencia", PanelInformacion.#enPorcentaje(relacion.getRelevancia()));
+    } else {
+      if (relacion.getNombre() !== "") {
+        PanelInformacion.#anadirDato(datos, "Nombre", relacion.getNombre());
+      }
+      PanelInformacion.#anadirDato(datos, "Participantes", String(relacion.getParticipantes()));
+      PanelInformacion.#anadirDato(datos, "Relevancia", PanelInformacion.#enPorcentaje(relacion.getRelevancia()) +
+        " (peso del tipo × participantes × época)");
+    }
     this.#contenido.appendChild(datos);
 
-    // RF-38: otras relaciones entre las mismas dos entidades (en cualquier sentido).
+    // Otras relaciones entre las mismas dos entidades (en cualquier sentido).
     const otras = [];
     const todas = subgrafo.getRelaciones();
     for (let i = 0; i < todas.length; i++) {
@@ -249,9 +238,7 @@ export class PanelInformacion extends ComponenteUI {
     this._elemento.hidden = false;
   }
 
-  /**
-   * Vacía y oculta el panel.
-   */
+  /** Vacía y oculta el panel. */
   limpiar() {
     this.#contenido.textContent = "";
     this.#idEntidadMostrada = null;
@@ -259,13 +246,118 @@ export class PanelInformacion extends ComponenteUI {
     this._elemento.hidden = true;
   }
 
+  // ───────────── Privados: origen de la relevancia ─────────────
+
+  /**
+   * De dónde sale la relevancia: la fuerza R, la certeza C (en número y en
+   * palabras), el origen, la explicación, la evidencia propia y, en los
+   * deducidos, el camino por cada padre. Los textos solo dicen que dos
+   * personas «coinciden» si no hay relación declarada: nunca que se conozcan
+   * (RNF-23).
+   */
+  #anadirOrigen(datos, nodo, subgrafo) {
+    const resultado = nodo.getResultado();
+    if (resultado === null || nodo.getNivel() === 0) {
+      return;
+    }
+    PanelInformacion.#anadirDato(datos, "Fuerza (R)", PanelInformacion.#enPorcentaje(resultado.getFuerza()));
+    PanelInformacion.#anadirDato(datos, "Certeza (C)", PanelInformacion.#enPorcentaje(resultado.getCerteza()) + " (" +
+      PanelInformacion.textoDeLaCerteza(resultado.getCerteza()) + ")");
+    PanelInformacion.#anadirDato(datos, "Origen", PanelInformacion.textoDelOrigen(resultado.getOrigen()));
+    if (resultado.getTextoExplicacion() !== "") {
+      PanelInformacion.#anadirDato(datos, "Por qué", resultado.getTextoExplicacion());
+    }
+    PanelInformacion.#anadirDato(datos, "Evidencia propia", PanelInformacion.#enPorcentaje(resultado.getEvidenciaPropia()));
+    if (resultado.esDeducido()) {
+      const padres = resultado.getPadres();
+      for (let i = 0; i < padres.length; i++) {
+        PanelInformacion.#anadirDato(datos, "Camino", subgrafo.getEntidadCentral().getNombre() + " → " +
+          padres[i].getNombre() + " → " + nodo.getEntidad().getNombre());
+      }
+    }
+  }
+
+  /**
+   * La certeza en palabras: «segura» (C ≥ 0,9), «probable» (C ≥ 0,5) o
+   * «supuesta» (menos). Es estático para poder probarlo.
+   */
+  static textoDeLaCerteza(certeza) {
+    if (certeza >= 0.9) {
+      return "segura";
+    }
+    if (certeza >= 0.5) {
+      return "probable";
+    }
+    return "supuesta";
+  }
+
+  /**
+   * Los eventos que la entidad comparte con la central y NO se dibujan
+   * (dibujable = false: demasiados participantes), solo con su tipo, su
+   * nombre y su número de participantes. Cuentan para la relevancia aunque
+   * no se vean.
+   */
+  #mostrarEventosNoDibujados(entidad, subgrafo) {
+    const idCentral = subgrafo.getEntidadCentral().getId();
+    if (entidad.getId() === idCentral) {
+      return;
+    }
+    const evidencia = subgrafo.getEvidencia(idCentral, entidad.getId());
+    if (evidencia === null) {
+      return;
+    }
+    const noDibujados = [];
+    const relaciones = evidencia.getRelaciones();
+    for (let i = 0; i < relaciones.length; i++) {
+      if (!relaciones[i].esDibujable()) {
+        noDibujados.push(relaciones[i]);
+      }
+    }
+    if (noDibujados.length === 0) {
+      return;
+    }
+    this.#contenido.appendChild(crear("h3", { texto: "Eventos compartidos que no se dibujan" }, []));
+    const lista = crear("ul", { clase: "informacion-eventos-ocultos" }, []);
+    for (let i = 0; i < noDibujados.length; i++) {
+      lista.appendChild(crear("li", { texto: PanelInformacion.textoEventoNoDibujado(noDibujados[i]) }, []));
+    }
+    this.#contenido.appendChild(lista);
+  }
+
+  /**
+   * «Exposición · Exposición colectiva de 1911 (40 artistas) · 40 participantes».
+   * Es estático para poder probarlo.
+   */
+  static textoEventoNoDibujado(relacion) {
+    const partes = [relacion.getTipo().getNombre()];
+    if (relacion.getNombre() !== "") {
+      partes.push(relacion.getNombre());
+    }
+    partes.push(relacion.getParticipantes() + " participantes");
+    return partes.join(" · ");
+  }
+
+  /**
+   * Nombre para mostrar de un OrigenRelevancia.
+   */
+  static textoDelOrigen(origen) {
+    if (origen === "DECLARADA") {
+      return "Relación declarada con la entidad central";
+    }
+    if (origen === "COINCIDENCIAS") {
+      return "Solo coincidencias en eventos con la entidad central";
+    }
+    if (origen === "DEDUCIDA") {
+      return "Deducido a través de un nodo directo";
+    }
+    return "Entidad central";
+  }
+
   // ───────────── Privados: detalle ─────────────
 
   /**
-   * (Privado) Nacimiento, defunción y residencia (cuándo y dónde), y la
+   * Nacimiento, defunción y residencia (cuándo y dónde), y la
    * ubicación de la entidad (ciudad, provincia, país).
-   *
-   * @param {DetalleEntidad} detalle
    */
   #mostrarVida(detalle) {
     const datos = crear("dl", { clase: "informacion-datos" }, []);
@@ -290,10 +382,8 @@ export class PanelInformacion extends ComponenteUI {
   }
 
   /**
-   * (Privado) Los demás eventos y relaciones en los que participa
+   * Los demás eventos y relaciones en los que participa
    * («Pintura: Creación de… · 1902 · Valencia · como autora»).
-   *
-   * @param {DetalleEntidad} detalle
    */
   #mostrarOtrosEventos(detalle) {
     const eventos = detalle.getEventos();
@@ -310,11 +400,7 @@ export class PanelInformacion extends ComponenteUI {
     }
   }
 
-  /**
-   * (Privado) Miniaturas con su pie como texto alternativo (RNF-25).
-   *
-   * @param {DetalleEntidad} detalle
-   */
+  /** Miniaturas con su pie como texto alternativo. */
   #mostrarImagenes(detalle) {
     const imagenes = detalle.getImagenes();
     if (imagenes.length === 0) {
@@ -335,10 +421,8 @@ export class PanelInformacion extends ComponenteUI {
   }
 
   /**
-   * (Privado) «Fuente: Nombre (Libro), actualizada el 15/07/2026», con
-   * enlace si tiene url (RNF-27).
-   *
-   * @param {DetalleEntidad} detalle
+   * «Fuente: Nombre (Libro), actualizada el 15/07/2026», con
+   * enlace si tiene url.
    */
   #mostrarFuentes(detalle) {
     const fuentes = detalle.getFuentes();
@@ -365,12 +449,7 @@ export class PanelInformacion extends ComponenteUI {
     this.#detalle.appendChild(lista);
   }
 
-  /**
-   * (Privado) El texto de un evento del detalle.
-   *
-   * @param {Evento} evento
-   * @returns {string}
-   */
+  /** El texto de un evento del detalle. */
   #textoDelEvento(evento) {
     let texto = TipoRelacion.nombrar(evento.getTipo(), this.#nombresTipos);
     if (evento.getNombre() !== "") {
@@ -390,12 +469,9 @@ export class PanelInformacion extends ComponenteUI {
   // ───────────── Privados: entidad y relación ─────────────
 
   /**
-   * (Privado) «Persona · Pintor/a · Creador/a»: el tipo y los subtipos
+   * «Persona · Pintor/a · Creador/a»: el tipo y los subtipos
    * traducidos. Los subtipos se muestran del más específico al más general
    * (en los datos suelen venir al revés: :Person:Creator:Painter).
-   *
-   * @param {Entidad} entidad
-   * @returns {string}
    */
   #textoDelTipo(entidad) {
     const partes = [ComponenteUI._nombreTipoEntidad(entidad.getTipo())];
@@ -407,13 +483,11 @@ export class PanelInformacion extends ComponenteUI {
   }
 
   /**
-   * (Privado) Un botón con una relación vista desde una entidad: el color y
+   * Un botón con una relación vista desde una entidad: el color y
    * el nombre del tipo, la flecha en el sentido de la relación y la otra
    * entidad (con su rol, si lo tiene). Al pulsarlo se selecciona la relación.
    *
-   * @param {Relacion} relacion
    * @param {Entidad} desde - la entidad desde la que se mira.
-   * @returns {HTMLElement}
    */
   #botonDeRelacion(relacion, desde) {
     const otra = relacion.getOtroExtremo(desde);
@@ -441,12 +515,8 @@ export class PanelInformacion extends ComponenteUI {
   }
 
   /**
-   * (Privado) Un botón con el nombre de una entidad; al pulsarlo se
+   * Un botón con el nombre de una entidad; al pulsarlo se
    * selecciona su nodo.
-   *
-   * @param {Entidad} entidad
-   * @param {Subgrafo} subgrafo
-   * @returns {HTMLElement}
    */
   #botonDeNodo(entidad, subgrafo) {
     const boton = crear("button", { type: "button", clase: "boton-nodo", texto: entidad.getNombre() }, []);
@@ -460,13 +530,7 @@ export class PanelInformacion extends ComponenteUI {
     return boton;
   }
 
-  /**
-   * (Privado) Relaciones del subgrafo en las que participa la entidad.
-   *
-   * @param {string} idEntidad
-   * @param {Subgrafo} subgrafo
-   * @returns {Relacion[]}
-   */
+  /** Relaciones del subgrafo en las que participa la entidad. */
   #relacionesDe(idEntidad, subgrafo) {
     const resultado = [];
     const relaciones = subgrafo.getRelaciones();
@@ -481,12 +545,7 @@ export class PanelInformacion extends ComponenteUI {
 
   // ───────────── Privados: ayudas ─────────────
 
-  /**
-   * (Privado) « (maestra)» detrás de un nombre, o "" si no hay rol.
-   *
-   * @param {string} rol
-   * @returns {string}
-   */
+  /** « (maestra)» detrás de un nombre, o "" si no hay rol. */
   static #textoDelRol(rol) {
     if (rol === "") {
       return "";
@@ -494,12 +553,7 @@ export class PanelInformacion extends ComponenteUI {
     return " (" + rol + ")";
   }
 
-  /**
-   * (Privado) ¿Es un dato de vida (nacimiento, defunción, residencia)?
-   *
-   * @param {string} tipo
-   * @returns {boolean}
-   */
+  /** ¿Es un dato de vida (nacimiento, defunción, residencia)? */
   static #esDeVida(tipo) {
     for (let i = 0; i < PanelInformacion.TIPOS_DE_VIDA.length; i++) {
       if (PanelInformacion.TIPOS_DE_VIDA[i][0] === tipo) {
@@ -509,12 +563,7 @@ export class PanelInformacion extends ComponenteUI {
     return false;
   }
 
-  /**
-   * (Privado) «A, B, C y 4 más».
-   *
-   * @param {string[]} nombres
-   * @returns {string}
-   */
+  /** «A, B, C y 4 más». */
   static #listaAbreviada(nombres) {
     const primeros = [];
     for (let i = 0; i < nombres.length && i < PanelInformacion.MAX_PARTICIPANTES; i++) {
@@ -528,13 +577,7 @@ export class PanelInformacion extends ComponenteUI {
     return texto;
   }
 
-  /**
-   * (Privado) Une los textos que no estén vacíos.
-   *
-   * @param {string[]} textos
-   * @param {string} separador
-   * @returns {string}
-   */
+  /** Une los textos que no estén vacíos. */
   static #unir(textos, separador) {
     const conContenido = [];
     for (let i = 0; i < textos.length; i++) {
@@ -545,12 +588,7 @@ export class PanelInformacion extends ComponenteUI {
     return conContenido.join(separador);
   }
 
-  /**
-   * (Privado) "2026-07-15" → "15/07/2026" (otras fechas se dejan tal cual).
-   *
-   * @param {string} fecha
-   * @returns {string}
-   */
+  /** "2026-07-15" → "15/07/2026" (otras fechas se dejan tal cual). */
   static #formatearFecha(fecha) {
     const partes = fecha.split("-");
     if (partes.length === 3 && partes[0].length === 4) {
@@ -559,24 +597,13 @@ export class PanelInformacion extends ComponenteUI {
     return fecha;
   }
 
-  /**
-   * (Privado) Añade una pareja «nombre: valor» a una lista de definiciones (<dl>).
-   *
-   * @param {HTMLElement} lista
-   * @param {string} nombre
-   * @param {string} valor
-   */
+  /** Añade una pareja «nombre: valor» a una lista de definiciones (<dl>). */
   static #anadirDato(lista, nombre, valor) {
     lista.appendChild(crear("dt", { texto: nombre }, []));
     lista.appendChild(crear("dd", { texto: valor }, []));
   }
 
-  /**
-   * (Privado) Cualquier valor como texto (un objeto, en JSON).
-   *
-   * @param {*} valor
-   * @returns {string}
-   */
+  /** Cualquier valor como texto (un objeto, en JSON). */
   static #textoDelValor(valor) {
     if (typeof valor === "object" && valor !== null) {
       return JSON.stringify(valor);
@@ -585,38 +612,32 @@ export class PanelInformacion extends ComponenteUI {
   }
 
   /**
-   * (Privado) 0.405 → "41 %".
+   * 0.405 → "41 %".
    *
    * @param {number} valor - entre 0 y 1.
-   * @returns {string}
    */
   static #enPorcentaje(valor) {
     return Math.round(valor * 100) + " %";
   }
 
   /**
-   * (Privado) Texto del nivel: 0 → «Entidad central», 1 → «Relación
-   * directa», N → «A N saltos».
-   *
-   * @param {number} nivel
-   * @returns {string}
+   * Texto del nivel: 0 → «Entidad central», 1 → «Nodo directo (evidencia
+   * propia con la central)», N → «A N saltos». En el nivel 1 no se dice
+   * «relación», porque puede haber solo coincidencias (RNF-23).
    */
   static #textoDelNivel(nivel) {
     if (nivel === 0) {
       return "Entidad central";
     }
     if (nivel === 1) {
-      return "Relación directa";
+      return "Nodo directo (evidencia propia con la central)";
     }
     return "A " + nivel + " saltos";
   }
 
   /**
-   * (Privado) Nombre para mostrar de un atributo: el de la tabla o, si es
+   * Nombre para mostrar de un atributo: el de la tabla o, si es
    * una propiedad nueva, el automático ("fechaDeAlgo" → "Fecha de algo").
-   *
-   * @param {string} clave
-   * @returns {string}
    */
   static #nombreDelAtributo(clave) {
     if (Object.prototype.hasOwnProperty.call(PanelInformacion.NOMBRES_ATRIBUTOS, clave)) {
@@ -625,13 +646,7 @@ export class PanelInformacion extends ComponenteUI {
     return TipoRelacion.nombreDesdeId(clave);
   }
 
-  /**
-   * (Privado) Para ordenar relaciones de más a menos relevante.
-   *
-   * @param {Relacion} a
-   * @param {Relacion} b
-   * @returns {number}
-   */
+  /** Para ordenar relaciones de más a menos relevante. */
   static #compararPorRelevancia(a, b) {
     return b.getRelevancia() - a.getRelevancia();
   }

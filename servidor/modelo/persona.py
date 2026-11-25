@@ -1,4 +1,4 @@
-"""Persona extends Entidad (traducción de src/modelo/Persona.js)."""
+"""Persona (la misma clase que src/modelo/Persona.js)."""
 from typing import Any
 
 from servidor.modelo.entidad import Entidad
@@ -6,10 +6,7 @@ from servidor.modelo.tipo_entidad import TipoEntidad
 
 
 class Persona(Entidad):
-    """Una persona del grafo (artista, mecenas, restauradora...).
-
-    Requisitos: modelo de dominio usado en RF-08 a RF-12.
-    """
+    """Una persona del grafo (artista, mecenas, restauradora...)."""
 
     def __init__(self, datos: dict[str, Any]) -> None:
         """datos: los de Entidad más fechaNacimiento, fechaDefuncion y

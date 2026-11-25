@@ -7,17 +7,14 @@ from typing import Any
 
 
 class CacheRespuestas:
-    """Memoria de las últimas respuestas preparadas (vecindarios y lista de
-    nombres), ya convertidas a JSON.
+    """Memoria de las últimas respuestas preparadas (relaciones de cada
+    entidad, lista de nombres, tipos...).
 
-    Aunque ahora el cálculo lo hace el navegador, preparar un vecindario
-    sigue siendo lo más costoso del servidor (con la base de datos real será
-    una consulta), y muchos usuarios piden los mismos (la entidad inicial,
-    las más conocidas...). Con esta caché, cada respuesta se prepara UNA vez
-    y las siguientes peticiones iguales reciben directamente el JSON guardado.
-
-    (En el incremento 2 se llamaba CacheSubgrafos y guardaba subgrafos; la
-    clase no ha cambiado, solo lo que se guarda en ella.)
+    Derivar las relaciones de una entidad es lo más costoso del servidor, y
+    muchos usuarios piden las mismas (la entidad inicial, las más
+    conocidas...). Con esta
+    caché, cada respuesta se prepara UNA vez y las siguientes peticiones
+    iguales reciben directamente el JSON guardado.
 
     Tres reglas:
      1. Peticiones a la vez: si llegan varias peticiones iguales mientras la
@@ -28,13 +25,11 @@ class CacheRespuestas:
         olvida la que lleva más tiempo sin pedirse (política LRU, "la menos
         usada recientemente"), así la memoria del servidor no crece sin límite.
      3. Caducidad: una respuesta guardada vale segundos_vigencia segundos. Con
-        los datos simulados nunca cambian, pero con la base de datos real
-        (incremento 4) sí pueden cambiar, y así se acaban viendo los cambios.
+        los datos simulados nunca cambian, pero con la base de datos real sí,
+        y así se acaban viendo los cambios.
 
     Si el cálculo falla (por ejemplo, la entidad no existe), el error no se
     guarda: se olvida la entrada y el error llega a quien la pidió.
-
-    Requisitos: RNF-01 (rendimiento con muchos usuarios a la vez).
     """
 
     def __init__(self, max_entradas: int, segundos_vigencia: float) -> None:
@@ -52,10 +47,10 @@ class CacheRespuestas:
 
     async def obtener(self, clave: str, calcular: Callable[[], Awaitable[Any]]) -> Any:
         """Devuelve la respuesta guardada con esa clave (el texto JSON ya
-        preparado o, para los vecindarios, el diccionario). Si no está (o ha
+        preparado o, para las relaciones, el diccionario). Si no está (o ha
         caducado), llama a calcular() para obtenerla y la guarda.
 
-        clave: identifica la respuesta, por ejemplo "vecindario|n1|0.3".
+        clave: identifica la respuesta, por ejemplo "relaciones|n1".
         calcular: función asíncrona que prepara la respuesta.
         """
         entrada = self.__buscar_vigente(clave)

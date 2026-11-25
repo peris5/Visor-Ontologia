@@ -21,10 +21,6 @@ import { ObraDeArte } from '../src/modelo/ObraDeArte.js';
 /**
  * Un subgrafo pequeño cuya central es "id": la central (persona) y una
  * obra unidas por una relación autor_de.
- *
- * @param {string} id
- * @param {number} umbral
- * @returns {Subgrafo}
  */
 function crearSubgrafoDe(id, umbral) {
   const central = new Persona({ id: id, propiedades: { name: "Persona " + id } });
@@ -47,6 +43,15 @@ class GestorFalso {
     this.pendientes = [];
     this.detallesPedidos = [];
     this.detalleFalla = false;
+    this.mostrarDeducidos = true;
+  }
+
+  setMostrarDeducidos(mostrar) {
+    this.mostrarDeducidos = mostrar;
+  }
+
+  getMostrarDeducidos() {
+    return this.mostrarDeducidos;
   }
 
   obtenerDetalle(idEntidad) {
@@ -68,11 +73,11 @@ class GestorFalso {
    * Como el de verdad, devuelve el subgrafo con el umbral que ha «elegido»
    * (aquí, siempre 0,55) y lo apunta en ajustados.
    */
-  obtenerSubgrafoAjustado(idEntidad, ajustador, umbralDePartida) {
+  obtenerSubgrafoAjustado(idEntidad, ajustador) {
     if (this.ajustados === undefined) {
       this.ajustados = [];
     }
-    this.ajustados.push({ id: idEntidad, objetivo: ajustador.getNodosObjetivo(), umbralDePartida: umbralDePartida });
+    this.ajustados.push({ id: idEntidad, objetivo: ajustador.getNodosObjetivo() });
     return Promise.resolve(crearSubgrafoDe(idEntidad, 0.55));
   }
 
@@ -90,11 +95,7 @@ class GestorFalso {
     return Promise.resolve(crearSubgrafoDe(idEntidad, umbral));
   }
 
-  /**
-   * Contesta la petición pendiente de esa entidad.
-   *
-   * @param {string} idEntidad
-   */
+  /** Contesta la petición pendiente de esa entidad. */
   contestar(idEntidad) {
     for (let i = 0; i < this.pendientes.length; i++) {
       const pendiente = this.pendientes[i];
@@ -107,9 +108,7 @@ class GestorFalso {
   }
 }
 
-/**
- * Doble de Buscador: cuenta las llamadas.
- */
+/** Doble de Buscador: cuenta las llamadas. */
 class BuscadorFalso {
   constructor() {
     this.llamadas = 0;
@@ -121,9 +120,7 @@ class BuscadorFalso {
   }
 }
 
-/**
- * Doble de EscenaGrafo: apunta lo que se le pide.
- */
+/** Doble de EscenaGrafo: apunta lo que se le pide. */
 class EscenaFalsa {
   constructor() {
     this.mostrados = [];
@@ -163,9 +160,7 @@ class EscenaFalsa {
   }
 }
 
-/**
- * Doble de InterfazUsuario: apunta lo que se le pide.
- */
+/** Doble de InterfazUsuario: apunta lo que se le pide. */
 class InterfazFalsa {
   constructor() {
     this.estados = [];
@@ -381,11 +376,7 @@ prueba("Controlador: seleccionar un nodo o una relación los resalta y muestra s
   comprobarIgual(p.escena.camaraRestablecida, 1, "vista inicial");
 });
 
-/**
- * Espera a que terminen las promesas pendientes (el detalle se pide sin await).
- *
- * @returns {Promise<void>}
- */
+/** Espera a que terminen las promesas pendientes (el detalle se pide sin await). */
 function esperarUnMomento() {
   return new Promise(function (resolver) {
     setTimeout(resolver, 0);
@@ -440,7 +431,6 @@ prueba("Controlador: con nodosObjetivo, cada entidad nueva se abre con el umbral
   await controlador.iniciar("A");
   comprobarIgual(gestor.ajustados.length, 1, "al iniciar, ajusta");
   comprobarIgual(gestor.ajustados[0].objetivo, 40, "con el objetivo de la configuración");
-  comprobarIgual(gestor.ajustados[0].umbralDePartida, 0.3, "partiendo del umbral de la configuración");
   comprobarIgual(interfaz.umbral, 0.55, "el umbral elegido, en el deslizador");
 
   // Mover el deslizador NO ajusta: se respeta lo que ha elegido el usuario.
@@ -450,7 +440,6 @@ prueba("Controlador: con nodosObjetivo, cada entidad nueva se abre con el umbral
 
   await controlador.navegarA("B");
   comprobarIgual(gestor.ajustados.length, 2, "otra entidad: ajusta otra vez");
-  comprobarIgual(gestor.ajustados[1].umbralDePartida, 0.3, "partiendo otra vez del de la configuración");
   await controlador.volver();
   comprobarIgual(gestor.ajustados.length, 3, "al volver también ajusta");
 });
@@ -460,4 +449,15 @@ prueba("Controlador: sin nodosObjetivo no ajusta (como antes)", async function (
   await p.controlador.iniciar("A");
   comprobar(p.gestor.ajustados === undefined, "no llama a obtenerSubgrafoAjustado");
   comprobarIgual(p.gestor.peticiones[0].umbral, 0.3, "usa el umbral de la configuración");
+});
+
+prueba("Controlador: la casilla «Mostrar deducidos» recalcula con el mismo umbral y lo dice a la leyenda", async function () {
+  const p = crearControladorDePrueba();
+  await p.controlador.iniciar("A");
+  const antes = p.gestor.peticiones.length;
+  await p.controlador.alternarDeducidos(false);
+  comprobarIgual(p.gestor.mostrarDeducidos, false, "se lo dice al gestor");
+  comprobarIgual(p.gestor.peticiones.length, antes + 1, "recalcula el subgrafo");
+  comprobarIgual(p.gestor.peticiones[p.gestor.peticiones.length - 1].umbral, 0.3, "con el mismo umbral");
+  comprobarIgual(p.interfaz.leyendas[p.interfaz.leyendas.length - 1].mostrarDeducidos, false, "la leyenda lo sabe");
 });

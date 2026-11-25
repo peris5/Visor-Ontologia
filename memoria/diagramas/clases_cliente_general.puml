@@ -1,0 +1,39 @@
+@startuml clases_cliente_general
+' Vista general del cliente: clases principales, sin miembros.
+!include estilo.iuml
+hide members
+
+package interfaz {
+  class InterfazUsuario
+  abstract class ComponenteUI
+}
+package vista3d {
+  class EscenaGrafo
+  class SelectorInteraccion
+}
+package logica {
+  class ControladorExploracion
+  class GestorSubgrafos
+  class ConstructorSubgrafo
+}
+package datos {
+  class ClienteServicio
+  class RepositorioVecindario
+}
+package modelo {
+  class Subgrafo
+}
+
+InterfazUsuario *-- "7" ComponenteUI
+ComponenteUI --> ControladorExploracion : avisa
+SelectorInteraccion --> ControladorExploracion : avisa
+EscenaGrafo *-- SelectorInteraccion
+ControladorExploracion --> InterfazUsuario
+ControladorExploracion --> EscenaGrafo
+ControladorExploracion --> GestorSubgrafos
+GestorSubgrafos --> ClienteServicio
+GestorSubgrafos ..> RepositorioVecindario : crea
+GestorSubgrafos ..> ConstructorSubgrafo : crea
+ConstructorSubgrafo --> RepositorioVecindario
+ConstructorSubgrafo ..> Subgrafo : crea
+@enduml

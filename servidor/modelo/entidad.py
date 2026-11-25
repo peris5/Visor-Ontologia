@@ -1,4 +1,4 @@
-"""«abstract» Entidad (traducción de src/modelo/Entidad.js)."""
+"""Entidad (la misma clase que src/modelo/Entidad.js)."""
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -14,8 +14,6 @@ class Entidad(ABC):
 
     Es abstracta: no se puede hacer Entidad(...). Solo se crean Persona,
     Organizacion u ObraDeArte (normalmente con FabricaEntidades).
-
-    Requisitos: modelo de dominio usado en RF-08 a RF-12.
     """
 
     def __init__(self, datos: dict[str, Any]) -> None:

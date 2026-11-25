@@ -1,0 +1,26 @@
+@startuml sec_navegar
+' Operaciones: navegar a un vecino y volver.
+!include estilo.iuml
+actor Usuario
+participant ":Controlador\nExploracion" as CTRL
+participant ":Historial\nNavegacion" as HIS
+participant ":Interfaz\nUsuario" as UI
+
+== Navegar a un vecino ==
+Usuario -> CTRL : navegarA(id)
+activate CTRL
+CTRL -> HIS : registrar(idActual)
+CTRL -> CTRL : ~#cargarSubgrafo(id, true)
+CTRL -> UI : setHabilitadoVolver(true)
+deactivate CTRL
+
+== Volver ==
+Usuario -> CTRL : volver()
+activate CTRL
+CTRL -> HIS : volver()
+HIS --> CTRL : idAnterior
+opt idAnterior no es nulo
+  CTRL -> CTRL : ~#cargarSubgrafo(idAnterior, true)
+end
+deactivate CTRL
+@enduml

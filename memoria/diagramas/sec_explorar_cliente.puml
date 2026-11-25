@@ -1,0 +1,38 @@
+@startuml sec_explorar_cliente
+' Operación: explorar una entidad (navegador).
+' La parte del servidor está en sec_explorar_servidor.
+!include estilo.iuml
+participant ":Controlador\nExploracion" as CTRL
+participant ":Gestor\nSubgrafos" as GES
+participant ":Cliente\nServicio" as CLI
+participant ":Constructor\nSubgrafo" as CONS
+participant ":EscenaGrafo" as ESC
+participant ":Interfaz\nUsuario" as UI
+
+[-> CTRL : seleccionarEntidad(id)
+activate CTRL
+CTRL -> UI : mostrarEstado(CARGANDO)
+CTRL -> GES : obtenerSubgrafoAjustado(id)
+activate GES
+opt no hay vecindario válido guardado
+  GES -> CLI : obtenerVecindario(id, u)
+  CLI --> GES : vecindario
+end
+GES -> GES : ~#elegirUmbral()
+GES -> CONS : construir(id)
+activate CONS
+loop hasta maxNodos
+  CONS -> CONS : ~#sacarElMasRelevante()
+  CONS -> CONS : ~#expandir(candidato)
+end
+CONS --> GES : subgrafo
+deactivate CONS
+GES --> CTRL : subgrafo
+deactivate GES
+CTRL -> ESC : mostrarSubgrafo(subgrafo)
+CTRL -> UI : mostrarEntidad(central)
+CTRL -> UI : mostrarEstado(LISTO)
+CTRL ->> GES : obtenerDetalle(id)
+note right : sin esperar
+deactivate CTRL
+@enduml

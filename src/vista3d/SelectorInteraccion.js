@@ -3,8 +3,6 @@ import { NodoVisual } from './NodoVisual.js';
 import { EnlaceVisual } from './EnlaceVisual.js';
 
 /**
- * SelectorInteraccion
- *
  * Averigua qué hay debajo del puntero (ratón o dedo) en la escena 3D y se
  * lo dice al controlador:
  *  - clic en un nodo → su información; clic en una relación → la suya;
@@ -19,10 +17,6 @@ import { EnlaceVisual } from './EnlaceVisual.js';
  *
  * Arrastrar para girar la cámara NO es un clic: si entre pulsar y soltar
  * el puntero se ha movido más de 5 píxeles, no se selecciona nada.
- *
- * Requisitos: RF-28 (información del nodo), RF-29 (de la relación), RF-30
- * (navegar con doble clic), RF-41 (etiqueta al pasar el puntero), RNF-09
- * (pantallas táctiles: dos toques).
  */
 export class SelectorInteraccion {
   // Lo que puede moverse el puntero entre pulsar y soltar para que siga
@@ -46,8 +40,6 @@ export class SelectorInteraccion {
   #escuchadores;
 
   /**
-   * @param {EscenaGrafo} escena
-   * @param {ControladorExploracion} controlador
    * @param {HTMLElement} contenedor - donde está el lienzo; ahí se pone la etiqueta flotante.
    */
   constructor(escena, controlador, contenedor) {
@@ -76,18 +68,12 @@ export class SelectorInteraccion {
   /**
    * Se ha pulsado (botón del ratón o dedo): se apunta dónde, para saber al
    * soltar si ha sido un clic o un arrastre.
-   *
-   * @param {PointerEvent} evento
    */
   onPulsar(evento) {
     this.#inicioPulsacion = { x: evento.clientX, y: evento.clientY };
   }
 
-  /**
-   * Se ha soltado: si el puntero casi no se ha movido, es un clic.
-   *
-   * @param {PointerEvent} evento
-   */
+  /** Se ha soltado: si el puntero casi no se ha movido, es un clic. */
   onClic(evento) {
     if (this.#inicioPulsacion === null) {
       return;
@@ -113,11 +99,7 @@ export class SelectorInteraccion {
     // Clic en el vacío: no se hace nada.
   }
 
-  /**
-   * Doble clic en un nodo: pasa a ser la entidad central.
-   *
-   * @param {MouseEvent} evento
-   */
+  /** Doble clic en un nodo: pasa a ser la entidad central. */
   onDobleClic(evento) {
     const visual = this.#detectarObjeto(evento);
     if (visual instanceof NodoVisual) {
@@ -125,11 +107,7 @@ export class SelectorInteraccion {
     }
   }
 
-  /**
-   * El puntero se mueve: si está encima de algo, se muestra su etiqueta.
-   *
-   * @param {PointerEvent} evento
-   */
+  /** El puntero se mueve: si está encima de algo, se muestra su etiqueta. */
   onMovimiento(evento) {
     // Con un botón pulsado se está girando la cámara: sin etiqueta.
     if (evento.buttons !== 0) {
@@ -147,9 +125,7 @@ export class SelectorInteraccion {
     this.#lienzo.style.cursor = "pointer";
   }
 
-  /**
-   * Quita todos los escuchadores de eventos y la etiqueta flotante.
-   */
+  /** Quita todos los escuchadores de eventos y la etiqueta flotante. */
   liberar() {
     for (let i = 0; i < this.#escuchadores.length; i++) {
       const escuchador = this.#escuchadores[i];
@@ -170,7 +146,7 @@ export class SelectorInteraccion {
   }
 
   /**
-   * (Privado) Conecta los eventos del lienzo con los métodos on...
+   * Conecta los eventos del lienzo con los métodos on...
    *
    * El navegador llama a estas funciones desde fuera de la clase, y dentro
    * de una función normal "this" ya no es el selector. Por eso guardamos
@@ -197,22 +173,15 @@ export class SelectorInteraccion {
     });
   }
 
-  /**
-   * (Privado) Añade un escuchador al lienzo y lo apunta para liberar().
-   *
-   * @param {string} nombreEvento
-   * @param {Function} funcion
-   */
+  /** Añade un escuchador al lienzo y lo apunta para liberar(). */
   #anadirEscuchador(nombreEvento, funcion) {
     this.#lienzo.addEventListener(nombreEvento, funcion);
     this.#escuchadores.push({ evento: nombreEvento, funcion: funcion });
   }
 
   /**
-   * (Privado) En pantallas táctiles no siempre llega "dblclick": si se toca
+   * En pantallas táctiles no siempre llega "dblclick": si se toca
    * dos veces el mismo nodo en menos de 300 ms, se navega a él.
-   *
-   * @param {NodoVisual} visual
    */
   #comprobarDobleToque(visual) {
     const ahora = performance.now();
@@ -229,21 +198,14 @@ export class SelectorInteraccion {
   }
 
   /**
-   * (Privado) Escribe la etiqueta y la coloca junto al puntero (RF-41):
-   * nodo → su nombre; relación → «Tipo: Origen → Destino».
-   *
-   * @param {NodoVisual|EnlaceVisual} visual
-   * @param {PointerEvent} evento
+   * Escribe la etiqueta y la coloca junto al puntero (ver textoDe).
    */
   #mostrarEtiqueta(visual, evento) {
     let texto = "";
     if (visual instanceof NodoVisual) {
-      texto = visual.getNodo().getEntidad().getNombre();
+      texto = SelectorInteraccion.textoDeNodo(visual.getNodo());
     } else {
-      const relacion = visual.getRelacion();
-      texto = relacion.getTipo().getNombre() + ": " +
-        SelectorInteraccion.#conRol(relacion, relacion.getOrigen()) + " → " +
-        SelectorInteraccion.#conRol(relacion, relacion.getDestino());
+      texto = SelectorInteraccion.textoDeRelacion(visual.getRelacion());
     }
     // textContent (y no innerHTML) para que un nombre nunca se interprete como HTML.
     this.#etiqueta.textContent = texto;
@@ -256,12 +218,37 @@ export class SelectorInteraccion {
   }
 
   /**
-   * (Privado) «Nombre (rol)», o solo el nombre si no tiene rol.
-   *
-   * @param {Relacion} relacion
-   * @param {Entidad} entidad
-   * @returns {string}
+   * Texto de la etiqueta de un nodo: su nombre y de dónde sale su relevancia
+   * («Marta Soler — Coinciden en 3 exposiciones · Amistad con Luis Peris»).
+   * Es estático para poder probarlo sin WebGL.
    */
+  static textoDeNodo(nodo) {
+    const nombre = nodo.getEntidad().getNombre();
+    const resultado = nodo.getResultado();
+    if (resultado === null || resultado.getTextoExplicacion() === "") {
+      return nombre;
+    }
+    let prefijo = "";
+    if (resultado.esDeducido()) {
+      prefijo = "Deducido: ";
+    }
+    return nombre + " — " + prefijo + resultado.getTextoExplicacion();
+  }
+
+  /**
+   * Texto de la etiqueta de una relación: «Tipo: Origen → Destino» o, en
+   * una arista sintética, «Coinciden en 3 eventos: Ana Ferrer — Marta Soler».
+   */
+  static textoDeRelacion(relacion) {
+    if (relacion.esSintetica()) {
+      return relacion.getTexto() + ": " + relacion.getOrigen().getNombre() + " — " + relacion.getDestino().getNombre();
+    }
+    return relacion.getTipo().getNombre() + ": " +
+      SelectorInteraccion.#conRol(relacion, relacion.getOrigen()) + " → " +
+      SelectorInteraccion.#conRol(relacion, relacion.getDestino());
+  }
+
+  /** «Nombre (rol)», o solo el nombre si no tiene rol. */
   static #conRol(relacion, entidad) {
     const rol = relacion.getRol(entidad);
     if (rol === "") {
@@ -271,7 +258,7 @@ export class SelectorInteraccion {
   }
 
   /**
-   * (Privado) El objeto que hay debajo del puntero.
+   * El objeto que hay debajo del puntero.
    *
    *  1. La posición del puntero se pasa a coordenadas de −1 a 1 respecto al
    *     lienzo (es lo que espera Three.js): −1 es el borde izquierdo (o el
@@ -282,9 +269,6 @@ export class SelectorInteraccion {
    *  3. Three.js devuelve lo que corta el rayo, del más cercano al más lejano.
    *     Si hay algún nodo, se prefiere el nodo (es más fácil acertar a una
    *     línea por error, porque se "toca" a 0,5 de distancia).
-   *
-   * @param {PointerEvent|MouseEvent} evento
-   * @returns {NodoVisual|EnlaceVisual|null}
    */
   #detectarObjeto(evento) {
     const rectangulo = this.#lienzo.getBoundingClientRect();

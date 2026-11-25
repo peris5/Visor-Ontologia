@@ -1,51 +1,49 @@
-import { RepositorioDatos } from '../datos/RepositorioDatos.js';
-import { EstrategiaRelevancia } from './EstrategiaRelevancia.js';
+import { RepositorioVecindario } from '../datos/RepositorioVecindario.js';
+import { EstrategiaRelevanciaNodos } from './EstrategiaRelevanciaNodos.js';
+import { CalculadorEvidencia } from './CalculadorEvidencia.js';
 import { CalculadorCentralidad } from './CalculadorCentralidad.js';
 import { NodoRelevante } from '../modelo/NodoRelevante.js';
 import { Subgrafo } from '../modelo/Subgrafo.js';
+import { Relacion } from '../modelo/Relacion.js';
+import { OrigenRelevancia } from '../modelo/OrigenRelevancia.js';
 
 /**
- * ConstructorSubgrafo
+ * Construye el entorno relevante (Subgrafo) de una entidad:
  *
- * Construye el entorno relevante (Subgrafo) de una entidad con una búsqueda
- * «primero el mejor»: siempre se trata antes el candidato pendiente de mayor
- * relevancia.
+ *   1. Pide la relevancia de los nodos (ResultadoRelevanciaNodo) a la
+ *      EstrategiaRelevanciaNodos, con las relaciones que ya están en la caché.
+ *   2. Ordena por la relevancia S (= R × C), aplica el umbral a S y se
+ *      queda con los de mayor S hasta el máximo de nodos; la entidad
+ *      central siempre entra. Si no se muestran los
+ *      deducidos, se quitan ANTES de aplicar el máximo (así su sitio lo
+ *      ocupan otros nodos).
+ *   3. Aristas: las relaciones dibujables (dibujable = true) entre nodos
+ *      incluidos. De cada pareja guarda también su evidencia en el subgrafo
+ *      (para la línea discontinua y el panel).
+ *   4. Arista SINTÉTICA: si un nodo incluido no tiene ninguna relación
+ *      dibujable con otro nodo incluido (por ejemplo, porque solo coincide con
+ *      la central en eventos grandes), se añade UNA arista de tipo
+ *      COINCIDENCIAS hacia la central (si es directo) o hacia su padre (si es
+ *      deducido), con la evidencia de la pareja como valor.
+ *   5. MUELLES para la simulación de fuerzas: UNO POR PAREJA de nodos
+ *      incluidos, aunque se dibujen varias curvas (si cada curva tuviera el
+ *      suyo, una pareja con cinco exposiciones tiraría cinco veces). Su
+ *      peso es lo que esa pareja transmite en el cálculo:
+ *        - entre dos directos: el mayor de los dos sentidos de
+ *          F(Y,X) · T̄ · fE · h (RefuerzoEntreDirectos);
+ *        - entre un deducido y su padre: F(P,Z) · T̄ · fE(Z) · h(P) · τ;
+ *        - cualquier otra pareja: F × C de su evidencia;
+ *        - con la central no hay muelle (su distancia ya la fija la
+ *          restricción radial).
+ *      El dibujo NUNCA modifica la relevancia: los muelles salen del
+ *      cálculo y no al revés (lo contrario sería circular).
+ *   6. Calcula la centralidad de grado (como siempre).
  *
  * Relaciones con otras clases:
- *  - usa un RepositorioDatos para leer entidades y relaciones;
- *  - usa una EstrategiaRelevancia para calcular las relevancias;
+ *  - usa un RepositorioVecindario (la caché) para leer entidades y relaciones;
+ *  - usa una EstrategiaRelevanciaNodos y un CalculadorEvidencia;
  *  - tiene (composición) un CalculadorCentralidad propio;
  *  - crea el Subgrafo que devuelve.
- *
- * ─────────────────────────────────────────────────────────────────────────
- * ¿Por qué «primero el mejor» da a cada nodo su MEJOR relevancia posible?
- *
- *   1. La relevancia de un nodo es el producto de las relevancias de las
- *      relaciones del camino. Todas valen entre 0 y 1, y multiplicar por un
- *      número menor o igual que 1 nunca hace crecer el resultado. Por tanto,
- *      a lo largo de un camino la relevancia NUNCA crece.
- *
- *   2. Un nodo NO entra en el subgrafo cuando se descubre, sino cuando sale
- *      de la lista de pendientes como el candidato más relevante de todos.
- *
- *   3. Supongamos que el nodo V sale de pendientes con relevancia R. Cualquier
- *      otro camino hacia V todavía sin explorar tiene que pasar por algún
- *      candidato que sigue pendiente, y ese candidato tiene relevancia ≤ R
- *      (si no, habría salido antes que V). Por el punto 1, seguir ese camino
- *      hasta V solo puede dar una relevancia ≤ R. Luego R ya es la mejor.
- *
- *   Ejemplo: Central→V vale 0,4 y Central→Y→V vale 0,9 × 0,9 = 0,81.
- *   Al expandir la Central, V queda pendiente con 0,4 e Y con 0,9.
- *   Sale Y (0,9), se expande y V vuelve a quedar pendiente, ahora con 0,81.
- *   Sale V con 0,81, su mejor valor. Cuando más tarde salga la copia con 0,4,
- *   se descarta porque V ya está dentro.
- *
- *   Consecuencia: los nodos entran en orden de relevancia de mayor a menor.
- *   Por eso, si paramos al llegar a maxNodos, nos quedamos justo con los
- *   más relevantes.
- * ─────────────────────────────────────────────────────────────────────────
- *
- * Requisitos: RF-08, RF-09, RF-10, RF-11, RF-12; RF-37 (centralidad); RNF-30.
  */
 export class ConstructorSubgrafo {
   static UMBRAL_POR_DEFECTO = 0.3;
@@ -53,33 +51,41 @@ export class ConstructorSubgrafo {
 
   #repositorio;
   #estrategia;
+  #calculador;
   #centralidad;
   #umbral;
   #maxNodos;
+  #mostrarDeducidos;
+  #resultados;
 
   /**
-   * @param {RepositorioDatos} repositorio
-   * @param {EstrategiaRelevancia} estrategia
+   * @param {RepositorioVecindario} repositorio - la caché de relaciones.
+   * @param {EstrategiaRelevanciaNodos} estrategia
+   * @param {CalculadorEvidencia} calculador
    * @param {number} umbral - opcional; 0.3 si no se indica.
    * @param {number} maxNodos - opcional; 150 si no se indica.
+   * @param {boolean} mostrarDeducidos - opcional; true si no se indica.
    */
-  constructor(repositorio, estrategia, umbral, maxNodos) {
-    if (!(repositorio instanceof RepositorioDatos)) {
-      throw new Error("ConstructorSubgrafo necesita un RepositorioDatos.");
+  constructor(repositorio, estrategia, calculador, umbral, maxNodos, mostrarDeducidos) {
+    if (!(repositorio instanceof RepositorioVecindario)) {
+      throw new Error("ConstructorSubgrafo necesita un RepositorioVecindario.");
     }
-    if (!(estrategia instanceof EstrategiaRelevancia)) {
-      throw new Error("ConstructorSubgrafo necesita una EstrategiaRelevancia.");
+    if (!(estrategia instanceof EstrategiaRelevanciaNodos)) {
+      throw new Error("ConstructorSubgrafo necesita una EstrategiaRelevanciaNodos.");
+    }
+    if (!(calculador instanceof CalculadorEvidencia)) {
+      throw new Error("ConstructorSubgrafo necesita un CalculadorEvidencia.");
     }
     this.#repositorio = repositorio;
     this.#estrategia = estrategia;
-    // Composición: el calculador nace y muere con este constructor.
+    this.#calculador = calculador;
+    // Composición: el calculador de centralidad nace y muere con este constructor.
     this.#centralidad = new CalculadorCentralidad();
 
     this.#umbral = ConstructorSubgrafo.UMBRAL_POR_DEFECTO;
     if (umbral !== undefined) {
       this.setUmbral(umbral);
     }
-
     this.#maxNodos = ConstructorSubgrafo.MAX_NODOS_POR_DEFECTO;
     if (maxNodos !== undefined) {
       if (!Number.isInteger(maxNodos) || maxNodos < 1) {
@@ -87,6 +93,8 @@ export class ConstructorSubgrafo {
       }
       this.#maxNodos = maxNodos;
     }
+    this.#mostrarDeducidos = mostrarDeducidos !== false;
+    this.#resultados = new Map();
   }
 
   /**
@@ -102,228 +110,233 @@ export class ConstructorSubgrafo {
     this.#umbral = valor;
   }
 
-  /**
-   * @returns {number}
-   */
   getUmbral() {
     return this.#umbral;
   }
 
   /**
-   * Construye el subgrafo relevante de una entidad.
+   * Los resultados de la estrategia en el último construir (TODOS los nodos,
+   * también los que no han entrado por el umbral o el máximo).
+   *
+   * @returns {Map<string, ResultadoRelevanciaNodo>}
+   */
+  getResultados() {
+    return new Map(this.#resultados);
+  }
+
+  /**
+   * Construye el subgrafo relevante de una entidad cuyas relaciones (y las de
+   * sus directos) ya están en la caché.
    *
    * @param {string} idEntidad - id de la entidad central.
-   * @returns {Promise<Subgrafo>}
    */
   async construir(idEntidad) {
-    // Copiamos el umbral al empezar: si alguien lo cambia mientras esperamos
-    // al repositorio, este subgrafo se termina con el umbral con el que empezó.
     const umbral = this.#umbral;
-
-    const entidadCentral = await this.#repositorio.obtenerEntidad(idEntidad);
-    if (entidadCentral === null) {
+    const central = await this.#repositorio.obtenerEntidad(idEntidad);
+    if (central === null) {
       throw new Error("No existe ninguna entidad con el id \"" + idEntidad + "\".");
     }
 
-    // Paso 1: el subgrafo nace con la central (relevancia 1, nivel 0).
-    const subgrafo = new Subgrafo(entidadCentral, umbral);
-    const nodoCentral = subgrafo.getNodo(entidadCentral.getId());
+    // Paso 1: la relevancia de todos los nodos.
+    this.#resultados = this.#estrategia.calcular(central, this.#repositorio);
 
-    // Paso 2: los vecinos de la central son los primeros candidatos pendientes.
-    const pendientes = await this.#expandir(nodoCentral, subgrafo, umbral);
-
-    // Paso 3: búsqueda «primero el mejor» (ver la explicación de arriba).
-    while (pendientes.length > 0 && subgrafo.getNumeroNodos() < this.#maxNodos) {
-      const candidato = this.#sacarElMasRelevante(pendientes);
-      const idCandidato = candidato.getEntidad().getId();
-
-      // Un mismo vecino puede estar varias veces en pendientes (una por cada
-      // camino por el que se descubrió). La primera copia que sale es la
-      // mejor; las demás se descartan aquí.
-      if (!subgrafo.contieneEntidad(idCandidato)) {
-        subgrafo.agregarNodo(candidato);
-        const nuevosCandidatos = await this.#expandir(candidato, subgrafo, umbral);
-        this.#anadirCandidatos(pendientes, nuevosCandidatos);
+    // Paso 2: umbral y máximo de nodos (la central siempre está).
+    const subgrafo = new Subgrafo(central, umbral);
+    const elegidos = this.#elegirNodos(idEntidad, umbral);
+    for (let i = 0; i < elegidos.length; i++) {
+      const resultado = elegidos[i];
+      let nivel = 1;
+      if (resultado.esDeducido()) {
+        nivel = 2;
       }
+      subgrafo.agregarNodo(new NodoRelevante(resultado.getEntidad(), resultado.getRelevancia(), nivel, resultado));
     }
 
-    // Paso 4: red de seguridad para no pasar nunca de maxNodos.
-    this.#podar(subgrafo);
+    // Pasos 3 y 4: aristas.
+    const parejas = this.#anadirAristas(subgrafo);
+    this.#anadirAristasSinteticas(subgrafo, parejas.conArista);
 
-    // Paso 5: con el subgrafo terminado, calculamos la centralidad.
+    // Paso 5: los muelles.
+    subgrafo.setMuelles(this.#crearMuelles(subgrafo, parejas.evidencias));
+
+    // Paso 6: con el subgrafo terminado, la centralidad.
     this.#guardarCentralidad(subgrafo);
     return subgrafo;
   }
 
   /**
-   * (Privado) Expande un nodo que ya está en el subgrafo:
-   *  - pide sus relaciones y calcula la relevancia de cada una;
-   *  - descarta las que no superan el umbral;
-   *  - si el vecino ya está en el subgrafo, añade la relación (así se guardan
-   *    todas las relaciones de un mismo par, no solo la mejor);
-   *  - si el vecino no está, se queda con la mejor relación hacia él y lo
-   *    devuelve como candidato si su relevancia supera el umbral.
-   *
-   * @param {NodoRelevante} nodo - nodo que se expande.
-   * @param {Subgrafo} subgrafo
-   * @param {number} umbral
-   * @returns {Promise<NodoRelevante[]>} candidatos nuevos (aún NO están en el subgrafo).
+   * Los resultados que entran: relevancia S mayor que el umbral, sin los
+   * deducidos si no se muestran, de mayor a menor S y como mucho
+   * maxNodos − 1 (el otro sitio es de la central).
    */
-  async #expandir(nodo, subgrafo, umbral) {
-    const entidadDelNodo = nodo.getEntidad();
-    const relaciones = await this.#repositorio.obtenerRelaciones(entidadDelNodo.getId());
+  #elegirNodos(idCentral, umbral) {
+    const candidatos = [];
+    for (const [id, resultado] of this.#resultados) {
+      const seMuestra = this.#mostrarDeducidos || !resultado.esDeducido();
+      if (id !== idCentral && seMuestra && resultado.getRelevancia() > umbral) {
+        candidatos.push(resultado);
+      }
+    }
+    candidatos.sort(function (a, b) {
+      return b.getRelevancia() - a.getRelevancia();
+    });
+    const elegidos = [];
+    for (let i = 0; i < candidatos.length && i < this.#maxNodos - 1; i++) {
+      elegidos.push(candidatos[i]);
+    }
+    return elegidos;
+  }
 
-    // idVecino → la relación más relevante hacia ese vecino.
-    const mejorRelacionPorVecino = new Map();
-
-    for (let i = 0; i < relaciones.length; i++) {
-      const relacion = relaciones[i];
-      const relevanciaDeLaRelacion = this.#estrategia.calcularRelevanciaRelacion(relacion);
-      relacion.setRelevancia(relevanciaDeLaRelacion);
-
-      const vecino = relacion.getOtroExtremo(entidadDelNodo);
-      const esUnaRelacionConsigoMismo = vecino.getId() === entidadDelNodo.getId();
-
-      if (relevanciaDeLaRelacion > umbral && !esUnaRelacionConsigoMismo) {
-        if (subgrafo.contieneEntidad(vecino.getId())) {
-          subgrafo.agregarRelacion(relacion);
-        } else {
-          this.#guardarSiEsMejor(mejorRelacionPorVecino, vecino.getId(), relacion);
+  /**
+   * Las relaciones dibujables entre nodos incluidos. Se miran las relaciones
+   * de la central y de sus directos (las que ha usado el cálculo), agrupadas
+   * por pareja; la evidencia de cada pareja se guarda en el subgrafo.
+   *
+   * La evidencia de cada pareja se calcula vista desde el nodo más cercano
+   * a la central (la central, luego los directos): así la relevancia que
+   * queda guardada en cada relación es la de ese sentido.
+   *
+   * @returns {Object} { conArista: Set de ids de los nodos con alguna arista
+   *   dibujada, evidencias: Map clave del par → EvidenciaPareja }
+   */
+  #anadirAristas(subgrafo) {
+    const idCentral = subgrafo.getEntidadCentral().getId();
+    const fuentes = [idCentral];
+    for (const [id, resultado] of this.#resultados) {
+      const origen = resultado.getOrigen();
+      if (origen === OrigenRelevancia.DECLARADA || origen === OrigenRelevancia.COINCIDENCIAS) {
+        fuentes.push(id);
+      }
+    }
+    const porPareja = new Map();
+    const vistas = new Set();
+    for (let i = 0; i < fuentes.length; i++) {
+      const relaciones = this.#repositorio.relacionesDe(fuentes[i]);
+      for (let j = 0; j < relaciones.length; j++) {
+        const relacion = relaciones[j];
+        const idOrigen = relacion.getOrigen().getId();
+        const idDestino = relacion.getDestino().getId();
+        const entreIncluidos = subgrafo.contieneEntidad(idOrigen) && subgrafo.contieneEntidad(idDestino);
+        if (entreIncluidos && idOrigen !== idDestino && !vistas.has(relacion.getId())) {
+          vistas.add(relacion.getId());
+          const clave = relacion.getClavePar();
+          if (!porPareja.has(clave)) {
+            porPareja.set(clave, []);
+          }
+          porPareja.get(clave).push(relacion);
         }
       }
     }
-
-    return this.#crearCandidatos(nodo, mejorRelacionPorVecino, umbral);
-  }
-
-  /**
-   * (Privado) Guarda la relación para ese vecino si no había ninguna o si es
-   * más relevante que la guardada. Entre dos entidades puede haber varias
-   * relaciones: para decidir si el vecino entra se usa la mejor.
-   *
-   * @param {Map<string, Relacion>} mejorRelacionPorVecino
-   * @param {string} idVecino
-   * @param {Relacion} relacion
-   */
-  #guardarSiEsMejor(mejorRelacionPorVecino, idVecino, relacion) {
-    if (!mejorRelacionPorVecino.has(idVecino)) {
-      mejorRelacionPorVecino.set(idVecino, relacion);
-      return;
-    }
-    const relacionGuardada = mejorRelacionPorVecino.get(idVecino);
-    if (relacion.getRelevancia() > relacionGuardada.getRelevancia()) {
-      mejorRelacionPorVecino.set(idVecino, relacion);
-    }
-  }
-
-  /**
-   * (Privado) Convierte cada vecino en un candidato (NodoRelevante) con
-   * relevancia = relevancia del padre × mejor relación, y nivel = nivel del padre + 1.
-   * Solo devuelve los que superan el umbral.
-   *
-   * @param {NodoRelevante} nodoPadre
-   * @param {Map<string, Relacion>} mejorRelacionPorVecino
-   * @param {number} umbral
-   * @returns {NodoRelevante[]}
-   */
-  #crearCandidatos(nodoPadre, mejorRelacionPorVecino, umbral) {
-    const candidatos = [];
-    const entidadDelPadre = nodoPadre.getEntidad();
-    const nivelDelVecino = nodoPadre.getNivel() + 1;
-
-    for (const mejorRelacion of mejorRelacionPorVecino.values()) {
-      const vecino = mejorRelacion.getOtroExtremo(entidadDelPadre);
-      const relevanciaDelVecino = this.#estrategia.calcularRelevanciaNodo(nodoPadre.getRelevancia(), mejorRelacion.getRelevancia());
-      if (relevanciaDelVecino > umbral) {
-        candidatos.push(new NodoRelevante(vecino, relevanciaDelVecino, nivelDelVecino));
+    const conArista = new Set();
+    const evidencias = new Map();
+    for (const [clave, relacionesDeLaPareja] of porPareja) {
+      let desde = relacionesDeLaPareja[0].getOrigen();
+      let hacia = relacionesDeLaPareja[0].getDestino();
+      if (subgrafo.getNodo(hacia.getId()).getNivel() < subgrafo.getNodo(desde.getId()).getNivel()) {
+        desde = relacionesDeLaPareja[0].getDestino();
+        hacia = relacionesDeLaPareja[0].getOrigen();
+      }
+      // calcular() pone también la relevancia de cada relación.
+      const evidencia = this.#calculador.calcular(desde, hacia, relacionesDeLaPareja);
+      subgrafo.setEvidencia(evidencia);
+      evidencias.set(clave, evidencia);
+      for (let i = 0; i < relacionesDeLaPareja.length; i++) {
+        const relacion = relacionesDeLaPareja[i];
+        if (relacion.esDibujable()) {
+          subgrafo.agregarRelacion(relacion);
+          conArista.add(relacion.getOrigen().getId());
+          conArista.add(relacion.getDestino().getId());
+        }
       }
     }
-    return candidatos;
+    return { conArista: conArista, evidencias: evidencias };
   }
 
   /**
-   * (Privado) Saca de la lista el candidato de mayor relevancia.
-   * Recorremos la lista buscando el mayor (más fácil de entender que
-   * mantenerla ordenada). Si hay empate, gana el primero que se añadió.
+   * Un muelle por pareja de nodos incluidos que no toca la central, con el
+   * peso del paso 5 (ver la explicación de la clase).
    *
-   * @param {NodoRelevante[]} pendientes - se modifica: el elegido se quita.
-   * @returns {NodoRelevante}
+   * @param {Map<string, EvidenciaPareja>} evidencias - clave del par → evidencia.
+   * @returns {Object[]} [{ nodoA, nodoB, peso }] (NodoRelevante, NodoRelevante, entre 0 y 1).
    */
-  #sacarElMasRelevante(pendientes) {
-    let posicionDelMejor = 0;
-    for (let i = 1; i < pendientes.length; i++) {
-      if (pendientes[i].getRelevancia() > pendientes[posicionDelMejor].getRelevancia()) {
-        posicionDelMejor = i;
-      }
-    }
-    const elMejor = pendientes[posicionDelMejor];
-    pendientes.splice(posicionDelMejor, 1);
-    return elMejor;
-  }
-
-  /**
-   * (Privado) Añade los candidatos nuevos al final de la lista de pendientes.
-   *
-   * @param {NodoRelevante[]} pendientes
-   * @param {NodoRelevante[]} nuevosCandidatos
-   */
-  #anadirCandidatos(pendientes, nuevosCandidatos) {
-    for (let i = 0; i < nuevosCandidatos.length; i++) {
-      pendientes.push(nuevosCandidatos[i]);
-    }
-  }
-
-  /**
-   * (Privado) Garantiza que el subgrafo no pasa de maxNodos quitando los
-   * nodos menos relevantes (nunca la central) junto con sus relaciones.
-   *
-   * Con la búsqueda de construir() el subgrafo nunca llega a pasarse, porque
-   * los nodos entran de uno en uno y se para al llegar al máximo. Aun así lo
-   * dejamos como red de seguridad, por si en el futuro cambia la forma de construirlo.
-   *
-   * @param {Subgrafo} subgrafo
-   */
-  #podar(subgrafo) {
-    while (subgrafo.getNumeroNodos() > this.#maxNodos) {
-      const idMenosRelevante = this.#buscarMenosRelevante(subgrafo);
-      subgrafo.eliminarNodo(idMenosRelevante);
-    }
-  }
-
-  /**
-   * (Privado) Id del nodo menos relevante que no sea la central.
-   *
-   * @param {Subgrafo} subgrafo
-   * @returns {string}
-   */
-  #buscarMenosRelevante(subgrafo) {
+  #crearMuelles(subgrafo, evidencias) {
     const idCentral = subgrafo.getEntidadCentral().getId();
+    const muelles = [];
+    for (const evidencia of evidencias.values()) {
+      const idA = evidencia.getDesde().getId();
+      const idB = evidencia.getHacia().getId();
+      if (idA !== idCentral && idB !== idCentral) {
+        const nodoA = subgrafo.getNodo(idA);
+        const nodoB = subgrafo.getNodo(idB);
+        let peso = -1;
+        peso = ConstructorSubgrafo.#transmision(nodoA, idB, peso);
+        peso = ConstructorSubgrafo.#transmision(nodoB, idA, peso);
+        if (peso < 0) {
+          peso = evidencia.getValor();
+        }
+        muelles.push({ nodoA: nodoA, nodoB: nodoB, peso: Math.min(1, Math.max(0, peso)) });
+      }
+    }
+    return muelles;
+  }
+
+  /** El mayor entre «peso» y lo que el resultado del nodo dice que transmite hacia idOtro. */
+  static #transmision(nodo, idOtro, peso) {
+    const resultado = nodo.getResultado();
+    if (resultado === null) {
+      return peso;
+    }
+    const transmisiones = resultado.getTransmisiones();
+    if (transmisiones.has(idOtro) && transmisiones.get(idOtro) > peso) {
+      return transmisiones.get(idOtro);
+    }
+    return peso;
+  }
+
+  /**
+   * Una arista COINCIDENCIAS para cada nodo sin ninguna arista dibujada:
+   * hacia la central si es directo, o hacia su padre si es deducido (si el
+   * padre no ha entrado, hacia la central).
+   */
+  #anadirAristasSinteticas(subgrafo, conArista) {
+    const central = subgrafo.getEntidadCentral();
+    const tipo = this.#repositorio.getTipo(RepositorioVecindario.TIPO_COINCIDENCIAS);
     const nodos = subgrafo.getNodos();
-    let nodoMenosRelevante = null;
     for (let i = 0; i < nodos.length; i++) {
       const nodo = nodos[i];
-      const esLaCentral = nodo.getEntidad().getId() === idCentral;
-      if (!esLaCentral) {
-        if (nodoMenosRelevante === null || nodo.getRelevancia() < nodoMenosRelevante.getRelevancia()) {
-          nodoMenosRelevante = nodo;
+      const entidad = nodo.getEntidad();
+      if (entidad.getId() !== central.getId() && !conArista.has(entidad.getId())) {
+        let destino = central;
+        const resultado = nodo.getResultado();
+        if (resultado !== null && resultado.esDeducido() && resultado.getPadre() !== null &&
+          subgrafo.contieneEntidad(resultado.getPadre().getId())) {
+          destino = resultado.getPadre();
         }
+        const evidencia = subgrafo.getEvidencia(destino.getId(), entidad.getId());
+        let valor = nodo.getRelevancia();
+        let texto = "Coincidencias en eventos";
+        if (evidencia !== null) {
+          valor = evidencia.getValor();
+          if (evidencia.getNumeroEventos() > 0) {
+            texto = "Coinciden en " + CalculadorEvidencia.contar(evidencia.getNumeroEventos(), "evento");
+          } else {
+            texto = evidencia.getTipoPrincipal().getNombre();
+          }
+        }
+        const id = RepositorioVecindario.TIPO_COINCIDENCIAS + "|" + Subgrafo.clavePar(destino.getId(), entidad.getId());
+        subgrafo.agregarRelacion(new Relacion(id, destino, entidad, tipo, valor,
+          { sintetica: true, texto: texto, dibujable: true }));
       }
     }
-    return nodoMenosRelevante.getEntidad().getId();
   }
 
-  /**
-   * (Privado) Calcula la centralidad y la guarda en cada nodo.
-   *
-   * @param {Subgrafo} subgrafo
-   */
+  /** Calcula la centralidad y la guarda en cada nodo. */
   #guardarCentralidad(subgrafo) {
     const centralidadPorNodo = this.#centralidad.calcular(subgrafo);
     const nodos = subgrafo.getNodos();
     for (let i = 0; i < nodos.length; i++) {
       const nodo = nodos[i];
-      const idEntidad = nodo.getEntidad().getId();
-      nodo.setCentralidad(centralidadPorNodo.get(idEntidad));
+      nodo.setCentralidad(centralidadPorNodo.get(nodo.getEntidad().getId()));
     }
   }
 }

@@ -2,8 +2,6 @@ import { Entidad } from './Entidad.js';
 import { NodoRelevante } from './NodoRelevante.js';
 
 /**
- * Subgrafo
- *
  * El entorno relevante de una entidad central: sus nodos y las relaciones
  * entre ellos.
  *  - Composición con NodoRelevante [1..*]: los nodos pertenecen al subgrafo.
@@ -11,8 +9,6 @@ import { NodoRelevante } from './NodoRelevante.js';
  *    nunca está vacío.
  *  - Agregación con Relacion [*]: las relaciones existen fuera (en el
  *    repositorio); el subgrafo solo apunta a ellas.
- *
- * Requisitos: RF-08 a RF-12.
  */
 export class Subgrafo {
   #entidadCentral;
@@ -20,9 +16,73 @@ export class Subgrafo {
   #nodos;
   #relaciones;
   #idsDeRelaciones;
+  #evidencias;
+  #muelles;
 
   /**
-   * @param {Entidad} entidadCentral
+   * Clave de una pareja de ids sin importar el orden (la misma que
+   * Relacion.getClavePar).
+   */
+  static clavePar(idUno, idOtro) {
+    if (idUno < idOtro) {
+      return idUno + "|" + idOtro;
+    }
+    return idOtro + "|" + idUno;
+  }
+
+  /**
+   * Guarda la evidencia de una pareja de entidades del subgrafo.
+   *
+   * @param {EvidenciaPareja} evidencia
+   */
+  setEvidencia(evidencia) {
+    const entidades = evidencia.getEntidades();
+    this.#evidencias.set(Subgrafo.clavePar(entidades[0].getId(), entidades[1].getId()), evidencia);
+  }
+
+  /**
+   * @returns {EvidenciaPareja|null} la evidencia de esa pareja, si se guardó.
+   */
+  getEvidencia(idUno, idOtro) {
+    const clave = Subgrafo.clavePar(idUno, idOtro);
+    if (this.#evidencias.has(clave)) {
+      return this.#evidencias.get(clave);
+    }
+    return null;
+  }
+
+  /**
+   * Los muelles de la simulación de fuerzas, uno por pareja (los calcula
+   * ConstructorSubgrafo con lo que transmite cada pareja en el cálculo).
+   *
+   * @param {Object[]} muelles - [{ nodoA, nodoB, peso }] (NodoRelevante, NodoRelevante, entre 0 y 1).
+   */
+  setMuelles(muelles) {
+    this.#muelles = [];
+    for (let i = 0; i < muelles.length; i++) {
+      const muelle = muelles[i];
+      this.#muelles.push({ nodoA: muelle.nodoA, nodoB: muelle.nodoB, peso: muelle.peso });
+    }
+  }
+
+  /**
+   * @returns {Object[]|null} copia de los muelles, o null si nadie los ha
+   *   puesto (un subgrafo hecho a mano: SimulacionFuerzas los saca entonces
+   *   de las relaciones).
+   */
+  getMuelles() {
+    if (this.#muelles === null) {
+      return null;
+    }
+    const copia = [];
+    for (let i = 0; i < this.#muelles.length; i++) {
+      const muelle = this.#muelles[i];
+      copia.push({ nodoA: muelle.nodoA, nodoB: muelle.nodoB, peso: muelle.peso });
+    }
+    return copia;
+  }
+
+  /**
    * @param {number} umbral - umbral con el que se construyó.
    */
   constructor(entidadCentral, umbral) {
@@ -38,22 +98,21 @@ export class Subgrafo {
     // Los ids de las relaciones, para saber al momento si una ya está (ver
     // #contieneRelacion). Un Set es una colección sin repetidos.
     this.#idsDeRelaciones = new Set();
+    // clave del par ("a|b", ver Relacion.getClavePar) → EvidenciaPareja.
+    // Sirve para dibujar con línea discontinua las parejas sin relación
+    // declarada y para que el panel liste lo que no se dibuja.
+    this.#evidencias = new Map();
+    this.#muelles = null;
 
     // La entidad central siempre está: relevancia 1 y nivel 0.
     const nodoCentral = new NodoRelevante(entidadCentral, 1, 0);
     this.#nodos.set(entidadCentral.getId(), nodoCentral);
   }
 
-  /**
-   * @returns {Entidad}
-   */
   getEntidadCentral() {
     return this.#entidadCentral;
   }
 
-  /**
-   * @returns {number}
-   */
   getUmbral() {
     return this.#umbral;
   }
@@ -115,8 +174,6 @@ export class Subgrafo {
   /**
    * Añade una relación. Si ya estaba (mismo id) no hace nada, para no
    * tener duplicados. Sus dos extremos tienen que estar en el subgrafo.
-   *
-   * @param {Relacion} relacion
    */
   agregarRelacion(relacion) {
     if (this.#contieneRelacion(relacion.getId())) {
@@ -157,24 +214,14 @@ export class Subgrafo {
     return this.#nodos.has(id);
   }
 
-  /**
-   * (Privado) ¿Hay ya una relación con este id?
-   *
-   * @param {string} idRelacion
-   * @returns {boolean}
-   */
+  /** ¿Hay ya una relación con este id? */
   #contieneRelacion(idRelacion) {
-    // Antes se recorría la lista entera de relaciones cada vez; con el Set
-    // es inmediato. (Es la misma mejora que se hizo en la versión Python
-    // del incremento 2: con 150 nodos se añaden cientos de relaciones.)
+    // Con el Set es inmediato; recorrer la lista sería lento, porque con 150
+    // nodos se añaden cientos de relaciones.
     return this.#idsDeRelaciones.has(idRelacion);
   }
 
-  /**
-   * (Privado) Se queda solo con las relaciones que no tocan a la entidad indicada.
-   *
-   * @param {string} idEntidad
-   */
+  /** Se queda solo con las relaciones que no tocan a la entidad indicada. */
   #eliminarRelacionesDe(idEntidad) {
     const relacionesQueSeQuedan = [];
     const idsQueSeQuedan = new Set();

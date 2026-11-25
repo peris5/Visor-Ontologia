@@ -16,8 +16,6 @@ import { Subgrafo } from '../src/modelo/Subgrafo.js';
 /**
  * Subgrafo de prueba con 10 nodos, varios niveles y una relación doble.
  * Las centralidades están puestas a mano (no hace falta que sean exactas).
- *
- * @returns {Subgrafo}
  */
 function crearSubgrafoDePrueba() {
   const tipo = new TipoRelacion("conoce_a", "Conoce a", "#ffffff");
@@ -66,7 +64,6 @@ function crearSubgrafoDePrueba() {
 /**
  * Ejecuta la simulación hasta que se estabiliza (con un tope por seguridad).
  *
- * @param {SimulacionFuerzas} simulacion
  * @returns {number} pasos dados.
  */
 function ejecutarHastaEstabilizar(simulacion) {

@@ -21,9 +21,6 @@ class ClasificadorEtiquetas:
     Se supone que en la BD real los subtipos son varias etiquetas en el mismo
     nodo (:Person:Creator:Painter); si fueran una taxonomía aparte, solo
     cambiaría cómo se lee la jerarquía, no esta clase.
-
-    Requisitos: nuevo RNF de mantenibilidad (añadir tipos sin cambiar el
-    código), RNF-16 (clasificación en la configuración).
     """
 
     def __init__(self, configuracion: Configuracion, jerarquia: dict[str, str]) -> None:

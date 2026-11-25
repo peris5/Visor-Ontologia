@@ -10,8 +10,6 @@ class TipoRelacion:
     En el servidor solo se guarda el id. El nombre legible ("Maestro de") y
     el color los pone el navegador (TipoRelacion.nombreDesdeId y
     PaletaColores en src/), porque el servidor solo entrega datos en bruto.
-
-    Requisitos: RF-39 (tipos de relación no conocidos de antemano).
     """
 
     def __init__(self, identificador: str) -> None:

@@ -1,0 +1,95 @@
+@startuml clases_logica_subgrafo
+' Paquete logica (cliente), parte 1: obtención y cálculo del subgrafo.
+!include estilo.iuml
+skinparam nodesep 35
+skinparam ranksep 50
+
+class GestorSubgrafos {
+  - maxNodos : number
+  - vecindarioGuardado : Object
+  - idGuardado : string
+  - umbralGuardado : number
+  - contexto : Object
+  - detalles : Map<string, DetalleEntidad>
+  + obtenerSubgrafo(idEntidad : string, umbral : number) : Promise<Subgrafo>
+  + obtenerSubgrafoAjustado(idEntidad, ajustador : AjustadorUmbral, umbralDePartida) : Promise<Subgrafo>
+  + obtenerDetalle(idEntidad : string) : Promise<DetalleEntidad>
+  + getMilisegundosUltimoCalculo() : number
+  + getEstadisticasAsignacion() : Object
+  - necesitaPedir(idEntidad : string, umbral : number) : boolean
+  - guardar(idEntidad, umbralPedido, vecindario)
+  - elegirUmbral(idEntidad, ajustador, umbralPedido) : Promise<Object>
+}
+
+class ConstructorSubgrafo {
+  + {static} UMBRAL_POR_DEFECTO : number = 0.3
+  + {static} MAX_NODOS_POR_DEFECTO : number = 150
+  - umbral : number
+  - maxNodos : number
+  + construir(idEntidad : string) : Promise<Subgrafo>
+  + setUmbral(valor : number)
+  - expandir(nodo, subgrafo, umbral) : Promise<NodoRelevante[]>
+  - guardarSiEsMejor(mejorRelacionPorVecino, idVecino, relacion)
+  - crearCandidatos(nodoPadre, mejorRelacionPorVecino, umbral) : NodoRelevante[]
+  - sacarElMasRelevante(pendientes) : NodoRelevante
+  - podar(subgrafo)
+}
+
+interface EstrategiaRelevancia <<interface>> {
+  + calcularRelevanciaRelacion(relacion : Relacion) : number
+  + calcularRelevanciaNodo(relevanciaPadre : number, relevanciaRelacion : number) : number
+}
+class RelevanciaDesdeBD {
+  + calcularRelevanciaRelacion(relacion : Relacion) : number
+  + calcularRelevanciaNodo(relevanciaPadre : number, relevanciaRelacion : number) : number
+}
+
+class CalculadorCentralidad {
+  + calcular(subgrafo : Subgrafo) : Map<string, number>
+  - sumarRelevanciasPorNodo(subgrafo) : Map
+  - normalizar(sumas, sumaMaxima) : Map
+}
+
+class AjustadorUmbral {
+  + {static} MINIMO : number = 0.05
+  - nodosObjetivo : number
+  + elegir(relevancias : number[], umbralMinimo, maxNodos) : Object
+  + contarNodos(relevancias : number[], umbral, maxNodos) : number
+}
+
+class Buscador {
+  + {static} LONGITUD_MAXIMA_TEXTO : number = 100
+  - indice : Object[]
+  - distanciaMaxima : number = 2
+  - maxSugerencias : number = 8
+  + sugerir(texto : string, tipo : string) : Object[]
+  + buscar(texto : string, tipo : string) : Object[]
+  + distanciaEdicion(a : string, b : string) : number
+  - normalizar(texto : string) : string
+  - puntuar(texto, nombre) : number
+}
+
+class PaletaColores {
+  + {static} ANGULO_AUREO : number = 137.508
+  + {static} colorPara(indice : number) : string
+  + {static} asignar(idsTipos : string[]) : Map<string, string>
+}
+
+class DetectorComunidades {
+  + {static} MAX_VUELTAS : number = 20
+  + detectar(subgrafo : Subgrafo) : Map<string, number>
+  - pesosEntreVecinos(subgrafo, idCentral) : Map
+  - etiquetaMasPesada(id, vecinos, etiquetas) : string
+  - numerarGrupos(orden, etiquetas) : Map
+}
+
+GestorSubgrafos --> "1" "ClienteServicio\n(datos)"
+GestorSubgrafos o-- "1" EstrategiaRelevancia
+GestorSubgrafos ..> ConstructorSubgrafo : crea >
+GestorSubgrafos ..> "RepositorioVecindario\n(datos)" : crea >
+GestorSubgrafos ..> AjustadorUmbral : usa >
+ConstructorSubgrafo --> "1" "RepositorioDatos\n(datos)"
+ConstructorSubgrafo --> "1" EstrategiaRelevancia
+ConstructorSubgrafo *-- "1" CalculadorCentralidad
+EstrategiaRelevancia <|.. RelevanciaDesdeBD
+@enduml

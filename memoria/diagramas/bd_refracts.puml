@@ -1,0 +1,68 @@
+@startuml bd_refracts
+' Modelo de REFRACTS en Neo4j. Azul: entidad; naranja: intermediario;
+' verde: auxiliar; discontinuo: agrupación (no es etiqueta de la BD).
+!include estilo.iuml
+skinparam class {
+  BackgroundColor<<entidad>> #E8F0FE
+  BorderColor<<entidad>> #2F5FA7
+  BackgroundColor<<intermediario>> #FFF4E0
+  BorderColor<<intermediario>> #8A5A12
+  BackgroundColor<<auxiliar>> #EEF6EE
+  BorderColor<<auxiliar>> #1F6B4F
+  BorderStyle<<agrupacion>> dashed
+}
+hide <<entidad>> stereotype
+hide <<intermediario>> stereotype
+hide <<auxiliar>> stereotype
+hide <<agrupacion>> stereotype
+
+class "«Entidad»" as Entidad <<agrupacion>>
+class Person <<entidad>> {
+  name, lastName
+}
+class Organization <<entidad>> {
+  name_es/ca/en
+}
+class HeritageItem <<entidad>> {
+  name_es/ca/en
+}
+
+class "«Intermediario»" as Intermediario <<agrupacion>> {
+  <b>relevance</b>
+  <b>relevanceSource</b>
+  <b>relevanceVersion</b>
+}
+class Relationship <<intermediario>> {
+  <i>Marriage, Friendship…</i>
+}
+class Event <<intermediario>> {
+  <i>Work, Birth…</i>
+}
+class Creation <<intermediario>>
+class Fund <<intermediario>>
+class Exposition <<intermediario>>
+
+class Period <<auxiliar>>
+class Ubication <<auxiliar>>
+class Image <<auxiliar>>
+class ExternalSource <<auxiliar>>
+
+Entidad <|-- Person
+Entidad <|-- Organization
+Entidad <|-- HeritageItem
+Intermediario <|-- Relationship
+Intermediario <|-- Event
+Event <|-- Creation
+Event <|-- Fund
+Event <|-- Exposition
+
+Person -- Relationship : HAS_ROLE_IN
+Person -- Event : PARTICIPATES_IN
+Creation -- HeritageItem : PRODUCED
+Fund -- Organization : CREATE
+Exposition -- HeritageItem : IS_EXPOSED
+Intermediario -- Period : OCURRED_DURING
+Intermediario -- Ubication : TOOK_PLACE_AT
+Entidad -- Image : HAS_IMAGE
+Entidad -- ExternalSource : HAS_EXTERNAL_SOURCE
+@enduml

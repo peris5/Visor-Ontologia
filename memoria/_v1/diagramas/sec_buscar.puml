@@ -1,0 +1,41 @@
+@startuml sec_buscar
+' Operación: buscar una entidad (sin peticiones al servidor).
+!include estilo.iuml
+actor Usuario
+participant ":PanelBusqueda" as PB
+participant ":ControladorExploracion" as CTRL
+participant ":Buscador" as BUS
+participant ":InterfazUsuario" as UI
+
+Usuario -> PB : escribe en el campo
+activate PB
+PB -> PB : ~#onEscribir()
+note right of PB
+  Espera 150 ms sin teclear
+  (MILISEGUNDOS_ESPERA) antes de buscar.
+end note
+PB -> PB : ~#buscarYa()
+PB -> CTRL : buscar(texto, tipo)
+deactivate PB
+activate CTRL
+alt texto de menos de 2 caracteres
+  CTRL -> UI : mostrarSugerencias([], texto)
+else
+  CTRL -> BUS : sugerir(texto, tipo)
+  activate BUS
+  BUS -> BUS : ~#normalizar(texto)
+  loop cada entrada del índice (todos sus nombres: es, ca, en)
+    BUS -> BUS : ~#coincide(texto, nombre)
+    note right of BUS
+      prefijo, comienzo de palabra o
+      distanciaEdicion(texto, nombre) <= 2
+    end note
+  end
+  BUS -> BUS : ~#ordenarPorCoincidencia(texto, resultados)
+  BUS --> CTRL : hasta 8 sugerencias { id, nombre, tipo }
+  deactivate BUS
+  CTRL -> UI : mostrarSugerencias(sugerencias, texto)
+  UI -> PB : mostrarSugerencias(lista, texto)
+end
+deactivate CTRL
+@enduml

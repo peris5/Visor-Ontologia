@@ -1,6 +1,4 @@
 /**
- * TipoRelacion
- *
  * Un tipo de relación (por ejemplo "Matrimonio"). Los tipos no se conocen de
  * antemano: salen de la base de datos (la etiqueta más específica del nodo
  * intermediario, por ejemplo Marriage, o el tipo de una relación directa,
@@ -13,9 +11,6 @@
  *    agrupar la leyenda.
  *  - nombre: el de la configuración (nombresTipos) o, si es un tipo nuevo
  *    que no está, uno automático a partir del id (nombreDesdeId).
- *
- * Requisitos: RF-20 y RF-39 (cada tipo tiene su color y no se conocen de
- * antemano), RF-23 (leyenda por familias).
  */
 export class TipoRelacion {
   #id;
@@ -51,16 +46,10 @@ export class TipoRelacion {
     }
   }
 
-  /**
-   * @returns {string}
-   */
   getId() {
     return this.#id;
   }
 
-  /**
-   * @returns {string}
-   */
   getNombre() {
     return this.#nombre;
   }
@@ -87,8 +76,6 @@ export class TipoRelacion {
    * El padre más alto por debajo de la raíz; si no hay, el propio tipo.
    * Marriage ["Related", "Relationship"] → "Related";
    * Mentorship ["Relationship"] → "Mentorship"; STUDENT_OF [] → "STUDENT_OF".
-   *
-   * @returns {string}
    */
   getFamilia() {
     if (this.#padres.length >= 2) {
@@ -108,9 +95,7 @@ export class TipoRelacion {
    * Nombre de un tipo: el de la tabla nombresTipos de la configuración o,
    * si no está (un tipo nuevo), el automático.
    *
-   * @param {string} id
    * @param {Object} nombresTipos - id → nombre.
-   * @returns {string}
    */
   static nombrar(id, nombresTipos) {
     if (nombresTipos !== undefined && nombresTipos !== null && typeof nombresTipos[id] === "string") {
@@ -125,9 +110,6 @@ export class TipoRelacion {
    * pone en minúsculas y la primera letra en mayúscula.
    * Ejemplos: "STUDENT_OF" → "Student of"; "HeritageItem" → "Heritage item";
    * "Apprenticeship" → "Apprenticeship"; "maestro_de" → "Maestro de".
-   *
-   * @param {string} id
-   * @returns {string}
    */
   static nombreDesdeId(id) {
     if (typeof id !== "string") {
@@ -148,11 +130,8 @@ export class TipoRelacion {
   }
 
   /**
-   * (Privado) Palabras de un id: se corta en cada "_" o espacio y donde una
+   * Palabras de un id: se corta en cada "_" o espacio y donde una
    * minúscula va seguida de una mayúscula ("heritageItem" → heritage | Item).
-   *
-   * @param {string} id
-   * @returns {string[]}
    */
   static #separarPalabras(id) {
     const palabras = [];

@@ -7,7 +7,7 @@ import { NodoRelevante } from '../src/modelo/NodoRelevante.js';
 import { Subgrafo } from '../src/modelo/Subgrafo.js';
 
 /*
- * Pruebas de CalculadorCentralidad (src/logica/), recuperadas del incremento 1.
+ * Pruebas de CalculadorCentralidad (src/logica/).
  *
  * Subgrafo hecho a mano:
  *   A ──0.5── B ──0.5── C        D (sin relaciones)

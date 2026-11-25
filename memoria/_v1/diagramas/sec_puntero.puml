@@ -1,0 +1,29 @@
+@startuml sec_puntero
+' Operación: pasar el puntero por encima (etiqueta flotante).
+!include estilo.iuml
+actor Usuario
+participant ":SelectorInteraccion" as SEL
+participant ":EscenaGrafo" as ESC
+
+Usuario -> SEL : mueve el puntero sobre el lienzo
+activate SEL
+SEL -> SEL : onMovimiento(evento)
+alt hay un botón pulsado (gira la cámara)
+  SEL -> SEL : ocultarEtiqueta()
+else
+  SEL -> SEL : ~#detectarObjeto(evento)
+  SEL -> ESC : getObjetosSeleccionables()
+  ESC --> SEL : mallas y líneas visibles
+  alt no hay nada bajo el puntero
+    SEL -> SEL : ocultarEtiqueta()
+  else NodoVisual o EnlaceVisual
+    SEL -> SEL : ~#mostrarEtiqueta(visual, evento)
+    note right of SEL
+      Nodo: nombre de la entidad.
+      Relación: «Tipo: origen (rol) → destino (rol)».
+      Se escribe con textContent, nunca como HTML.
+    end note
+  end
+end
+deactivate SEL
+@enduml

@@ -20,7 +20,6 @@ function crearLeyendaMontada() {
 }
 
 /**
- * @param {HTMLElement} padre
  * @param {string} selector - selector CSS de la lista.
  * @returns {string[]} textos "nombre cantidad" de cada elemento de la lista.
  */
@@ -129,9 +128,7 @@ prueba("ComponenteUI: es abstracta y mostrar/ocultar cambian la visibilidad", fu
  * terminar) para que los clics en los tipos funcionen como en la página real.
  */
 
-/**
- * Doble de ControladorExploracion: apunta las llamadas de la leyenda.
- */
+/** Doble de ControladorExploracion: apunta las llamadas de la leyenda. */
 class ControladorFalsoLeyenda {
   constructor() {
     this.llamadas = [];
@@ -149,10 +146,13 @@ class ControladorFalsoLeyenda {
   mostrarTodasLasRelaciones(visible) {
     this.llamadas.push("todas:" + visible);
   }
+
+  alternarDeducidos(mostrar) {
+    this.llamadas.push("deducidos:" + mostrar);
+  }
 }
 
 /**
- * @param {Object} controlador
  * @returns {Object} { leyenda, padre, autorDe, conserva }
  */
 function crearLeyendaInteractiva(controlador) {
@@ -175,12 +175,6 @@ function crearLeyendaInteractiva(controlador) {
   return { leyenda: leyenda, padre: padre, autorDe: autorDe, conserva: conserva };
 }
 
-/**
- * @param {HTMLElement} padre
- * @param {string} grupo
- * @param {string} valor
- * @returns {HTMLInputElement}
- */
 function buscarTipo(padre, grupo, valor) {
   return padre.querySelector("button[data-grupo=\"" + grupo + "\"][data-valor=\"" + valor + "\"]");
 }
@@ -188,7 +182,8 @@ function buscarTipo(padre, grupo, valor) {
 prueba("Leyenda: una etiqueta pulsable por tipo, sin casillas, con su estado en aria-pressed", function () {
   const l = crearLeyendaInteractiva(new ControladorFalsoLeyenda());
   try {
-    comprobarIgual(l.padre.querySelectorAll("input[type=checkbox]").length, 0, "no hay casillas");
+    comprobarIgual(l.padre.querySelectorAll("input[type=checkbox]").length, 1,
+      "los tipos no tienen casillas: la única es «Mostrar deducidos»");
     comprobarIgual(l.padre.querySelectorAll("button[data-grupo]").length, 4, "2 tipos de nodo y 2 de relación");
     comprobarIgual(buscarTipo(l.padre, "nodo", TipoEntidad.PERSONA).getAttribute("aria-pressed"), "true", "persona activa");
     comprobarIgual(buscarTipo(l.padre, "nodo", TipoEntidad.OBRA_DE_ARTE).getAttribute("aria-pressed"), "false", "obra oculta");
@@ -283,4 +278,38 @@ prueba("Leyenda: las relaciones se agrupan por familia, con un subtítulo cada u
   comprobarIgual(textos.join(" | "), "## Creación | Pintura | ## Parentesco | Filiación | Matrimonio | ## Mentoría | Mentoría",
     "orden de familias y tipos");
   comprobarIgual(l.padre.querySelectorAll("button[data-grupo=relacion]").length, 4, "una etiqueta por tipo, no por familia");
+});
+
+prueba("Leyenda: sección «Origen» con las tres muestras", function () {
+  const l = crearLeyendaMontada();
+  const titulos = l.padre.querySelectorAll("h3");
+  const textosTitulos = [];
+  for (let i = 0; i < titulos.length; i++) {
+    textosTitulos.push(titulos[i].textContent);
+  }
+  comprobar(textosTitulos.includes("Origen"), "hay un título «Origen»");
+  const muestras = l.padre.querySelectorAll(".leyenda-origen li");
+  comprobarIgual(muestras.length, 3, "tres muestras");
+  comprobar(muestras[0].querySelector(".simbolo-continua") !== null, "declarada: línea continua");
+  comprobar(muestras[1].querySelector(".simbolo-discontinua") !== null, "coincidencias: línea discontinua");
+  comprobar(muestras[2].querySelector(".simbolo-deducido") !== null, "deducido: semitransparente");
+  comprobar(muestras[1].textContent.includes("coincidencias"), "con texto, no solo el dibujo");
+});
+
+prueba("Leyenda: la casilla «Mostrar deducidos» avisa al controlador y refleja el estado", function () {
+  const controlador = new ControladorFalsoLeyenda();
+  const l = crearLeyendaInteractiva(controlador);
+  try {
+    const casilla = l.padre.querySelector("#casillaDeducidos");
+    comprobar(casilla !== null, "existe la casilla");
+    comprobar(casilla.labels[0].textContent.includes("Mostrar deducidos"), "con su texto");
+    casilla.click();
+    comprobarIgual(controlador.llamadas[controlador.llamadas.length - 1], "deducidos:false", "desmarcarla avisa");
+    l.leyenda.actualizar({ nodos: [], relaciones: [], mostrarDeducidos: true });
+    comprobarIgual(casilla.checked, true, "se marca según los datos");
+    l.leyenda.actualizar({ nodos: [], relaciones: [], mostrarDeducidos: false });
+    comprobarIgual(l.leyenda.getMostrarDeducidos(), false, "y se desmarca");
+  } finally {
+    l.padre.remove();
+  }
 });

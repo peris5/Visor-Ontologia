@@ -1,0 +1,98 @@
+@startuml clases_interfaz
+' Paquetes interfaz y aplicacion (cliente). _campo → #.
+!include estilo.iuml
+skinparam nodesep 25
+skinparam ranksep 55
+
+package "aplicacion" {
+  class Aplicacion {
+    - controlador : ControladorExploracion
+    - escena : EscenaGrafo
+    - interfaz : InterfazUsuario
+    - cliente : ClienteServicio
+    - gestor : GestorSubgrafos
+    - buscador : Buscador
+    + {static} main() : Promise<Aplicacion>
+    - crearDependencias(configuracion, nombres)
+    - iniciarBarraRendimiento()
+  }
+}
+
+package "interfaz" {
+  class InterfazUsuario <<fachada>> {
+    + inicializar(raiz, controlador, contexto)
+    + mostrarEntidad(entidad, nodo, subgrafo)
+    + mostrarDetalle(idEntidad, detalle)
+    + mostrarRelacion(relacion, subgrafo)
+    + mostrarSugerencias(lista, texto)
+    + mostrarEstado(estado : EstadoCarga)
+    + mostrarError(mensaje : string)
+    + setHabilitadoVolver(habilitado : boolean)
+    + setUmbral(valor : number)
+    + setModoDisposicion(modo)
+    + actualizarLeyenda(datos)
+  }
+
+  abstract class ComponenteUI {
+    # _elemento : HTMLElement
+    # _controlador : ControladorExploracion
+    + montar(padre : HTMLElement)
+    + mostrar()
+    + ocultar()
+    + {abstract} renderizar()
+  }
+
+  class PanelBusqueda {
+    + {static} MILISEGUNDOS_ESPERA : number = 150
+    + mostrarSugerencias(lista, texto)
+    - onEscribir()
+    - onSeleccionar(entrada)
+  }
+  class PanelInformacion {
+    + mostrarEntidad(entidad, nodo, subgrafo)
+    + mostrarDetalle(idEntidad, detalle)
+    + mostrarRelacion(relacion, subgrafo)
+    + limpiar()
+  }
+  class ControlUmbral {
+    + setValor(valor : number)
+    - onCambio()
+  }
+  class ControlDisposicion {
+    + setModo(modo)
+    - onElegir(modo)
+  }
+  class Leyenda {
+    + actualizar(datos)
+    - onPulsar(evento)
+  }
+  class IndicadorEstado {
+    + mostrarCarga()
+    + mostrarError(mensaje : string)
+    + ocultarEstado()
+  }
+  class BarraNavegacion {
+    + setHabilitadoVolver(habilitado : boolean)
+    - onVolver()
+    - onRestablecerVista()
+  }
+}
+
+InterfazUsuario *-- "1" PanelBusqueda
+InterfazUsuario *-- "1" PanelInformacion
+InterfazUsuario *-- "1" ControlUmbral
+InterfazUsuario *-- "1" ControlDisposicion
+InterfazUsuario *-- "1" Leyenda
+InterfazUsuario *-- "1" IndicadorEstado
+InterfazUsuario *-- "1" BarraNavegacion
+ComponenteUI <|-- PanelBusqueda
+ComponenteUI <|-- PanelInformacion
+ComponenteUI <|-- ControlUmbral
+ComponenteUI <|-- ControlDisposicion
+ComponenteUI <|-- Leyenda
+ComponenteUI <|-- IndicadorEstado
+ComponenteUI <|-- BarraNavegacion
+ComponenteUI --> "1" "ControladorExploracion\n(logica)" : avisa >
+Aplicacion ..> InterfazUsuario : crea >
+Aplicacion ..> "ControladorExploracion\n(logica)" : crea >
+@enduml

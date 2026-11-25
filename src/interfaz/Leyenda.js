@@ -2,16 +2,18 @@ import { ComponenteUI, crear } from './ComponenteUI.js';
 import { TipoEntidad } from '../modelo/TipoEntidad.js';
 
 /**
- * Leyenda extends ComponenteUI
- *
- * Explica qué significa lo que se ve en la escena 3D y, desde el incremento
- * 3, sirve también de FILTRO: se pulsa cada tipo para mostrarlo u
- * ocultarlo (los ocultos salen apagados y tachados). Muestra SOLO los tipos presentes en el grafo actual, con
- * cuántos hay de cada uno:
+ * Explica qué significa lo que se ve en la escena 3D y sirve también de
+ * FILTRO: se pulsa cada tipo para mostrarlo u ocultarlo (los ocultos salen
+ * apagados y tachados). Muestra SOLO los tipos presentes en el grafo
+ * actual, con cuántos hay de cada uno:
  *  - los tipos de nodo, con un símbolo de su forma y su color;
  *  - los tipos de relación, con una línea de su color, AGRUPADOS POR FAMILIA
  *    (Parentesco, Relación profesional...), de más a menos frecuentes (a
  *    igualdad, por nombre), y los botones «Todas» y «Ninguna»;
+ *  - el ORIGEN de la relevancia: relación declarada (línea continua), solo
+ *    coincidencias en eventos (línea discontinua) y deducido (nodo
+ *    semitransparente), con la casilla «Mostrar deducidos» (no pide nada al
+ *    servidor);
  *  - qué significan el tamaño y la distancia al centro.
  *
  * Si un tipo de relación está activo pero no se ve ninguna de sus
@@ -19,11 +21,6 @@ import { TipoEntidad } from '../modelo/TipoEntidad.js';
  * nota «(ocultas por los nodos)».
  *
  * En pantallas estrechas (menos de 700 px) se pliega tras un botón «Leyenda».
- *
- * Requisitos: RF-23 (leyenda de nodos y relaciones), RF-24 (solo lo
- * presente), RF-32 y RF-33 (filtros), RNF-09 (pantallas pequeñas), RNF-25
- * (cada tipo es un botón con aria-pressed: se usa con el teclado y los
- * lectores de pantalla dicen si está activado o no).
  */
 export class Leyenda extends ComponenteUI {
   // Orden fijo en el que se muestran los tipos de nodo.
@@ -33,6 +30,7 @@ export class Leyenda extends ComponenteUI {
   #relaciones;
   #tipos;
   #botonPlegar;
+  #casillaDeducidos;
 
   /**
    * @param {ControladorExploracion|null} controlador - recibe los tipos que
@@ -45,6 +43,7 @@ export class Leyenda extends ComponenteUI {
     this.#relaciones = null;
     this.#tipos = new Map();
     this.#botonPlegar = null;
+    this.#casillaDeducidos = null;
 
     // Un solo escuchador para todos los tipos (sus botones se crean y se
     // borran en cada actualizar, pero el elemento de la leyenda no).
@@ -86,6 +85,9 @@ export class Leyenda extends ComponenteUI {
       crear("h3", { texto: "Relaciones" }, []),
       this.#crearBotonesTodasNinguna(),
       this.#relaciones,
+      crear("h3", { texto: "Origen" }, []),
+      this.#crearExplicacionOrigen(),
+      this.#crearCasillaDeducidos(),
       crear("h3", { texto: "Tamaño" }, []),
       this.#crearExplicacionTamano(),
       crear("p", {
@@ -102,7 +104,8 @@ export class Leyenda extends ComponenteUI {
    *
    * @param {Object} datos - {
    *     nodos:      [{ tipo: TipoEntidad, cantidad, activo }],
-   *     relaciones: [{ tipo: TipoRelacion, cantidad, activo, visibles }]
+   *     relaciones: [{ tipo: TipoRelacion, cantidad, activo, visibles }],
+   *     mostrarDeducidos: si la casilla «Mostrar deducidos» está marcada (opcional)
    *   }
    *   Si falta "activo", se considera activo; si falta "visibles", se
    *   considera que se ven todas.
@@ -113,15 +116,28 @@ export class Leyenda extends ComponenteUI {
     }
     // Los botones de los tipos se vuelven a crear. Si el usuario estaba
     // usando uno con el teclado, se le devuelve el foco al nuevo; si no, el
-    // foco se perdería cada vez que pulsa un tipo (RNF-25).
+    // foco se perdería cada vez que pulsa un tipo.
     const tipoConFoco = this.#tipoConFoco();
     this.#actualizarNodos(datos.nodos);
     this.#actualizarRelaciones(datos.relaciones);
+    if (typeof datos.mostrarDeducidos === "boolean") {
+      this.#casillaDeducidos.checked = datos.mostrarDeducidos;
+    }
     this.#devolverFoco(tipoConFoco);
   }
 
   /**
-   * (Privado) Grupo y valor del tipo de la leyenda que tiene el foco.
+   * @returns {boolean} si la casilla «Mostrar deducidos» está marcada.
+   */
+  getMostrarDeducidos() {
+    if (this.#casillaDeducidos === null) {
+      return true;
+    }
+    return this.#casillaDeducidos.checked;
+  }
+
+  /**
+   * Grupo y valor del tipo de la leyenda que tiene el foco.
    *
    * @returns {Object|null} { grupo, valor }, o null si el foco está en otro sitio.
    */
@@ -137,7 +153,7 @@ export class Leyenda extends ComponenteUI {
   }
 
   /**
-   * (Privado) Pone el foco en el botón nuevo del mismo grupo y valor.
+   * Pone el foco en el botón nuevo del mismo grupo y valor.
    *
    * @param {Object|null} tipo - { grupo, valor }
    */
@@ -154,7 +170,7 @@ export class Leyenda extends ComponenteUI {
   }
 
   /**
-   * (Privado) Lista de tipos de nodo presentes, en el orden fijo.
+   * Lista de tipos de nodo presentes, en el orden fijo.
    *
    * @param {Object[]} nodos - [{ tipo, cantidad, activo }]
    */
@@ -174,7 +190,7 @@ export class Leyenda extends ComponenteUI {
   }
 
   /**
-   * (Privado) Lista de tipos de relación presentes, de más a menos frecuentes.
+   * Lista de tipos de relación presentes, de más a menos frecuentes.
    *
    * @param {Object[]} relaciones - [{ tipo: TipoRelacion, cantidad, activo, visibles }]
    */
@@ -209,10 +225,9 @@ export class Leyenda extends ComponenteUI {
   }
 
   /**
-   * (Privado) Un tipo de relación de la leyenda.
+   * Un tipo de relación de la leyenda.
    *
    * @param {Object} dato - { tipo, cantidad, activo, visibles }
-   * @returns {HTMLElement}
    */
   #elementoDeRelacion(dato) {
     const tipo = dato.tipo;
@@ -231,7 +246,7 @@ export class Leyenda extends ComponenteUI {
   }
 
   /**
-   * (Privado) Agrupa los tipos de relación por su familia
+   * Agrupa los tipos de relación por su familia
    * (TipoRelacion.getFamilia) y ordena las familias.
    *
    * @param {Object[]} presentes - [{ tipo, cantidad, ... }]
@@ -258,11 +273,10 @@ export class Leyenda extends ComponenteUI {
   }
 
   /**
-   * (Privado) Para ordenar familias de más a menos relaciones y, a igualdad, por nombre.
+   * Para ordenar familias de más a menos relaciones y, a igualdad, por nombre.
    *
    * @param {Object} a - { nombre, cantidad }
    * @param {Object} b - { nombre, cantidad }
-   * @returns {number}
    */
   static #compararFamilias(a, b) {
     if (a.cantidad !== b.cantidad) {
@@ -272,20 +286,16 @@ export class Leyenda extends ComponenteUI {
   }
 
   /**
-   * (Privado) Un elemento de la lista: una etiqueta pulsable con el
+   * Un elemento de la lista: una etiqueta pulsable con el
    * símbolo, el nombre y la cantidad. Es un <button> con aria-pressed (true
    * si el tipo se ve): así se usa con el teclado (Tab, Intro o espacio) y
-   * los lectores de pantalla dicen si está activado (RNF-25). Los tipos
+   * los lectores de pantalla dicen si está activado. Los tipos
    * ocultos se ven apagados y tachados (CSS).
    *
    * @param {string} grupo - "nodo" o "relacion".
    * @param {string} valor - el tipo de entidad o el id del tipo de relación.
-   * @param {HTMLElement} simbolo
-   * @param {string} nombre
-   * @param {number} cantidad
    * @param {boolean} activo - si el tipo se muestra.
    * @param {boolean} seVe - false si está activo pero no se ve ninguna (se atenúa).
-   * @returns {HTMLElement}
    */
   #elemento(grupo, valor, simbolo, nombre, cantidad, activo, seVe) {
     const partes = [
@@ -311,11 +321,9 @@ export class Leyenda extends ComponenteUI {
   }
 
   /**
-   * (Privado) Se ha pulsado un tipo: se avisa al controlador. El clic
+   * Se ha pulsado un tipo: se avisa al controlador. El clic
    * puede caer en el símbolo o en el nombre, que están dentro del botón:
    * closest busca el botón del tipo que los contiene.
-   *
-   * @param {Event} evento
    */
   #onPulsar(evento) {
     if (this._controlador === null || typeof evento.target.closest !== "function") {
@@ -334,11 +342,7 @@ export class Leyenda extends ComponenteUI {
     }
   }
 
-  /**
-   * (Privado) Los botones «Todas» y «Ninguna» de las relaciones.
-   *
-   * @returns {HTMLElement}
-   */
+  /** Los botones «Todas» y «Ninguna» de las relaciones. */
   #crearBotonesTodasNinguna() {
     const botonTodas = crear("button", { type: "button", texto: "Todas", "aria-label": "Mostrar todas las relaciones" }, []);
     const botonNinguna = crear("button", { type: "button", texto: "Ninguna", "aria-label": "Ocultar todas las relaciones" }, []);
@@ -357,18 +361,53 @@ export class Leyenda extends ComponenteUI {
   }
 
   /**
-   * (Privado) Pliega o despliega la leyenda (solo se nota en pantallas estrechas).
+   * Las tres muestras del origen de la relevancia. No dependen solo del
+   * color (RNF-26): una línea continua, una discontinua y un nodo
+   * semitransparente, cada una con su texto.
    */
+  #crearExplicacionOrigen() {
+    return crear("ul", { clase: "leyenda-lista leyenda-origen" }, [
+      crear("li", {}, [
+        crear("span", { clase: "simbolo-origen simbolo-continua", "aria-hidden": "true" }, []),
+        crear("span", { clase: "leyenda-nombre", texto: "Relación declarada" }, [])
+      ]),
+      crear("li", {}, [
+        crear("span", { clase: "simbolo-origen simbolo-discontinua", "aria-hidden": "true" }, []),
+        crear("span", { clase: "leyenda-nombre", texto: "Solo coincidencias en eventos" }, [])
+      ]),
+      crear("li", {}, [
+        crear("span", { clase: "simbolo-origen simbolo-deducido", "aria-hidden": "true" }, []),
+        crear("span", { clase: "leyenda-nombre", texto: "Deducido (a dos saltos)" }, [])
+      ])
+    ]);
+  }
+
+  /**
+   * La casilla «Mostrar deducidos». Al cambiarla se avisa al controlador,
+   * que recalcula el subgrafo con lo que ya tiene (sin peticiones).
+   */
+  #crearCasillaDeducidos() {
+    this.#casillaDeducidos = crear("input", { type: "checkbox", id: "casillaDeducidos" }, []);
+    this.#casillaDeducidos.checked = true;
+    const leyenda = this;
+    this.#casillaDeducidos.addEventListener("change", function () {
+      if (leyenda._controlador !== null) {
+        leyenda._controlador.alternarDeducidos(leyenda.#casillaDeducidos.checked);
+      }
+    });
+    return crear("label", { clase: "leyenda-casilla", for: "casillaDeducidos" }, [
+      this.#casillaDeducidos,
+      crear("span", { texto: "Mostrar deducidos" }, [])
+    ]);
+  }
+
+  /** Pliega o despliega la leyenda (solo se nota en pantallas estrechas). */
   #alternarPlegado() {
     const estaAbierta = this._elemento.classList.toggle("leyenda-abierta");
     this.#botonPlegar.setAttribute("aria-expanded", String(estaAbierta));
   }
 
-  /**
-   * (Privado) Un círculo pequeño y uno grande para explicar el tamaño.
-   *
-   * @returns {HTMLElement}
-   */
+  /** Un círculo pequeño y uno grande para explicar el tamaño. */
   #crearExplicacionTamano() {
     return crear("ul", { clase: "leyenda-lista leyenda-tamano" }, [
       crear("li", {}, [
@@ -382,12 +421,7 @@ export class Leyenda extends ComponenteUI {
     ]);
   }
 
-  /**
-   * (Privado) El campo "activo" de un dato de la leyenda; si no viene, true.
-   *
-   * @param {Object} dato
-   * @returns {boolean}
-   */
+  /** El campo "activo" de un dato de la leyenda; si no viene, true. */
   static #leerActivo(dato) {
     if (dato.activo === false) {
       return false;
@@ -396,11 +430,10 @@ export class Leyenda extends ComponenteUI {
   }
 
   /**
-   * (Privado) Para ordenar de más a menos frecuente y, a igualdad, por nombre.
+   * Para ordenar de más a menos frecuente y, a igualdad, por nombre.
    *
    * @param {Object} a - { tipo, cantidad }
    * @param {Object} b - { tipo, cantidad }
-   * @returns {number}
    */
   static #compararRelaciones(a, b) {
     if (a.cantidad !== b.cantidad) {

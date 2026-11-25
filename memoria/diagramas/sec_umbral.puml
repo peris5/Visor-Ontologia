@@ -1,0 +1,27 @@
+@startuml sec_umbral
+' Operación: cambiar el umbral.
+!include estilo.iuml
+actor Usuario
+participant ":ControlUmbral" as CU
+participant ":Controlador\nExploracion" as CTRL
+participant ":Gestor\nSubgrafos" as GES
+participant ":Cliente\nServicio" as CLI
+participant ":EscenaGrafo" as ESC
+
+Usuario -> CU : suelta el deslizador
+CU -> CTRL : cambiarUmbral(u)
+activate CTRL
+CTRL -> GES : obtenerSubgrafo(id, u)
+activate GES
+alt u >= umbral guardado
+  note over GES, CLI : se reutiliza el vecindario
+else u < umbral guardado
+  GES -> CLI : obtenerVecindario(id, u)
+  CLI --> GES : vecindario más amplio
+end
+GES -> GES : construir subgrafo
+GES --> CTRL : subgrafo
+deactivate GES
+CTRL -> ESC : mostrarSubgrafo(subgrafo)
+deactivate CTRL
+@enduml

@@ -1,4 +1,4 @@
-"""Relacion (traducción de src/modelo/Relacion.js)."""
+"""Relacion (la misma clase que src/modelo/Relacion.js)."""
 from typing import Any
 
 from servidor.modelo.entidad import Entidad
@@ -12,8 +12,6 @@ class Relacion:
      - valor: el que viene de la base de datos.
      - relevancia: la que calcula la EstrategiaRelevancia a partir del valor.
        Hasta que la estrategia la calcula, vale lo mismo que el valor.
-
-    Requisitos: RF-08 a RF-12 (la relevancia de las relaciones decide el subgrafo).
     """
 
     def __init__(self, identificador: str, origen: Entidad, destino: Entidad,

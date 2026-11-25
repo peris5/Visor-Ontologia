@@ -1,0 +1,52 @@
+@startuml sec_filtrar
+' Operaciones de visualización sin petición: filtrar desde la leyenda y
+' cambiar la disposición.
+!include estilo.iuml
+actor Usuario
+participant ":Leyenda\n/ ControlDisposicion" as LEY
+participant ":ControladorExploracion" as CTRL
+participant ":FiltroVisualizacion" as FIL
+participant ":EscenaGrafo" as ESC
+participant ":InterfazUsuario" as UI
+
+== Filtrar un tipo ==
+Usuario -> LEY : pulsa un tipo de la leyenda
+LEY -> LEY : ~#onPulsar(evento)
+alt tipo de nodo
+  LEY -> CTRL : alternarFiltroNodo(tipo)
+  CTRL -> FIL : alternarTipoNodo(tipo)
+else tipo de relación
+  LEY -> CTRL : alternarFiltroRelacion(tipo)
+  CTRL -> FIL : alternarTipoRelacion(tipo)
+end
+CTRL -> CTRL : ~#aplicarFiltro()
+CTRL -> ESC : aplicarFiltro(filtro)
+loop cada NodoVisual y EnlaceVisual
+  ESC -> FIL : esVisibleNodo(nodo, idCentral)\n/ esVisibleRelacion(relacion, idCentral)
+  ESC -> ESC : setVisible(...)
+end
+CTRL -> UI : actualizarLeyenda(datos)
+
+== «Todas» / «Ninguna» ==
+Usuario -> LEY : «Todas» o «Ninguna»
+LEY -> CTRL : mostrarTodasLasRelaciones(visible)
+loop cada relación del subgrafo actual
+  CTRL -> FIL : setTipoRelacionActivo(tipo, visible)
+end
+CTRL -> CTRL : ~#aplicarFiltro()
+
+== Cambiar la disposición ==
+Usuario -> LEY : «Libre» o «Por grupos»
+LEY -> CTRL : cambiarDisposicion(modo)
+CTRL -> ESC : setModoDisposicion(modo)
+activate ESC
+ESC -> ESC : ~#aplicarModo()
+note right of ESC
+  POR_GRUPOS: DetectorComunidades.detectar(subgrafo),
+  CalculadorDisposicion.direccionesObjetivo(...),
+  SimulacionFuerzas.setDireccionesObjetivo(...)
+end note
+ESC -> ESC : SimulacionFuerzas.reactivar(1)
+deactivate ESC
+CTRL -> UI : setModoDisposicion(modo)
+@enduml

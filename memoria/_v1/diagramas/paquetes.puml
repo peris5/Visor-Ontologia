@@ -1,0 +1,60 @@
+@startuml paquetes
+' Diagrama de paquetes con las dependencias reales (sacadas de los import).
+' En rojo, las dependencias que forman un ciclo.
+!include estilo.iuml
+skinparam nodesep 50
+skinparam ranksep 60
+
+package "Navegador (JavaScript, src/)" as Cliente {
+  package aplicacion {
+  }
+  package interfaz {
+  }
+  package vista3d {
+  }
+  package logica {
+  }
+  package datos {
+  }
+  package modelo {
+  }
+}
+
+package "Servidor (Python, servidor/)" as Servidor {
+  package "app.py" {
+  }
+  package "api" {
+  }
+  package "logica (servidor)" {
+  }
+  package "datos (servidor)" {
+  }
+  package "modelo (servidor)" {
+  }
+}
+
+aplicacion ..> interfaz
+aplicacion ..> vista3d
+aplicacion ..> logica
+aplicacion ..> datos
+interfaz ..> logica
+interfaz ..> vista3d
+interfaz ..> modelo
+vista3d ..> logica
+vista3d ..> modelo
+logica ..> modelo
+datos ..> modelo
+logica ..> datos #red : GestorSubgrafos →\nRepositorioVecindario, ClienteServicio
+datos ..> logica #red : RepositorioVecindario →\nPaletaColores
+
+"app.py" ..> api
+"app.py" ..> "datos (servidor)"
+"app.py" ..> "logica (servidor)"
+"api" ..> "logica (servidor)"
+"api" ..> "modelo (servidor)"
+"datos (servidor)" ..> "modelo (servidor)"
+"datos (servidor)" ..> "logica (servidor)" #red : RepositorioSimulado, ProyectorRelaciones →\nAsignadorRelevancia, ClasificadorEtiquetas, Configuracion
+"logica (servidor)" ..> "datos (servidor)" #red : AsignadorRelevancia →\nAlmacenRelevancias
+
+datos -[#2F5FA7,bold]-> "app.py" : HTTP (fetch)\nGET /api/...
+@enduml

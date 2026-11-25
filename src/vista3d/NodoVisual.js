@@ -2,18 +2,50 @@ import * as THREE from 'three';
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 
 /**
- * «abstract» NodoVisual
- *
  * Representación 3D de un NodoRelevante: una malla (forma + material) y una
  * etiqueta HTML con el nombre. Cada subclase decide su forma y su color
  * (NodoPersona, NodoOrganizacion, NodoObra).
  *
  * Es abstracta: no se puede hacer new NodoVisual(...).
- *
- * Requisitos: RF-18 (un objeto 3D por nodo), RF-19 (forma y color según el
- * tipo), RF-22 (etiqueta con el nombre).
  */
 export class NodoVisual {
+  // Opacidad de un nodo con certeza 0 (opacidadMinima de public/relevancia.json).
+  static #opacidadMinima = 0.25;
+
+  /**
+   * Cambia la opacidad mínima (la de certeza 0) para los nodos que se creen después.
+   *
+   * @param {number} valor - entre 0 y 1.
+   */
+  static setOpacidadMinima(valor) {
+    if (typeof valor !== "number" || Number.isNaN(valor) || valor < 0 || valor > 1) {
+      throw new Error("En public/relevancia.json, opacidadMinima debe ser un número entre 0 y 1.");
+    }
+    NodoVisual.#opacidadMinima = valor;
+  }
+
+  static getOpacidadMinima() {
+    return NodoVisual.#opacidadMinima;
+  }
+
+  /**
+   * La opacidad según la CERTEZA C del nodo, de forma continua:
+   *     opacidad = opacidadMinima + (1 − opacidadMinima) × C
+   * Los nodos con relación declarada (C = 1) quedan opacos; los que solo
+   * coinciden o son deducidos, más transparentes cuanto menos se sabe.
+   * Es estático para poder probarlo sin WebGL.
+   *
+   * @param {NodoRelevante} nodo
+   */
+  static opacidadDe(nodo) {
+    let certeza = 1;
+    const resultado = nodo.getResultado();
+    if (resultado !== null) {
+      certeza = resultado.getCerteza();
+    }
+    return NodoVisual.#opacidadMinima + (1 - NodoVisual.#opacidadMinima) * certeza;
+  }
+
   // Protegidos (los usan las subclases).
   _malla;
   _etiqueta;
@@ -25,7 +57,6 @@ export class NodoVisual {
   #visible;
 
   /**
-   * @param {NodoRelevante} nodo
    * @param {number} tamano - escala de la forma (la calcula FabricaNodosVisuales).
    */
   constructor(nodo, tamano) {
@@ -37,10 +68,17 @@ export class NodoVisual {
     this.#visible = true;
     this._tamano = tamano;
 
+    // La opacidad depende de la CERTEZA (ver opacidadDe): lo que solo se
+    // supone (coincidencias, deducciones) se ve más transparente. Los
+    // deducidos llevan además el nombre en cursiva (no depende solo del
+    // color, RNF-26).
+    const opacidad = NodoVisual.opacidadDe(nodo);
     const material = new THREE.MeshStandardMaterial({
       color: this._getColor(),
       roughness: 0.45,
-      metalness: 0.1
+      metalness: 0.1,
+      transparent: opacidad < 1,
+      opacity: opacidad
     });
     this._malla = new THREE.Mesh(this._crearGeometria(), material);
     this._malla.scale.setScalar(tamano);
@@ -51,16 +89,10 @@ export class NodoVisual {
     this._malla.add(this._etiqueta);
   }
 
-  /**
-   * @returns {NodoRelevante}
-   */
   getNodo() {
     return this.#nodo;
   }
 
-  /**
-   * @returns {THREE.Mesh}
-   */
   getMalla() {
     return this._malla;
   }
@@ -72,9 +104,6 @@ export class NodoVisual {
     return this._malla.position.clone();
   }
 
-  /**
-   * @returns {boolean}
-   */
   getVisible() {
     return this.#visible;
   }
@@ -90,8 +119,6 @@ export class NodoVisual {
    * Muestra u oculta el nodo. CSS2DRenderer decide si muestra una etiqueta
    * mirando SOLO la visibilidad de la propia etiqueta (no la de su malla),
    * así que hay que actualizar las dos.
-   *
-   * @param {boolean} visible
    */
   setVisible(visible) {
     this.#visible = visible;
@@ -99,11 +126,7 @@ export class NodoVisual {
     this.#actualizarVisibilidadEtiqueta();
   }
 
-  /**
-   * Resalta el nodo: le da brillo y lo hace un 25 % más grande.
-   *
-   * @param {boolean} activo
-   */
+  /** Resalta el nodo: le da brillo y lo hace un 25 % más grande. */
   resaltar(activo) {
     if (activo) {
       this._malla.material.emissive.setHex(0x555555);
@@ -137,12 +160,7 @@ export class NodoVisual {
     this._malla.material.dispose();
   }
 
-  /**
-   * (Protegido, abstracto) Forma del nodo.
-   *
-   * @abstract
-   * @returns {THREE.BufferGeometry}
-   */
+  /** (Protegido, abstracto) Forma del nodo. */
   _crearGeometria() {
     throw new Error("No implementado: cada subclase de NodoVisual debe implementar _crearGeometria().");
   }
@@ -150,7 +168,6 @@ export class NodoVisual {
   /**
    * (Protegido, abstracto) Color del nodo.
    *
-   * @abstract
    * @returns {string} "#rrggbb"
    */
   _getColor() {
@@ -158,18 +175,17 @@ export class NodoVisual {
   }
 
   /**
-   * (Privado) La etiqueta es un <div> con el nombre, un poco por encima de la
+   * La etiqueta es un <div> con el nombre, un poco por encima de la
    * forma y oculta al principio. La de la entidad central lleva una clase
    * más para destacarla.
-   *
-   * @param {NodoRelevante} nodo
-   * @returns {CSS2DObject}
    */
   #crearEtiqueta(nodo) {
     const elemento = document.createElement("div");
     elemento.className = "etiqueta-nodo";
     if (nodo.getNivel() === 0) {
       elemento.className = "etiqueta-nodo etiqueta-central";
+    } else if (nodo.esDeducido()) {
+      elemento.className = "etiqueta-nodo etiqueta-deducido";
     }
     // textContent (y no innerHTML) para que un nombre nunca se interprete como HTML.
     elemento.textContent = nodo.getEntidad().getNombre();
@@ -180,9 +196,7 @@ export class NodoVisual {
     return etiqueta;
   }
 
-  /**
-   * (Privado) La etiqueta se ve solo si el nodo es visible Y se ha pedido mostrarla.
-   */
+  /** La etiqueta se ve solo si el nodo es visible Y se ha pedido mostrarla. */
   #actualizarVisibilidadEtiqueta() {
     let etiquetaVisible = false;
     if (this.#visible && this.#etiquetaActiva) {

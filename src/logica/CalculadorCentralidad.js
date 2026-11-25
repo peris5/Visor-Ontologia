@@ -1,17 +1,12 @@
 /**
- * CalculadorCentralidad
- *
  * Mide lo "conectado" que está cada nodo dentro del subgrafo con la
  * centralidad de grado ponderada:
  *   1. Para cada nodo, sumamos las relevancias de sus relaciones.
  *   2. Dividimos cada suma por la mayor, para que queden entre 0 y 1
  *      (el nodo más conectado vale 1). Si la mayor es 0, todos valen 0.
- *
- * Requisitos: RF-37.
  */
 export class CalculadorCentralidad {
   /**
-   * @param {Subgrafo} subgrafo
    * @returns {Map<string, number>} idEntidad → centralidad entre 0 y 1.
    */
   calcular(subgrafo) {
@@ -22,11 +17,8 @@ export class CalculadorCentralidad {
   }
 
   /**
-   * (Privado) Paso 1: suma de relevancias de las relaciones de cada nodo.
+   * Paso 1: suma de relevancias de las relaciones de cada nodo.
    * Cada relación suma a sus DOS extremos.
-   *
-   * @param {Subgrafo} subgrafo
-   * @returns {Map<string, number>}
    */
   #sumarRelevanciasPorNodo(subgrafo) {
     const sumasPorNodo = new Map();
@@ -50,12 +42,7 @@ export class CalculadorCentralidad {
     return sumasPorNodo;
   }
 
-  /**
-   * (Privado) La suma más grande de todas.
-   *
-   * @param {Map<string, number>} sumasPorNodo
-   * @returns {number}
-   */
+  /** La suma más grande de todas. */
   #buscarMaximo(sumasPorNodo) {
     let maximo = 0;
     for (const suma of sumasPorNodo.values()) {
@@ -66,13 +53,7 @@ export class CalculadorCentralidad {
     return maximo;
   }
 
-  /**
-   * (Privado) Paso 2: divide cada suma por el máximo.
-   *
-   * @param {Map<string, number>} sumasPorNodo
-   * @param {number} sumaMaxima
-   * @returns {Map<string, number>}
-   */
+  /** Paso 2: divide cada suma por el máximo. */
   #normalizar(sumasPorNodo, sumaMaxima) {
     const centralidadPorNodo = new Map();
     for (const idEntidad of sumasPorNodo.keys()) {

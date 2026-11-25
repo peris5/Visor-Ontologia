@@ -1,0 +1,29 @@
+@startuml despliegue
+' Diagrama de despliegue (incremento 4).
+!include estilo.iuml
+
+node "Equipo del usuario" {
+  node "Navegador web (WebGL)" {
+    artifact "index.html + JS de dist/\n(Three.js 0.169)" as pagina
+  }
+}
+
+node "Servidor de aplicación" {
+  node "Uvicorn (ASGI)" {
+    artifact "FastAPI: servidor/app.py" as api
+    artifact "dist/ (ficheros estáticos)" as estaticos
+    artifact "configuracion.json" as conf
+  }
+  artifact ".env\n(NEO4J_URI, usuario, contraseña)" as env
+}
+
+node "Servidor de base de datos (IRTIC)" {
+  database "Neo4j\n(REFRACTS)" as bd
+}
+
+pagina --> estaticos : HTTPS GET /
+pagina --> api : HTTPS GET /api/... (JSON)
+api --> bd : Bolt (controlador oficial de Neo4j)\nlectura + SET de relevance*
+api ..> conf : lee al arrancar
+api ..> env : credenciales
+@enduml

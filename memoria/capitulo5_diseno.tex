@@ -1,0 +1,543 @@
+% =====================================================================
+% Capítulo 5 - Diseño (versión reducida, 18/11/2026)
+% ---------------------------------------------------------------------
+% Notas para el autor (no salen en el PDF):
+%  - El \chapter va en el documento principal:
+%      \chapter{Diseño}\label{cap:diseno}
+%      \input{capitulo5_diseno}
+%  - \TODO{...} son notas de trabajo que se quitan al cerrar el capítulo.
+%  - Diagramas: los .png de diagramas/ se generan con
+%      java -jar plantuml.jar -charset UTF-8 -tpng diagramas/*.puml
+%    El estilo común (diagramas/estilo.iuml) ya fija 250 ppp, letra de
+%    14 px y el motor smetana (no hace falta Graphviz).
+%  - Los anchos de \diagrama[...] están calculados para que la letra de
+%    cada diagrama quede entre 8 y 11 pt. Si cambias un .puml, revisa
+%    el ancho.
+%  - La versión larga anterior está en _v1/capitulo5_diseno_largo.tex.
+% =====================================================================
+
+\providecommand{\TODO}[1]{\textbf{[TODO: #1]}}
+\graphicspath{{figuras/}{diagramas/}}
+\providecommand{\diagrama}[2][1]{%
+  \includegraphics[width=#1\textwidth,height=0.85\textheight,keepaspectratio]{#2}}
+\providecommand{\diagramaapaisado}[1]{%
+  \includegraphics[width=\linewidth,height=0.7\paperwidth,keepaspectratio]{#1}}
+
+Este capítulo describe el diseño del visor al cerrar el incremento~4, en el que el servidor pasa de usar datos simulados a consultar la base de datos Neo4j de REFRACTS. Se presentan los algoritmos (sección~\ref{sec:algoritmos}), los datos (sección~\ref{sec:bd}), las clases (sección~\ref{sec:clases}), las interacciones (sección~\ref{sec:interaccion}) y los paquetes (sección~\ref{sec:paquetes}). Lo que depende de la conexión con Neo4j y aún no está implementado se señala como previsto.
+
+% =====================================================================
+\section{Diseño de algoritmos}
+\label{sec:algoritmos}
+
+\subsection{Reparto del cálculo entre servidor y cliente}
+\label{sec:reparto}
+
+En el incremento~1 todo se calculaba en el navegador sobre un fichero de ejemplo, lo que no es viable con la base de datos real. En el incremento~2 el servidor construía el subgrafo completo, y cada cambio de umbral repetía el cálculo en el servidor, en contra de RNF-05. Desde el incremento~3 el servidor solo entrega, en una respuesta, el \emph{vecindario} de la entidad (las entidades alcanzables por relaciones que superan el umbral) y calcula lo que exige acceso a la base de datos: las relaciones derivadas y su relevancia. El navegador construye el subgrafo, la centralidad y la disposición. El incremento~4 mantiene este reparto y solo cambia el origen de los datos, detrás de la interfaz \texttt{RepositorioDatos}.
+
+En lo que sigue, $n$ y $m$ son las entidades y relaciones del vecindario, y $k\le150$ y $m_k$ los nodos y relaciones del subgrafo.
+
+\subsection{Recorrido del vecindario en el servidor}
+\label{sec:alg-vecindario}
+
+\texttt{RepositorioDatos.obtener\_vecindario} hace un recorrido en anchura desde la entidad central que solo atraviesa relaciones cuya relevancia supera el umbral $u$ (Algoritmo~\ref{alg:vecindario}). La relevancia de cada intermediario se obtiene una sola vez por petición, de forma perezosa (sección~\ref{sec:alg-relevancia}).
+
+\begin{algorithm}[htbp]
+  \caption{Recorrido del vecindario (\texttt{obtener\_vecindario}).}
+  \label{alg:vecindario}
+  \begin{algorithmic}[1]
+    \Function{ObtenerVecindario}{$e_0$, $u$, $maxEntidades$}
+      \State $encontrados \gets \{e_0\}$; $cola \gets [e_0]$; $relaciones \gets \emptyset$
+      \While{$cola$ no vacía}
+        \State $e \gets$ sacar el primero de $cola$
+        \ForAll{$r \in$ \Call{RelacionesDe}{$e$}} \Comment{Alg.~\ref{alg:derivadas}}
+          \If{\Call{ObtenerRelevancia}{$r.idIntermedio$, $r.tipo$} $> u$}
+            \State añadir $r$ a $relaciones$; $o \gets$ el otro extremo de $r$
+            \If{$o \notin encontrados$ \textbf{y} $|encontrados| < maxEntidades$}
+              \State añadir $o$ a $encontrados$ y a $cola$
+            \EndIf
+          \EndIf
+        \EndFor
+      \EndWhile
+      \State \Return $(encontrados, relaciones)$
+    \EndFunction
+  \end{algorithmic}
+\end{algorithm}
+
+Que este vecindario baste para construir el subgrafo se debe a la propiedad siguiente.
+
+\begin{proposicion}
+\label{prop:vecindario}
+Sea la relevancia de un nodo $x$ el máximo, sobre los caminos desde $e_0$, del producto $\prod_{i} r_i$ de las relevancias $r_i\in[0,1]$ de sus relaciones. Si la relevancia de $x$ supera $u$, todas las relaciones de ese camino superan $u$.
+\end{proposicion}
+
+\begin{proof}
+Para todo $j$, $\prod_i r_i = r_j\cdot\prod_{i\neq j} r_i \le r_j$, porque el segundo factor está en $[0,1]$. Si el producto supera $u$, también lo supera cada $r_j$.
+\end{proof}
+
+En consecuencia, un vecindario pedido con umbral $u$ sirve para cualquier $u'\ge u$, lo que permite reutilizarlo en el navegador. El recorrido cuesta $O(n+m)$ en memoria; con Neo4j el coste dominante son las consultas, por lo que está previsto agrupar cada nivel del recorrido en una sola consulta con \texttt{UNWIND}. El umbral se redondea hacia abajo a dos decimales para que peticiones casi iguales compartan caché, y el tamaño se limita a \texttt{maxEntidadesVecindario}~$=2000$ (RNF-13). Se eligió la anchura frente a la profundidad porque, si hay que recortar, se pierden las entidades más lejanas y no una rama entera. \TODO{medir con la base de datos real.}
+
+\subsection{Regla genérica de relaciones derivadas}
+\label{sec:alg-derivadas}
+
+En REFRACTS dos entidades se unen siempre a través de un nodo intermediario (\texttt{Relationship}, \texttt{Event} o un subtipo). El servidor deriva de ellos aristas directas entre entidades (Algoritmo~\ref{alg:derivadas}). La clasificación de las etiquetas en entidad, auxiliar o intermediario se lee de la configuración, de modo que el código no contiene nombres de etiquetas (RNF-16, RNF-31).
+
+\begin{algorithm}[htbp]
+  \caption{Relaciones derivadas de una entidad (\texttt{relaciones\_de}).}
+  \label{alg:derivadas}
+  \begin{algorithmic}[1]
+    \Function{RelacionesDe}{$e$}
+      \State $R \gets \emptyset$
+      \ForAll{enlace $(e, x)$ no ignorado}
+        \If{$x$ es una entidad}
+          \State añadir $(e, x)$ a $R$ \Comment{relación directa}
+        \ElsIf{$x$ es intermediario \textbf{y} genera relaciones}
+          \State $Q \gets$ entidades unidas a $x$
+          \If{$2 \le |Q| \le$ \texttt{maxParticipantesIntermediario}}
+            \State añadir $(e, q)$ a $R$ para cada $q \in Q\setminus\{e\}$, con el tipo, roles y periodo de $x$
+          \EndIf
+        \EndIf
+      \EndFor
+      \State \Return $R$
+    \EndFunction
+  \end{algorithmic}
+\end{algorithm}
+
+Cada relación se identifica como \texttt{idIntermedio|idA|idB}, con la pareja ordenada, para obtener la misma desde ambos extremos. Un intermediario con $p$ participantes genera $p(p-1)/2$ relaciones; para no llenar el subgrafo de aristas poco significativas se ignoran los que tienen más de 10 participantes. \texttt{Birth}, \texttt{Death} y \texttt{Live} describen a una sola persona y no generan relaciones. Escribir una consulta por cada combinación de etiquetas se descartó porque obligaría a cambiar el código con cada tipo nuevo.
+
+\subsection{Relevancia de las relaciones}
+\label{sec:alg-relevancia}
+
+Las relaciones de REFRACTS no tienen un valor de relevancia (RF-09). La estrategia \texttt{RelevanciaPorTipo} asigna un peso según el tipo del intermediario (Tabla~\ref{tab:pesos}); si el tipo no tiene peso, usa el de su antecesor más cercano en la jerarquía \texttt{IS\_A}, y si ninguno lo tiene, 0,5. Así, un tipo nuevo recibe el peso de su padre sin tocar la configuración. El coste es $O(h)$, con $h$ la profundidad de la jerarquía.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Pesos iniciales de \texttt{RelevanciaPorTipo} (\texttt{versionPesos} $=1$).}
+\label{tab:pesos}
+\begin{tabular}{|l|c|l|c|}
+\hline
+\textbf{Relación} & \textbf{Peso} & \textbf{Evento} & \textbf{Peso} \\ \hline
+\texttt{Marriage} & 0,95 & \texttt{Creation} & 0,90 \\ \hline
+\texttt{Filiation} & 0,90 & \texttt{Fund} & 0,85 \\ \hline
+\texttt{Mentorship} & 0,85 & \texttt{Work}, \texttt{Wedding} & 0,60 \\ \hline
+\texttt{Friendship} & 0,75 & \texttt{Exposition} & 0,50 \\ \hline
+\texttt{Related} & 0,70 & \texttt{Event} (otros) & 0,40 \\ \hline
+\texttt{coworking} & 0,65 & & \\ \hline
+\texttt{Employement} & 0,60 & & \\ \hline
+\texttt{Professional} & 0,55 & & \\ \hline
+\texttt{Relationship} & 0,50 & \texttt{pesoPorDefecto} & 0,50 \\ \hline
+\end{tabular}
+\end{table}
+
+\TODO{validar los pesos con el tutor y, si cambian, subir \texttt{versionPesos}.}
+
+\texttt{AsignadorRelevancia.obtener} asigna la relevancia de forma perezosa: lee el valor guardado en el intermediario y lo reutiliza si es manual o se calculó con la versión actual de los pesos; si no, lo calcula y lo guarda. Así solo se calcula la relevancia de las relaciones que algún usuario recorre, una vez por versión de los pesos, y un valor corregido a mano no se sobrescribe. Un proceso por lotes sobre toda la base de datos se descartó porque habría que repetirlo con cada cambio de pesos y escribiría en zonas que nadie consulta. Calcular la relevancia a partir de la estructura del grafo tampoco tiene en cuenta el significado del vínculo; en cualquier caso, \texttt{EstrategiaRelevancia} es una interfaz y otra medida se puede conectar sin cambiar el resto.
+
+\subsection{Construcción del subgrafo}
+\label{sec:alg-subgrafo}
+
+\texttt{ConstructorSubgrafo.construir} selecciona, como mucho, los \texttt{maxNodos}~$=150$ nodos más relevantes cuya relevancia supera el umbral (RF-10 a RF-12), siguiendo la estrategia «primero el mejor» (Algoritmo~\ref{alg:subgrafo}).
+
+\begin{algorithm}[htbp]
+  \caption{Construcción del subgrafo (\texttt{ConstructorSubgrafo.construir}).}
+  \label{alg:subgrafo}
+  \begin{algorithmic}[1]
+    \Function{Construir}{$e_0$, $u$, $maxNodos$}
+      \State $S \gets \{e_0\}$ con relevancia 1; $pendientes \gets$ \Call{Expandir}{$e_0$}
+      \While{$pendientes$ no vacía \textbf{y} $|S| < maxNodos$}
+        \State $c \gets$ sacar el candidato de mayor relevancia de $pendientes$
+        \If{$c \notin S$}
+          \State añadir $c$ a $S$ y \Call{Expandir}{$c$} a $pendientes$
+        \EndIf
+      \EndWhile
+      \State calcular la centralidad de $S$; \Return $S$
+    \EndFunction
+    \Statex
+    \Function{Expandir}{$x$}
+      \State \Return $\{(y,\ x.rel\cdot r.rel) : r$ relación de $x$ hacia $y \notin S$, $x.rel\cdot r.rel > u\}$
+    \EndFunction
+  \end{algorithmic}
+\end{algorithm}
+
+Maximizar un producto de valores en $(0,1]$ equivale a minimizar $\sum -\log r_i$, una suma de pesos no negativos, así que el algoritmo es el de Dijkstra~\cite{dijkstra1959} con dos cortes: el tope de nodos y el umbral. Por la misma razón que en Dijkstra, los nodos entran en orden decreciente de relevancia y, al cortar, quedan exactamente los más relevantes. La lista de pendientes es un vector, con un coste total de $O(k\cdot P + m_k)$ para $P$ pendientes; en la práctica tarda unos 15~ms. Una cola de prioridad daría $O((k+m)\log m)$ y queda como mejora si los vecindarios reales son mucho mayores. Una búsqueda por niveles de profundidad fija se descartó porque trata igual un matrimonio que una exposición compartida y su tamaño varía mucho de una entidad a otra.
+
+\texttt{GestorSubgrafos} guarda el último vecindario y su umbral $u_g$: por la Proposición~\ref{prop:vecindario}, si el usuario sube el umbral ($u \ge u_g$) no hace falta pedir nada al servidor. Además, \texttt{AjustadorUmbral} elige el umbral inicial de cada entidad, entre los 20 valores del deslizador, para que salgan unos 100 nodos, ya que con un umbral fijo casi todas las entidades llegaban al tope. Cuando hay varias relaciones entre el mismo par (RF-38), se usa la mejor para decidir si el vecino entra y se dibujan todas como curvas separadas.
+
+\subsection{Centralidad, disposición y grupos}
+\label{sec:alg-fuerzas}
+
+El tamaño de cada nodo representa su centralidad de grado ponderada~\cite{freeman1978}, $C(x)=\sum_{r\ni x} r.rel \,/\, \max_y \sum_{r\ni y} r.rel$, de coste $O(k+m_k)$ (RF-18). La intermediación y la cercanía se descartaron porque, en un subgrafo construido alrededor de una entidad, casi todos los caminos mínimos pasan por ella.
+
+\texttt{SimulacionFuerzas} coloca los nodos con un modelo de muelles y repulsión~\cite{fruchterman1991}. Cada relación es un muelle de longitud $\ell(r)=2+20(1-r)$ y rigidez $f(r)=4r^2$, de modo que los vínculos fuertes juntan más a sus entidades (RF-40). Tras cada paso, cada nodo se proyecta sobre la esfera de radio
+\begin{equation}
+  \rho(r) = 6 + 40\,(1-r)
+\end{equation}
+alrededor de la central, siendo $r$ su relevancia: las fuerzas solo pueden girarlo, y la distancia a la central representa siempre la relevancia (RF-17). La posición inicial reparte los vecinos directos con una espiral de Fibonacci y la temperatura decae en 300 pasos, por lo que la escena se estabiliza en unos 100 fotogramas (RNF-29). La repulsión cuesta $O(k^2)$ por paso, asumible con 150 nodos; Barnes-Hut~\cite{barneshut1986} no compensa a ese tamaño. Se optó por una implementación propia frente a bibliotecas como \texttt{3d-force-graph}~\cite{asturiano3dforcegraph} porque estas no permiten intercalar la proyección radial y añadirían otra dependencia a Three.js. \TODO{completar con los fps medidos.}
+
+En el modo «Por grupos», \texttt{DetectorComunidades} agrupa las entidades por propagación de etiquetas~\cite{raghavan2007} ponderada por la relevancia, sin la central y con orden fijo para que sea determinista. Se prefirió a Louvain~\cite{blondel2008} por sencillez. Cada grupo recibe una dirección y una fuerza adicional lleva a sus nodos hacia ella sin cambiar su radio.
+
+\subsection{Otros algoritmos}
+\label{sec:alg-otros}
+
+\begin{itemize}
+  \item \textbf{Búsqueda tolerante} (\texttt{Buscador}, RF-01 a RF-05, RF-44). Se hace en el navegador sobre el índice de nombres en todos los idiomas. Normaliza mayúsculas y tildes, y acepta prefijos, palabras, subcadenas y hasta 2 erratas según la distancia de Levenshtein~\cite{levenshtein1966}. El coste es $O(N L^2)$ para $N$ nombres de longitud $L$. \TODO{medir con el tamaño real de REFRACTS.}
+  \item \textbf{Colores de los tipos} (\texttt{PaletaColores}, RF-39). El tono del tipo $i$, en orden alfabético, es $137{,}508^\circ\cdot i \bmod 360^\circ$ (ángulo áureo), de modo que los tonos no se repiten y cada tipo tiene siempre el mismo color.
+  \item \textbf{Caché en el servidor} (\texttt{CacheRespuestas}, RNF-02, RNF-05). Guarda 200 respuestas durante 600~s con expulsión LRU, y las peticiones iguales simultáneas esperan a un único cálculo.
+\end{itemize}
+
+% =====================================================================
+\section{Diseño de la base de datos}
+\label{sec:bd}
+
+La base de datos la proporciona el IRTIC y es de grafos, lo que se ajusta a la operación principal: recorrer caminos de longitud variable cuyo final depende de los valores encontrados. En un modelo de grafos el coste de pasar a un vecino no depende del tamaño de la base de datos~\cite{robinson2015}, y un tipo nuevo es una etiqueta más, sin cambiar el esquema.
+
+\subsection{Modelo de datos de REFRACTS}
+
+La Figura~\ref{fig:bd-refracts} muestra el modelo. Las etiquetas tienen tres papeles: \emph{entidades} (en azul), que son los nodos que se dibujan; \emph{intermediarios} (en naranja), que las unen; y \emph{auxiliares} (en verde), que aportan contexto. Las cajas «Entidad» e «Intermediario» no son etiquetas: agrupan lo común. Los nombres se escriben tal como están en la base de datos, erratas incluidas.
+
+\begin{sidewaysfigure}
+  \centering
+  \diagramaapaisado{bd_refracts}
+  \caption{Modelo de REFRACTS en Neo4j. Azul: entidad; naranja: intermediario; verde: auxiliar. En negrita, las propiedades que añade la aplicación.}
+  \label{fig:bd-refracts}
+\end{sidewaysfigure}
+
+El visor trabaja con un grafo derivado en el que las entidades se unen directamente (Figura~\ref{fig:bd-derivacion}). Cada relación derivada toma el tipo y la relevancia de su intermediario, de modo que todas las parejas de un mismo intermediario comparten valor.
+
+\begin{figure}[htbp]
+  \centering
+  \diagrama[0.84]{bd_derivacion}
+  \caption{Del grafo de REFRACTS al grafo derivado que recibe el visor.}
+  \label{fig:bd-derivacion}
+\end{figure}
+
+\subsection{Propiedades añadidas y consultas}
+
+La aplicación añade a cada intermediario tres propiedades: \texttt{relevance} (en $[0,1]$), \texttt{relevanceSource} (\texttt{auto} o \texttt{manual}) y \texttt{relevanceVersion}. Se guardan en el intermediario, y no en cada pareja, porque las parejas no existen en la base de datos y materializarlas obligaría a mantener $p(p-1)/2$ relaciones por intermediario.
+
+Las consultas a Neo4j se implementan en el incremento~4 en \texttt{RepositorioNeo4j} y \texttt{AlmacenRelevanciasNeo4j}, que sustituyen a las clases de datos simulados sin cambiar las demás. Todas usan parámetros, nunca concatenación de texto (RNF-13), y las listas de etiquetas se pasan desde la configuración. El Listado~\ref{lst:cypher-guardar} guarda una relevancia sin pisar un valor manual; si dos peticiones calculan la misma a la vez, la segunda escritura ya no cumple la condición, y en todo caso ambas escriben el mismo valor.
+
+\begin{lstlisting}[style=codigo, caption={Consulta prevista para guardar una relevancia.}, label={lst:cypher-guardar}]
+MATCH (i) WHERE elementId(i) = $id
+  AND coalesce(i.relevanceSource, 'auto') <> 'manual'
+  AND coalesce(i.relevanceVersion, 0) < $version
+SET i.relevance = $valor, i.relevanceSource = 'auto',
+    i.relevanceVersion = $version
+\end{lstlisting}
+
+\TODO{comprobar las consultas con la base de datos real.}
+
+\subsection{Configuración, seguridad y datos simulados}
+
+La clasificación de las etiquetas, los límites de la regla y los pesos están en \texttt{servidor/configuracion.json}, que se valida al arrancar. Un tipo nuevo en REFRACTS no exige cambiar el código: se trata como intermediario y hereda el peso de su padre (RNF-16, RNF-31).
+
+RNF-11 pide acceso de solo lectura salvo las propiedades de relevancia. Hay dos opciones, a decidir con el IRTIC: conceder permiso de escritura solo sobre esas tres propiedades, lo que requiere Neo4j Enterprise~\cite{neo4jprivilegios}, o guardar las relevancias en un almacén propio, que el diseño ya admite con otra implementación de \texttt{AlmacenRelevancias}. Las credenciales se leen de variables de entorno (RNF-12). \TODO{decidir la opción con el IRTIC; definir RNF-23.}
+
+Para desarrollar sin Neo4j, \texttt{RepositorioSimulado} implementa la misma interfaz sobre un JSON con la forma de REFRACTS, generado con semilla fija: 1462 nodos y 2500 relaciones. Incluye a propósito casos límite: intermediarios con 14 participantes, un tipo sin peso propio y relaciones directas entre personas.
+
+\subsection{Dudas abiertas}
+\label{sec:bd-dudas}
+
+\begin{itemize}
+  \item Erratas en etiquetas (\texttt{Ubication}, \texttt{Employement}, \texttt{OCURRED\_AT}); si se corrigen, basta con cambiar la configuración.
+  \item Si los subtipos son varias etiquetas en un mismo nodo o nodos de una taxonomía.
+  \item La falta de un identificador estable, ya que \texttt{elementId} no lo garantiza (RF-35).
+  \item El tamaño del índice de nombres que se descarga al arrancar.
+\end{itemize}
+
+% =====================================================================
+\section{Diagrama de clases de diseño}
+\label{sec:clases}
+
+Los diagramas se han obtenido del código y muestran solo las operaciones principales. Para JavaScript se usan las equivalencias de la Tabla~\ref{tab:equivalencias}; en Python, \texttt{\_\_x} es privado y las clases \texttt{ABC} con métodos abstractos son abstractas.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Equivalencias entre JavaScript y UML.}
+\label{tab:equivalencias}
+\begin{tabular}{|l|l|}
+\hline
+\textbf{JavaScript} & \textbf{UML} \\ \hline
+\texttt{\#x} / \texttt{\_x} / resto & privado / protegido / público \\ \hline
+\texttt{static} & miembro de clase (subrayado) \\ \hline
+Clase que impide \texttt{new} & \texttt{\{abstract\}} \\ \hline
+Clase cuyos métodos lanzan «No implementado» & \texttt{<<interface>>} \\ \hline
+\texttt{Object.freeze} & \texttt{<<enumeration>>} \\ \hline
+\end{tabular}
+\end{table}
+
+\subsection{Servidor}
+
+En la Figura~\ref{fig:clases-servidor}, \texttt{app} define las rutas de FastAPI; \texttt{api} contiene la caché; \texttt{logica}, la configuración, la clasificación de etiquetas y el cálculo de relevancias; y \texttt{datos}, los repositorios, la regla de relaciones derivadas y los almacenes de relevancia. Las clases previstas son las que conectan con Neo4j. \TODO{decidir si se eliminan las clases del incremento~2 que quedan en \texttt{servidor/modelo}.}
+
+\begin{sidewaysfigure}
+  \centering
+  \diagramaapaisado{clases_servidor}
+  \caption{Diagrama de clases del servidor. El color indica el paquete.}
+  \label{fig:clases-servidor}
+\end{sidewaysfigure}
+
+\subsection{Cliente}
+
+La Figura~\ref{fig:clases-cliente} resume las clases principales del cliente y cómo se relacionan; las figuras siguientes detallan cada paquete.
+
+\begin{figure}[htbp]
+  \centering
+  \diagrama[0.65]{clases_cliente_general}
+  \caption{Clases principales del cliente.}
+  \label{fig:clases-cliente}
+\end{figure}
+
+\paragraph{modelo} (Figura~\ref{fig:clases-modelo}). Las clases del dominio, sin dependencias de otros paquetes. \texttt{Entidad} guarda además los atributos que la clase no conoce, para que una propiedad nueva de la base de datos se muestre sin cambiar el código.
+
+\begin{figure}[htbp]
+  \centering
+  \diagrama{clases_modelo}
+  \caption{Paquete \texttt{modelo}.}
+  \label{fig:clases-modelo}
+\end{figure}
+
+\paragraph{datos} (Figura~\ref{fig:clases-datos}). \texttt{ClienteServicio} es la única clase que hace peticiones HTTP. \texttt{RepositorioVecindario} guarda el vecindario en memoria con un índice de relaciones por entidad.
+
+\begin{figure}[htbp]
+  \centering
+  \diagrama[0.66]{clases_datos}
+  \caption{Paquete \texttt{datos}.}
+  \label{fig:clases-datos}
+\end{figure}
+
+\paragraph{logica} (Figuras~\ref{fig:clases-logica-subgrafo} y~\ref{fig:clases-logica-control}). La primera figura contiene el cálculo del subgrafo; \texttt{Buscador}, \texttt{PaletaColores} y \texttt{DetectorComunidades}, que no se relacionan con otras clases del paquete, no se dibujan. La segunda contiene el controlador.
+
+\begin{figure}[htbp]
+  \centering
+  \diagrama[0.8]{clases_logica_subgrafo}
+  \caption{Paquete \texttt{logica}: cálculo del subgrafo.}
+  \label{fig:clases-logica-subgrafo}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  \diagrama[0.78]{clases_logica_control}
+  \caption{Paquete \texttt{logica}: control de la exploración.}
+  \label{fig:clases-logica-control}
+\end{figure}
+
+\paragraph{vista3d} (Figura~\ref{fig:clases-vista3d}). \texttt{EscenaGrafo} crea la escena de Three.js y la anima. Las subclases de \texttt{NodoVisual} solo definen la geometría y el color, de modo que cada tipo de entidad se distingue también por la forma (RF-19, RNF-26).
+
+\begin{figure}[htbp]
+  \centering
+  \diagrama{clases_vista3d}
+  \caption{Paquete \texttt{vista3d}.}
+  \label{fig:clases-vista3d}
+\end{figure}
+
+\paragraph{interfaz y aplicacion} (Figura~\ref{fig:clases-interfaz}). \texttt{InterfazUsuario} compone los siete paneles. \texttt{Aplicacion} crea y conecta todas las piezas.
+
+\begin{figure}[htbp]
+  \centering
+  \diagrama{clases_interfaz}
+  \caption{Paquetes \texttt{interfaz} y \texttt{aplicacion}.}
+  \label{fig:clases-interfaz}
+\end{figure}
+
+\subsection{Patrones y principios de diseño}
+\label{sec:patrones}
+
+\begin{itemize}
+  \item \textbf{Estrategia.} La medida de relevancia, que es lo que más probablemente cambie, está detrás de \texttt{EstrategiaRelevancia} en el servidor y en el cliente (principio abierto/cerrado).
+  \item \textbf{Fábrica.} \texttt{FabricaEntidades} y \texttt{FabricaNodosVisuales} deciden en un solo sitio qué subclase corresponde a cada tipo.
+  \item \textbf{Método plantilla.} \texttt{NodoVisual} implementa el comportamiento común y delega en las subclases la geometría y el color.
+  \item \textbf{Modelo-vista-controlador.} \texttt{ControladorExploracion} recibe todas las acciones del usuario y coordina el modelo y las dos vistas, que no se comunican entre sí.
+  \item \textbf{Fachada.} \texttt{InterfazUsuario} oculta al controlador los siete paneles.
+  \item \textbf{Repositorio e inversión de dependencias.} Las clases dependen de interfaces (\texttt{RepositorioDatos}, \texttt{AlmacenRelevancias}), de modo que pasar a Neo4j supone sustituir dos clases (RNF-17).
+  \item \textbf{Inyección de dependencias.} \texttt{Aplicacion} crea las clases principales en un único método, lo que permite sustituirlas por dobles en las pruebas.
+\end{itemize}
+
+% =====================================================================
+\section{Diagramas de interacción}
+\label{sec:interaccion}
+
+Cada operación de los casos de uso se describe con un diagrama de secuencia. Los métodos privados se escriben con \texttt{\#}. \TODO{añadir los identificadores CU-xx.}
+
+\paragraph{Cargar la aplicación} (Figura~\ref{fig:sec-cargar}). La configuración, los nombres y los tipos se piden en paralelo, con lo que el arranque dura lo que la petición más lenta.
+
+\begin{figure}[htbp]
+  \centering
+  \diagrama{sec_cargar}
+  \caption{Carga de la aplicación.}
+  \label{fig:sec-cargar}
+\end{figure}
+
+\paragraph{Buscar una entidad} (Figura~\ref{fig:sec-buscar}). No genera peticiones: se busca en el índice en memoria tras 150~ms sin pulsaciones.
+
+\begin{figure}[htbp]
+  \centering
+  \diagrama{sec_buscar}
+  \caption{Búsqueda de una entidad.}
+  \label{fig:sec-buscar}
+\end{figure}
+
+\paragraph{Explorar una entidad.} Es la operación principal. En el navegador (Figura~\ref{fig:sec-explorar-cliente}), \texttt{GestorSubgrafos} solo pide el vecindario si no tiene uno válido, y el detalle de la entidad se pide sin esperar. En el servidor (Figura~\ref{fig:sec-explorar-servidor}), si la respuesta no está en la caché, se recorre el vecindario y se asignan las relevancias que falten.
+
+\begin{sidewaysfigure}
+  \centering
+  \diagramaapaisado{sec_explorar_cliente}
+  \caption{Exploración de una entidad: navegador.}
+  \label{fig:sec-explorar-cliente}
+\end{sidewaysfigure}
+
+\begin{sidewaysfigure}
+  \centering
+  \diagramaapaisado{sec_explorar_servidor}
+  \caption{Exploración de una entidad: servidor (incremento~4).}
+  \label{fig:sec-explorar-servidor}
+\end{sidewaysfigure}
+
+\paragraph{Cambiar el umbral} (Figura~\ref{fig:sec-umbral}). Si el umbral sube, se reutiliza el vecindario guardado (Proposición~\ref{prop:vecindario}); si baja, se pide uno más amplio.
+
+\begin{figure}[htbp]
+  \centering
+  \diagrama{sec_umbral}
+  \caption{Cambio del umbral.}
+  \label{fig:sec-umbral}
+\end{figure}
+
+\paragraph{Seleccionar un nodo o una relación} (Figura~\ref{fig:sec-seleccionar}). Un desplazamiento de más de 5 píxeles se interpreta como giro de cámara y no selecciona. Si el detalle llega cuando el usuario ya ha seleccionado otra cosa, se descarta.
+
+\begin{figure}[htbp]
+  \centering
+  \diagrama{sec_seleccionar}
+  \caption{Selección de un nodo o una relación.}
+  \label{fig:sec-seleccionar}
+\end{figure}
+
+\paragraph{Navegar y volver} (Figura~\ref{fig:sec-navegar}, RF-30, RF-31). Navegar apunta la entidad actual en el historial; volver la recupera sin apuntarla de nuevo. Cada carga se numera para descartar respuestas que llegan tarde.
+
+\begin{figure}[htbp]
+  \centering
+  \diagrama[0.77]{sec_navegar}
+  \caption{Navegación y vuelta atrás.}
+  \label{fig:sec-navegar}
+\end{figure}
+
+\paragraph{Filtrar y cambiar la disposición} (Figura~\ref{fig:sec-filtrar}, RF-32, RF-33). Solo cambian lo que se ve, sin peticiones: la escena consulta al filtro qué objetos son visibles, y el cambio de modo reactiva la simulación.
+
+\begin{figure}[htbp]
+  \centering
+  \diagrama{sec_filtrar}
+  \caption{Filtrado y cambio de disposición.}
+  \label{fig:sec-filtrar}
+\end{figure}
+
+\paragraph{Pasar el puntero} (Figura~\ref{fig:sec-puntero}, RF-41). No pasa por el controlador porque no cambia el estado. La etiqueta se escribe con \texttt{textContent}, de modo que un nombre de la base de datos nunca se interpreta como HTML.
+
+\begin{figure}[htbp]
+  \centering
+  \diagrama[0.68]{sec_puntero}
+  \caption{Etiqueta flotante.}
+  \label{fig:sec-puntero}
+\end{figure}
+
+% =====================================================================
+\section{Diagrama de paquetes}
+\label{sec:paquetes}
+
+El cliente se organiza en capas (Figura~\ref{fig:paquetes}): \texttt{aplicacion} conecta todo; \texttt{interfaz} y \texttt{vista3d} son las vistas; \texttt{logica} contiene el controlador y los algoritmos; \texttt{datos} accede al servidor; y \texttt{modelo}, del que dependen todos, no depende de ninguno.
+
+\begin{figure}[htbp]
+  \centering
+  \diagrama[0.8]{paquetes}
+  \caption{Diagrama de paquetes. En rojo, las dependencias que forman ciclos.}
+  \label{fig:paquetes}
+\end{figure}
+
+Los \texttt{import} muestran un ciclo entre \texttt{logica} y \texttt{datos} en cada lado. En el cliente lo provoca \texttt{PaletaColores}: está en \texttt{logica}, pero la usa \texttt{RepositorioVecindario}, en \texttt{datos}, y podría estar en \texttt{modelo}. En el servidor, \texttt{AlmacenRelevancias}, una interfaz que define lo que necesita la lógica y que, según el principio de inversión de dependencias, debería estar en \texttt{logica}. Moverlas eliminaría ambos ciclos. \TODO{decidir si se mueven y actualizar la figura.}
+
+\subsection{Despliegue}
+
+Un solo proceso Uvicorn sirve la página compilada y la API, que comparten origen y no necesitan CORS (Figura~\ref{fig:despliegue}). El servidor se conecta a Neo4j por Bolt y la comunicación con el navegador irá por HTTPS (RNF-14).
+
+\begin{figure}[htbp]
+  \centering
+  \diagrama[0.75]{despliegue}
+  \caption{Diagrama de despliegue.}
+  \label{fig:despliegue}
+\end{figure}
+
+\TODO{confirmar con el IRTIC dónde se aloja el servidor y si Neo4j es accesible desde él.}
+
+% ---------------------------------------------------------------------
+% Entradas nuevas para el fichero .bib (fruchterman1991 ya está en
+% tecnologias.tex):
+%
+% @article{dijkstra1959,
+%   author  = {Dijkstra, Edsger W.},
+%   title   = {A note on two problems in connexion with graphs},
+%   journal = {Numerische Mathematik},
+%   volume  = {1},
+%   pages   = {269--271},
+%   year    = {1959}
+% }
+% @article{freeman1978,
+%   author  = {Freeman, Linton C.},
+%   title   = {Centrality in social networks: conceptual clarification},
+%   journal = {Social Networks},
+%   volume  = {1},
+%   number  = {3},
+%   pages   = {215--239},
+%   year    = {1978}
+% }
+% @article{barneshut1986,
+%   author  = {Barnes, Josh and Hut, Piet},
+%   title   = {A hierarchical {O(N log N)} force-calculation algorithm},
+%   journal = {Nature},
+%   volume  = {324},
+%   pages   = {446--449},
+%   year    = {1986}
+% }
+% @misc{asturiano3dforcegraph,
+%   author       = {Asturiano, Vasco},
+%   title        = {3d-force-graph: 3D force-directed graph component using ThreeJS/WebGL},
+%   howpublished = {\url{https://github.com/vasturiano/3d-force-graph}},
+%   note         = {Consultado el 18/11/2026}
+% }
+% @article{raghavan2007,
+%   author  = {Raghavan, Usha Nandini and Albert, R{\'e}ka and Kumara, Soundar},
+%   title   = {Near linear time algorithm to detect community structures in large-scale networks},
+%   journal = {Physical Review E},
+%   volume  = {76},
+%   number  = {3},
+%   pages   = {036106},
+%   year    = {2007}
+% }
+% @article{blondel2008,
+%   author  = {Blondel, Vincent D. and Guillaume, Jean-Loup and Lambiotte, Renaud and Lefebvre, Etienne},
+%   title   = {Fast unfolding of communities in large networks},
+%   journal = {Journal of Statistical Mechanics: Theory and Experiment},
+%   pages   = {P10008},
+%   year    = {2008}
+% }
+% @article{levenshtein1966,
+%   author  = {Levenshtein, Vladimir I.},
+%   title   = {Binary codes capable of correcting deletions, insertions, and reversals},
+%   journal = {Soviet Physics Doklady},
+%   volume  = {10},
+%   number  = {8},
+%   pages   = {707--710},
+%   year    = {1966}
+% }
+% @book{robinson2015,
+%   author    = {Robinson, Ian and Webber, Jim and Eifrem, Emil},
+%   title     = {Graph Databases},
+%   edition   = {2},
+%   publisher = {O'Reilly Media},
+%   year      = {2015}
+% }
+% @misc{neo4jprivilegios,
+%   author       = {{Neo4j}},
+%   title        = {Operations Manual: Write privileges},
+%   howpublished = {\url{https://neo4j.com/docs/operations-manual/current/authentication-authorization/privileges-writes/}},
+%   note         = {Consultado el 18/11/2026}
+% }
+% ---------------------------------------------------------------------

@@ -1,40 +1,17 @@
 import { prueba, comprobar, comprobarIgual } from './miniPruebas.js';
 import { AjustadorUmbral } from '../src/logica/AjustadorUmbral.js';
 import { GestorSubgrafos } from '../src/logica/GestorSubgrafos.js';
-import { RelevanciaDesdeBD } from '../src/logica/RelevanciaDesdeBD.js';
 import { ConstructorSubgrafo } from '../src/logica/ConstructorSubgrafo.js';
 import { RepositorioVecindario } from '../src/datos/RepositorioVecindario.js';
-import { VECINDARIO_EJEMPLO, CONTEXTO_PRUEBAS, vecindarioComoElServidor } from './utilidadesPruebas.js';
+import { RELACIONES_EJEMPLO, CONTEXTO_PRUEBAS, ClienteFalso, crearRelevanciaPruebas } from './utilidadesPruebas.js';
 
 /*
  * Pruebas de AjustadorUmbral (src/logica/) y de
  * GestorSubgrafos.obtenerSubgrafoAjustado, que lo usa.
  */
 
-/**
- * Doble de ClienteServicio: calcula el vecindario como el servidor y
- * apunta con qué umbrales se le ha pedido.
- */
-class ClienteFalso {
-  constructor() {
-    this.umbralesPedidos = [];
-  }
 
-  async obtenerVecindario(idEntidad, umbral) {
-    this.umbralesPedidos.push(umbral);
-    return vecindarioComoElServidor(VECINDARIO_EJEMPLO, idEntidad, umbral);
-  }
-
-  getBytesUltimaRespuesta() {
-    return 0;
-  }
-}
-
-/**
- * Los valores del deslizador, de 0,05 a 1.
- *
- * @returns {number[]}
- */
+/** Los valores del deslizador, de 0,05 a 1. */
 function valoresDelDeslizador() {
   const valores = [];
   for (let centesimas = 5; centesimas <= 100; centesimas = centesimas + 5) {
@@ -92,18 +69,27 @@ prueba("AjustadorUmbral: el objetivo debe ser un entero mayor que 0", function (
 
 prueba("GestorSubgrafos: obtenerSubgrafoAjustado da el número de nodos más cercano al objetivo", async function () {
   const objetivo = 40;
-  const entidades = ["n1", "n121", "n146"];
-  const repositorioCompleto = new RepositorioVecindario(VECINDARIO_EJEMPLO, CONTEXTO_PRUEBAS);
+  const entidades = ["n1", "n121", "n146", "ana_ferrer"];
+  const piezas = crearRelevanciaPruebas();
+  // La caché con TODO (todas las entidades completas).
+  const todo = {
+    ids: [], entidades: RELACIONES_EJEMPLO.entidades, relaciones: RELACIONES_EJEMPLO.relaciones
+  };
+  for (let i = 0; i < RELACIONES_EJEMPLO.entidades.length; i++) {
+    todo.ids.push(RELACIONES_EJEMPLO.entidades[i].id);
+  }
+  const cacheCompleta = new RepositorioVecindario(todo, CONTEXTO_PRUEBAS);
   const valores = valoresDelDeslizador();
   for (let e = 0; e < entidades.length; e++) {
     const id = entidades[e];
-    const gestor = new GestorSubgrafos(new ClienteFalso(), new RelevanciaDesdeBD(), 150, CONTEXTO_PRUEBAS);
-    const subgrafo = await gestor.obtenerSubgrafoAjustado(id, new AjustadorUmbral(objetivo), 0.3);
+    const gestor = new GestorSubgrafos(new ClienteFalso(), piezas.estrategia, piezas.calculador, 150, CONTEXTO_PRUEBAS);
+    const subgrafo = await gestor.obtenerSubgrafoAjustado(id, new AjustadorUmbral(objetivo));
     const diferencia = Math.abs(subgrafo.getNumeroNodos() - objetivo);
 
     // Con todos los datos, ningún valor del deslizador se acerca más.
     for (let i = 0; i < valores.length; i++) {
-      const directo = await new ConstructorSubgrafo(repositorioCompleto, new RelevanciaDesdeBD(), valores[i], 150).construir(id);
+      const directo = await new ConstructorSubgrafo(cacheCompleta, piezas.estrategia, piezas.calculador, valores[i], 150)
+        .construir(id);
       const otraDiferencia = Math.abs(directo.getNumeroNodos() - objetivo);
       comprobar(diferencia <= otraDiferencia, id + ": con " + valores[i] + " salen " + directo.getNumeroNodos() +
         ", más cerca que los " + subgrafo.getNumeroNodos() + " elegidos con " + subgrafo.getUmbral());
@@ -111,21 +97,14 @@ prueba("GestorSubgrafos: obtenerSubgrafoAjustado da el número de nodos más cer
   }
 });
 
-prueba("GestorSubgrafos: si con el vecindario de partida no se llega al objetivo, pide uno con el umbral mínimo", async function () {
-  const id = "n1";
-  const repositorioCompleto = new RepositorioVecindario(VECINDARIO_EJEMPLO, CONTEXTO_PRUEBAS);
-  const conUmbralDePartida = await new ConstructorSubgrafo(repositorioCompleto, new RelevanciaDesdeBD(), 0.3, 100000).construir(id);
-
-  // Objetivo justo por encima de lo que da 0,3: tiene que pedir otro.
-  const clienteQueNoLlega = new ClienteFalso();
-  const gestorQueNoLlega = new GestorSubgrafos(clienteQueNoLlega, new RelevanciaDesdeBD(), 100000, CONTEXTO_PRUEBAS);
-  await gestorQueNoLlega.obtenerSubgrafoAjustado(id, new AjustadorUmbral(conUmbralDePartida.getNumeroNodos() + 1), 0.3);
-  comprobarIgual(clienteQueNoLlega.umbralesPedidos.join(","), "0.3,0.05", "pide primero con 0,3 y luego con 0,05");
-
-  // Objetivo pequeño: con el de partida basta.
-  const clienteQueLlega = new ClienteFalso();
-  const gestorQueLlega = new GestorSubgrafos(clienteQueLlega, new RelevanciaDesdeBD(), 150, CONTEXTO_PRUEBAS);
-  const subgrafo = await gestorQueLlega.obtenerSubgrafoAjustado(id, new AjustadorUmbral(5), 0.3);
-  comprobarIgual(clienteQueLlega.umbralesPedidos.join(","), "0.3", "una sola petición");
-  comprobar(subgrafo.getUmbral() >= 0.3, "umbral alto para pocos nodos (" + subgrafo.getUmbral() + ")");
+prueba("GestorSubgrafos: obtenerSubgrafoAjustado no pide más que las dos tandas de siempre", async function () {
+  const piezas = crearRelevanciaPruebas();
+  const cliente = new ClienteFalso();
+  const gestor = new GestorSubgrafos(cliente, piezas.estrategia, piezas.calculador, 150, CONTEXTO_PRUEBAS);
+  const subgrafo = await gestor.obtenerSubgrafoAjustado("n1", new AjustadorUmbral(5));
+  comprobar(cliente.tandas <= 2, "como mucho 2 tandas (" + cliente.tandas + ")");
+  comprobar(subgrafo.getNumeroNodos() <= 10, "pocos nodos para un objetivo de 5 (" + subgrafo.getNumeroNodos() + ")");
+  const tandas = cliente.tandas;
+  await gestor.obtenerSubgrafoAjustado("n1", new AjustadorUmbral(60));
+  comprobarIgual(cliente.tandas, tandas, "otro objetivo con la misma entidad no pide nada");
 });

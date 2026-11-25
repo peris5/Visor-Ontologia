@@ -1,0 +1,41 @@
+@startuml sec_umbral
+' Operación: cambiar el umbral de relevancia.
+!include estilo.iuml
+actor Usuario
+participant ":ControlUmbral" as CU
+participant ":ControladorExploracion" as CTRL
+participant ":GestorSubgrafos" as GES
+participant ":ClienteServicio" as CLI
+participant ":ConstructorSubgrafo" as CONS
+participant ":EscenaGrafo" as ESC
+participant ":InterfazUsuario" as UI
+
+Usuario -> CU : suelta el deslizador (o pulsa una flecha)
+CU -> CU : ~#onCambio()
+CU -> CTRL : cambiarUmbral(valor)
+activate CTRL
+CTRL -> CTRL : ~#cargarSubgrafo(id, false)
+CTRL -> GES : obtenerSubgrafo(id, valor)
+activate GES
+GES -> GES : ~#necesitaPedir(id, valor)
+alt valor >= umbral del vecindario guardado (sube)
+  note over GES
+    El vecindario guardado ya contiene todos los
+    caminos que superan el nuevo umbral: no hay petición.
+  end note
+else valor < umbral guardado (baja)
+  GES -> CLI : obtenerVecindario(id, valor)
+  CLI -> CLI : GET /api/vecindario/{id}?umbral=valor
+  CLI --> GES : vecindario más amplio
+  GES -> GES : ~#guardar(id, valor, vecindario)
+end
+GES -> CONS : construir(id)
+CONS --> GES : subgrafo
+GES --> CTRL : subgrafo
+deactivate GES
+CTRL -> ESC : mostrarSubgrafo(subgrafo)
+CTRL -> ESC : aplicarFiltro(filtro)
+CTRL -> UI : actualizarLeyenda(datos)
+CTRL -> UI : mostrarEntidad(central, nodo, subgrafo)
+deactivate CTRL
+@enduml

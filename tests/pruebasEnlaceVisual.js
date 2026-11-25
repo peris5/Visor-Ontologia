@@ -15,8 +15,6 @@ import { NodoRelevante } from '../src/modelo/NodoRelevante.js';
 /**
  * Dos nodos visuales colocados a mano y dos relaciones entre ellos (una en
  * cada sentido, para comprobar que las curvas no se montan).
- *
- * @returns {Object}
  */
 function crearElementosDePrueba() {
   const persona = new Persona({ id: "P1" });
@@ -37,8 +35,6 @@ function crearElementosDePrueba() {
 }
 
 /**
- * @param {EnlaceVisual} enlace
- * @param {number} indice
  * @returns {THREE.Vector3} el punto número "indice" de la línea.
  */
 function puntoDeLaLinea(enlace, indice) {

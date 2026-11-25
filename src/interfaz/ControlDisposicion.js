@@ -2,15 +2,10 @@ import { ComponenteUI, crear } from './ComponenteUI.js';
 import { ModoDisposicion } from '../vista3d/ModoDisposicion.js';
 
 /**
- * ControlDisposicion extends ComponenteUI
- *
  * Dos botones para elegir cómo se reparten los nodos en el espacio
  * (ModoDisposicion): «Libre» y «Por grupos». El elegido sale
  * marcado (aria-pressed) y debajo hay una ayuda de una línea que explica el
  * modo. En los dos, la distancia al centro sigue siendo la relevancia.
- *
- * Requisitos: RF-40 (cúmulos), RNF-25 (botones con aria-pressed, usables
- * con el teclado).
  */
 export class ControlDisposicion extends ComponenteUI {
   // [modo, texto del botón, ayuda]
@@ -23,9 +18,6 @@ export class ControlDisposicion extends ComponenteUI {
   #botones;
   #ayuda;
 
-  /**
-   * @param {ControladorExploracion} controlador
-   */
   constructor(controlador) {
     super(controlador, "div", "control-disposicion");
     this._elemento.setAttribute("role", "group");
@@ -35,9 +27,7 @@ export class ControlDisposicion extends ComponenteUI {
     this.#ayuda = null;
   }
 
-  /**
-   * Dibuja el título, los botones y la ayuda.
-   */
+  /** Dibuja el título, los botones y la ayuda. */
   renderizar() {
     this._elemento.textContent = "";
     this.#botones = [];
@@ -89,11 +79,7 @@ export class ControlDisposicion extends ComponenteUI {
     return this.#modo;
   }
 
-  /**
-   * (Privado) El usuario ha pulsado un modo.
-   *
-   * @param {string} modo
-   */
+  /** El usuario ha pulsado un modo. */
   #onElegir(modo) {
     this.setModo(modo);
     if (this._controlador !== null) {
@@ -101,12 +87,7 @@ export class ControlDisposicion extends ComponenteUI {
     }
   }
 
-  /**
-   * (Privado) La ayuda de un modo.
-   *
-   * @param {string} modo
-   * @returns {string}
-   */
+  /** La ayuda de un modo. */
   static #ayudaDe(modo) {
     for (let i = 0; i < ControlDisposicion.OPCIONES.length; i++) {
       if (ControlDisposicion.OPCIONES[i][0] === modo) {

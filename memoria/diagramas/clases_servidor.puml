@@ -1,0 +1,71 @@
+@startuml clases_servidor
+' Clases del servidor (Python). Solo las operaciones principales.
+' El paquete se indica con el color (los recuadros de paquete
+' desordenaban la disposición): gris = app/api, azul = datos,
+' verde = logica.
+!include estilo.iuml
+skinparam class {
+  BackgroundColor<<datos>> #E8F0FE
+  BackgroundColor<<logica>> #EEF6EE
+  BackgroundColor<<api>> #F2F2F2
+}
+hide <<datos>> stereotype
+hide <<logica>> stereotype
+hide <<api>> stereotype
+
+class app <<api>> {
+  + obtener_vecindario(id, umbral)
+  + obtener_detalle(id)
+}
+class CacheRespuestas <<api>> {
+  + obtener(clave, calcular)
+}
+abstract class RepositorioDatos <<datos>> {
+  + obtener_vecindario(id, u, max)
+  + obtener_detalle(id)
+}
+class RepositorioSimulado <<datos>>
+class "RepositorioNeo4j\n<i>(previsto)</i>" as RepositorioNeo4j <<datos>>
+class ProyectorRelaciones <<datos>> {
+  + relaciones_de(id)
+}
+class AsignadorRelevancia <<logica>> {
+  + obtener(id, tipo)
+}
+class ClasificadorEtiquetas <<logica>> {
+  + es_entidad(etiquetas)
+  + padres(etiqueta)
+}
+class Configuracion <<logica>>
+interface EstrategiaRelevancia <<logica>> {
+  + calcular_relevancia(tipo)
+}
+class RelevanciaPorTipo <<logica>>
+abstract class AlmacenRelevancias <<datos>> {
+  + leer(id)
+  + guardar(id, valor, version)
+}
+class AlmacenRelevanciasEnGrafo <<datos>>
+class "AlmacenRelevanciasNeo4j\n<i>(previsto)</i>" as AlmacenRelevanciasNeo4j <<datos>>
+
+app --> CacheRespuestas
+app --> RepositorioDatos
+RepositorioDatos <|-- RepositorioSimulado
+RepositorioDatos <|-- RepositorioNeo4j
+RepositorioSimulado *-- ProyectorRelaciones
+RepositorioSimulado *-- AsignadorRelevancia
+RepositorioNeo4j --> AsignadorRelevancia
+ProyectorRelaciones --> ClasificadorEtiquetas
+ClasificadorEtiquetas --> Configuracion
+AsignadorRelevancia o-- EstrategiaRelevancia
+AsignadorRelevancia o-- AlmacenRelevancias
+EstrategiaRelevancia <|.. RelevanciaPorTipo
+AlmacenRelevancias <|-- AlmacenRelevanciasEnGrafo
+AlmacenRelevancias <|-- AlmacenRelevanciasNeo4j
+
+legend right
+  <back:#F2F2F2> app / api </back>
+  <back:#E8F0FE> datos </back>
+  <back:#EEF6EE> logica </back>
+endlegend
+@enduml

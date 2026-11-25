@@ -1,4 +1,4 @@
-# Visor de patrimonio 3D · Incremento 3b: datos con la forma de Neo4j
+# Visor de patrimonio 3D · Relevancia artística en tres capas
 
 Trabajo de Fin de Grado. Aplicación web para explorar en 3D una base de datos de conocimiento sobre patrimonio cultural (grupo IRTIC, Universitat de València).
 
@@ -7,55 +7,279 @@ El desarrollo se divide en cuatro incrementos:
 1. Modelo y subgrafo (O1): datos simulados, cálculo de la relevancia y construcción del subgrafo. ✔
 2. Visualización 3D (O2): servidor Python, Three.js y disposición con un grafo dirigido por fuerzas. ✔
 3. Exploración (O3): buscador, información de nodos, navegación, historial y filtros. ✔
-   - **3b** (este): adaptación al diseño de la base de datos real (Neo4j, proyecto REFRACTS): modelo genérico y relevancia asignada bajo demanda. ✔
+   - **3b**: adaptación al diseño de la base de datos real (Neo4j, proyecto REFRACTS). ✔
+   - **Relevancia artística**: se calcula **solo en el navegador**, en tres capas. **Versión 2**: fuerza, certeza y relevancia (R, C, S), refuerzo simétrico en lugar del circuito, rol, multiplexidad, penalización de intermediarios y tiempo. ✔
 4. Datos reales y validación (O4): conexión con la base de datos y pruebas de rendimiento y usabilidad.
 
-El diseño de la base de datos está en `docs/diseno_bd_refracts.json` (export de arrows.app) y su análisis, en `ANALISIS_BD_NEO4J.md`.
+El diseño de la base de datos está en `docs/diseno_bd_refracts.json` (export de arrows.app) y su análisis, en `ANALISIS_BD_NEO4J.md`. La referencia numérica de la relevancia es el prototipo `docs/prototipo_relevancia_v2.mjs` (`node docs/prototipo_relevancia_v2.mjs`, variante `V2`). `docs/prototipo_relevancia.mjs` es el de la versión anterior (el circuito), que se guarda para comparar.
 
-## Arquitectura: el navegador calcula, el servidor da los datos (y asigna la relevancia)
+## Arquitectura: el navegador calcula, el servidor solo da los datos
 
 ```
-┌──────────────────── NAVEGADOR (JavaScript + Three.js) ── CÁLCULO DEL SUBGRAFO ──────────────┐
-│  Aplicacion ──crea y conecta──▶ ControladorExploracion ◀──avisan── EscenaGrafo (3D)          │
-│                                   │    ◆ FiltroVisualizacion        └ SelectorInteraccion    │
-│                                   │    ◆ HistorialNavegacion  ◀──── InterfazUsuario (2D)     │
-│                  ┌────────────────┴───────┐                                                  │
-│                  ▼                        ▼                                                  │
-│              Buscador              GestorSubgrafos ──▶ RepositorioVecindario (en memoria)    │
-│     (todos los nombres)                   │           ConstructorSubgrafo, RelevanciaDesdeBD,│
-│                                           ▼           CalculadorCentralidad, PaletaColores   │
-│                                    ClienteServicio                                           │
-└───────────────────────────────────────────┼──────────────────────────────────────────────────┘
-       HTTP + JSON: configuración, tipos y nombres (UNA vez) · un vecindario por entidad · un detalle al seleccionar
-┌───────────────────────────────────────────▼──────── SERVIDOR (Python + FastAPI) ── DATOS ────┐
-│  app.py (rutas) ─▶ ConversorJson, CacheRespuestas                                            │
-│        ▼                                                                                     │
-│  RepositorioDatos ◀── RepositorioSimulado (datos_ejemplo.json, con la forma de Neo4j)        │
-│        │          ◀── (incremento 4: RepositorioBDConocimiento, Neo4j)                       │
-│        ├─▶ ClasificadorEtiquetas · ProyectorRelaciones (regla genérica)                      │
-│        └─▶ AsignadorRelevancia ─▶ RelevanciaPorTipo (estrategia) + AlmacenRelevancias        │
-└──────────────────────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────── NAVEGADOR (JavaScript + Three.js) ── TODO EL CÁLCULO ──────────────────────┐
+│  Aplicacion ──crea y conecta──▶ ControladorExploracion ◀──avisan── EscenaGrafo (3D)             │
+│                                   │    ◆ FiltroVisualizacion        └ SelectorInteraccion       │
+│                                   │    ◆ HistorialNavegacion  ◀──── InterfazUsuario (2D)        │
+│                  ┌────────────────┴───────┐                                                     │
+│                  ▼                        ▼                                                     │
+│              Buscador              GestorSubgrafos ──▶ RepositorioVecindario (caché en memoria) │
+│     (todos los nombres)                   │           ConstructorSubgrafo, CalculadorCentralidad │
+│                                           │           EstrategiaRelevanciaNodos:               │
+│                                           │             RelevanciaNodosTresCapas               │
+│                                           │               (CalculadorEvidencia, RefuerzoEntreDirectos,
+│                                           │                DeduccionPorTipos, TablaTransferencia...)│
+│                                           │             RelevanciaNodosMejorCamino (para comparar)│
+│                                           ▼           RelevanciaCompuesta (cada relación)      │
+│                                    ClienteServicio                                              │
+└───────────────────────────────────────────┼─────────────────────────────────────────────────────┘
+   HTTP + JSON: configuración, tipos, jerarquía y nombres (UNA vez) · como mucho 2 tandas de relaciones por
+   entidad nueva · un detalle al seleccionar
+┌───────────────────────────────────────────▼──────── SERVIDOR (Python + FastAPI) ── SOLO DATOS ──┐
+│  app.py (rutas) ─▶ ConversorJson, CacheRespuestas                                               │
+│        ▼                                                                                        │
+│  RepositorioDatos ◀── RepositorioSimulado (datos_ejemplo.json, con la forma de Neo4j)           │
+│        │          ◀── (incremento 4: RepositorioBDConocimiento, Neo4j)                          │
+│        └─▶ ClasificadorEtiquetas · ProyectorRelaciones (regla genérica)                         │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **El servidor** da acceso a los datos (lo que tiene que estar allí: la conexión, las credenciales y las consultas) y, desde el 3b, **asigna y guarda la relevancia** de las relaciones que recorre. Es lo único del cálculo que va en el servidor, porque es lo único que hay que **guardar** en la base de datos.
-- **El navegador** hace el resto: relevancia de los nodos (producto del camino), subgrafo «primero el mejor», poda a 150 nodos, centralidad, colores, búsqueda tolerante a errores, vista 3D e interfaz.
+- **La base de datos no tiene relevancias** y nadie las da: el navegador las calcula **siempre**.
+- **El servidor** solo da acceso a los datos (la conexión, las credenciales y las consultas). **No calcula ni escribe nada** en la base de datos: le basta con permisos de lectura (RNF-11). Ya no existen `AsignadorRelevancia`, `RelevanciaPorTipo` ni `AlmacenRelevancias`.
+- **El navegador** hace el resto: la relevancia de cada relación y de cada nodo, el subgrafo, la poda a 150 nodos, la centralidad, los colores, la búsqueda tolerante a errores, la vista 3D y la interfaz.
+- El servidor apenas consume recursos y atiende a más usuarios a la vez (RNF-05). Las sugerencias del buscador salen al instante, porque se buscan en memoria (RNF-03).
+- Cada entidad se abre con el umbral que da **más o menos `nodosObjetivo` nodos** (`AjustadorUmbral`). Después el deslizador se mueve libremente, **sin ninguna petición**.
 
-### Por qué el navegador calcula (incremento 3)
+## La relevancia artística, en tres capas
 
-- El servidor apenas consume recursos y atiende a más usuarios a la vez (RNF-05).
-- Cambiar el umbral muchas veces no le cuesta nada al servidor: si sube, el navegador recalcula con los datos que ya tiene.
-- Cada entidad se abre con el umbral que da **más o menos `nodosObjetivo` nodos** (100 por defecto, en `servidor/configuracion.json`): una entidad muy conectada se abre con un umbral alto y una poco conectada, con uno bajo (`AjustadorUmbral`). Después el deslizador se puede mover libremente; al cambiar de entidad se vuelve a ajustar.
-- Las sugerencias del buscador salen al instante, porque se buscan en memoria (RNF-03).
+La relevancia es **artística**: mide cuánto ayuda una entidad a entender la trayectoria y la obra de la entidad central (formación, autoría, colaboración, circuito de exposiciones, instituciones). Lo personal (pareja, familia, amistad) solo pesa si tiene un lado artístico.
 
-### El vecindario y por qué contiene todo lo necesario
+### Tres números por nodo
 
-El servidor entrega **de una sola vez** el *vecindario* de la entidad: el recorrido **en anchura** desde ella por las relaciones cuya relevancia **supera el umbral**, en los dos sentidos (`RepositorioDatos.obtener_vecindario`). Con él, el navegador construye el subgrafo (`RepositorioVecindario` + `ConstructorSubgrafo`).
+| | Qué dice | Para qué se usa |
+|---|---|---|
+| **R, fuerza** | Cuánto importaría la entidad **si la relación fuera segura** | Para calcular S |
+| **C, certeza** | Cuánto se sabe **de verdad**: 1 si hay una relación declarada; menos si solo hay coincidencias en eventos o deducciones | Para calcular S, y la **opacidad** del nodo |
+| **S = R × C, relevancia** | Lo que importa la entidad, contando las dudas | Quién entra en el subgrafo (umbral y máximo de 150), el orden y la **distancia al centro** |
 
-**Por qué es correcto.** La relevancia de un nodo es el producto de las relevancias de su camino, y todas están entre 0 y 1. Un producto de números entre 0 y 1 nunca es mayor que ninguno de sus factores. Si un nodo supera el umbral, **todas** las relaciones de su camino lo superan también, y ese camino está dentro del vecindario. Lo que sobra (por ejemplo, un nodo a 0,5 × 0,5 = 0,25 con umbral 0,3), lo descarta el navegador. Por lo mismo, si se pide **la misma entidad con un umbral igual o mayor**, `GestorSubgrafos` no pide nada al servidor.
+Separar fuerza y certeza sigue la idea de la **lógica subjetiva** de Jøsang: una probabilidad con un grado de incertidumbre. Tiene un operador de **descuento**, que encadena a lo largo de un camino (los productos de la deducción), y otro de **fusión**, que junta varias fuentes (los «o» de probabilidades).
 
-El servidor corta el vecindario en `maxEntidadesVecindario` entidades (2000) y lo marca como `recortado` (el navegador lo avisa en la consola).
+### Por qué cambia
 
-## Los datos con la forma de Neo4j (incremento 3b)
+Antes, la relevancia de un nodo era el **producto del mejor camino** desde la central. Tenía tres problemas:
+
+1. **No sumaba vías**: si alguien está unido a la central por varios caminos, solo contaba el mejor.
+2. **No distinguía qué se transmite**: la obra de un amigo salía casi tan relevante como el amigo, aunque artísticamente no diga nada de la central. La obra de su **maestro**, en cambio, sí.
+3. **Ignoraba evidencia**: los eventos con más de 10 entidades se descartaban, y coincidir en varias exposiciones no se acumulaba.
+
+### Cada relación
+
+`r = peso(tipo, rol del otro) × (2/n)^β × f_t` (`RelevanciaCompuesta`):
+
+- **peso**: primero `pesosPorRol` con el rol que tiene **el otro** extremo. Si el otro es mi maestro, la mentoría vale 0,95; si es mi alumno, 0,60. Si no hay peso por rol, el del tipo en `pesosRelevancia` o, si no tiene, el de su padre más cercano (`Paint` → `Creation`), o `pesoPorDefecto`. Los roles se normalizan con `rolesEquivalentes` («Maestra», «teacher», «Mestre» → `maestro`; `NormalizadorRoles`).
+- **(2/n)^β**: n es el número de participantes del evento. Una relación entre dos vale entera, y coincidir con 40 personas, mucho menos.
+- **f_t**, el factor de tiempo: penaliza lo que pasó lejos de la **época de la central**, que va del primer al último año de sus relaciones con fecha. Vale `f_t = mínimo + (1 − mínimo) · e^(−Δ/τ)`, donde Δ son los años de distancia a esa época. Una relación sin fecha recibe `factorTiempoSinFecha`, y los tipos de `tiposSinTiempo` no caducan.
+
+### Capa 0: la evidencia de cada pareja, vista desde un lado
+
+Se juntan **todas** las relaciones y eventos que unen a dos entidades, se dibujen o no (`CalculadorEvidencia`). Por el rol, la evidencia es **dirigida**: la de mi maestro vista desde mí no es la mía vista desde él.
+
+```
+por tipo:   fuerza_tipo = 1 − Π_k (1 − r_k · ρ^(k−1))      pruebas del mismo tipo, de mayor a menor
+total:      F = 1 − Π_tipos (1 − fuerza_tipo)
+
+certeza:    C = 1                                          si hay alguna relación declarada
+            C = 1 − Π_k (1 − pCoincidencia · (2/n_k)^β)    si solo hay coincidencias
+```
+
+- **Multiplexidad**: las pruebas repetidas del mismo tipo rinden cada vez menos (ρ). Diez exposiciones juntos no son diez veces una. Los tipos **distintos** se combinan sin descuento.
+- Una **coincidencia** es una relación de un evento cuyo tipo exacto (sin herencia) está en `tiposCoincidencia` **y** cuyos dos extremos son personas. Por ejemplo, dos pintores en la misma exposición. Todo lo demás es **declarado**: una relación, el autor y su obra, la obra y el museo de una exposición, los coautores de una obra… `Creation` hereda de `Event`, pero no cuenta como coincidencia.
+
+Un nodo es **directo** si `F(c,X) × C(c,X) × fE(X) ≥ umbralDirecto`.
+
+### Capas 1 y 2: refuerzo simétrico entre directos
+
+```
+R(X) = 1 − (1 − F(c,X)·fE(X)) × Π_Y (1 − F(c,Y)·fE(Y) · F(Y,X) · T̄(c,Y → tipo(Y,X)) · fE(X) · h(Y))
+C(X) = 1 − (1 − C(c,X))       × Π_Y (1 − C(c,Y) · C(Y,X) · κ)
+```
+
+(`RefuerzoEntreDirectos`) Si dos contactos directos de la central están relacionados entre sí, cada uno hace más relevante al otro. Cada directo recibe de **todos** los demás directos con los que tiene relación, usando la evidencia **propia** del otro y no su valor ya reforzado. Es **un solo paso**, sin iterar y sin orden.
+
+- **κ, cierre triádico**: ser amigo de alguien que conoces hace más probable que te conozca (Kossinets y Watts, 2006). Por eso Marta, que solo coincide con Ana en exposiciones, gana certeza por ser amiga de Luis.
+- **h**, penalización de los intermediarios muy conectados (idea de Adamic-Adar): `h(P) = min(1, log(2 + gradoReferencia) / log(2 + grado(P)))`. Que dos entidades estén unidas a través de una academia de 300 dice menos que a través de un taller de cinco.
+
+### Capa 3: deducción a dos saltos
+
+```
+dR = R(P) · F(P,Z) · T̄(c,P → tipo(P,Z)) · fE(Z) · h(P) · τ(c,P,Z)
+dC = C(P) · C(P,Z) · δ
+
+R(Z) = 1 − (1 − F(c,Z)·fE(Z)) × Π (1 − dR_k)      F(c,Z) = 0 si Z no tiene evidencia propia
+C(Z) = 1 − (1 − C(c,Z))       × Π (1 − dC_k)
+```
+
+(`DeduccionPorTipos`) Los nodos sin evidencia propia (o con muy poca) entran a través de un directo P.
+
+- **T̄, transferencia efectiva**: depende de la pareja de tipos del camino y del rol. La obra de tu maestro (`Mentorship:maestro>Creation` = 0,8) dice mucho de ti; la de un amigo (`Friendship>Creation` = 0,2), poco. Si el primer tramo tiene varios tipos (Luis es amigo **y** coexpositor de Ana), es la media ponderada por la fuerza de cada tipo.
+- **τ, compatibilidad temporal**: la obra que pintó tu maestro mientras te enseñaba (antes o durante la mentoría) cuenta entera; una 35 años posterior, solo `factorFueraDeTiempo`.
+- **δ**: el descuento por deducir.
+- Nunca se deduce a tres saltos. Un deducido sin evidencia propia **no supera a su mejor padre**: todos los factores están entre 0 y 1. Con varios padres podría pasarse, así que se le pone un tope (ver «Diferencias con el prototipo»).
+
+### Las nueve propiedades
+
+El cálculo cumple estas propiedades, y son las pruebas de `tests/pruebasPropiedadesRelevancia.js`. También se cumplen al mover ρ, δ y κ: 27 combinaciones.
+
+| | Propiedad |
+|---|---|
+| P1 | Añadir una relación no baja la relevancia de nadie |
+| P2 | Ningún nodo directo baja de su propia evidencia |
+| P3 | Un nodo deducido sin evidencia propia no supera a su mejor padre |
+| P4 | Cuatro tipos distintos de vínculo pesan más que diez exposiciones repetidas |
+| P5 | El compañero de un taller pequeño pesa más que el de una academia enorme |
+| P6 | El maestro es más relevante para la alumna que la alumna para el maestro |
+| P7 | La obra del maestro de la época de la mentoría pesa más que una muy posterior |
+| P8 | En el ejemplo de Ana entra la obra de su maestro y no el marido (no artista) de su amigo |
+| P9 | Dos nodos en la misma situación reciben la misma relevancia (el orden de cálculo no influye) |
+
+### Por qué no un circuito ni un modelo solo de muelles
+
+Se evaluaron tres variantes con las nueve propiedades (`node docs/prototipo_relevancia_v2.mjs`):
+
+- **El circuito eléctrico** de la versión anterior (V1) incumple **P1 y P2**. La tensión de cada nodo es una media de la de sus vecinos, así que conectar un nodo a otro con menos tensión le quita corriente. Añadir una relación podía bajar a alguien: Luis pasaba de 0,76 a 0,72 por ser amigo de Marta.
+- **Un modelo solo de muelles**, en el que la relevancia saliera de la posición en el dibujo, incumple **P1, P3, P5, P7 y P8**. Además depende del azar de la simulación.
+- **El refuerzo simétrico** (V2) cumple las nueve.
+
+El dibujo **nunca** modifica la relevancia: los muelles salen del cálculo y no al revés.
+
+### Para comparar: el mejor camino
+
+Con `"estrategiaNodos": "mejorCamino"` en `public/relevancia.json` vuelve el cálculo anterior (`RelevanciaNodosMejorCamino`), con el mismo algoritmo. No distingue la certeza (C = 1) y cambian dos cosas de lo que recibe:
+
+- cada relación vale `r` completa, no solo su peso;
+- solo llega a dos saltos.
+
+Recarga la página después de cambiarlo.
+
+## Carga en dos tandas
+
+Para una entidad nueva, `GestorSubgrafos`:
+
+1. Pide **todas** las relaciones de la central (`POST /api/relaciones`), si no están en la caché.
+2. Calcula la evidencia con cada vecino y elige los **directos**. Si hay más de `maxDirectos`, avisa en la consola y se queda con los de más evidencia.
+3. Pide **en una sola tanda** las relaciones de los directos que faltan. `ClienteServicio` la parte en trozos de 200 ids.
+4. Calcula las relevancias y construye el subgrafo.
+
+**Por qué es exacto.** El refuerzo y la deducción solo miran a dos saltos:
+
+- la evidencia de la central sale de sus relaciones;
+- las relaciones entre directos y los vecinos de los directos salen de las relaciones de los directos.
+
+Tras la tanda 2 se tienen **todas** las relaciones de cada directo, así que su grado (el de h) es exacto. Tener más datos no cambiaría ningún número.
+
+**Consecuencias:**
+
+- cambiar el umbral (subirlo o bajarlo) no hace ninguna petición;
+- volver a una entidad visitada, tampoco;
+- desmarcar «Mostrar deducidos», tampoco;
+- cada entidad nueva cuesta como mucho 2 tandas.
+
+La barra de abajo muestra «Tandas: X · Directos: Y · Deducidos: Z».
+
+## Qué se ve
+
+- **Distancia al centro**: `6 + (1 − S) × 40`.
+- **Muelles** (`SimulacionFuerzas`): **uno por pareja**, aunque se dibujen varias curvas. Si cada curva tuviera el suyo, una pareja con cinco exposiciones tiraría cinco veces. Su peso es lo que esa pareja transmite en el cálculo:
+  - entre dos directos, el mayor de los dos sentidos de `F(Y,X) · T̄ · fE · h`;
+  - entre un deducido y su padre, `F(P,Z) · T̄ · fE(Z) · h(P) · τ`;
+  - en cualquier otra pareja, `F × C`;
+  - con la central no hay muelle.
+
+  `k = 4·peso²` y `longitud = 2 + (1 − peso) × 20`. Así «Paseo» queda junto a Joaquín (peso 0,8).
+- **Opacidad** = `opacidadMinima + (1 − opacidadMinima) × C`, continua. Los declarados quedan opacos y los deducidos, con el nombre en cursiva.
+- **Línea discontinua**: las parejas sin relación declarada (solo coincidencias) y las aristas sintéticas `COINCIDENCIAS`. Una arista sintética se añade cuando un nodo no tiene ninguna relación que se pueda dibujar. Va hacia la central (o hacia su mejor padre, si es deducido) con el texto «Coinciden en N eventos».
+- **Leyenda**: sección «Origen» con las tres muestras (continua, discontinua, semitransparente) y la casilla «Mostrar deducidos». No depende solo del color (RNF-26).
+- **Etiqueta y panel**: explican de dónde sale la relevancia:
+  - «Mentoría (su maestro)»;
+  - «Amistad · 5 exposiciones juntos»;
+  - «Coinciden en 3 exposiciones · Amistad con Luis Peris»;
+  - «Pintura de Joaquín Mestre (su maestro)».
+
+  El panel muestra además:
+  - S, R y C, con la certeza en palabras: «segura» si C ≥ 0,9, «probable» si C ≥ 0,5 y «supuesta» si es menor;
+  - el origen, la evidencia propia y el camino;
+  - los eventos compartidos que **no** se dibujan.
+
+  **Nunca** se escribe que dos personas «se conocen» si no hay relación declarada (RNF-23).
+
+## Parámetros (`public/relevancia.json`)
+
+> **Todos los valores son una propuesta pendiente de validar con el grupo de investigación.** JSON no admite comentarios, por eso se explican aquí. Vite copia el archivo tal cual al publicar: se puede cambiar sin recompilar (recargando la página).
+
+| Parámetro | Qué es |
+|---|---|
+| `perfil` | `"artistico"` (de momento el único; deja sitio para otros perfiles) |
+| `estrategiaNodos` | `"tresCapas"` (por defecto) o `"mejorCamino"` (el cálculo anterior, para comparar) |
+| `pesosRelevancia`, `pesoPorDefecto` | Peso de cada tipo (heredado por los padres) y el de un tipo sin peso |
+| `pesosPorRol` | Peso según el rol del otro extremo: `"Mentorship.maestro"` (el otro es mi maestro), `"Mentorship.aprendiz"` |
+| `rolesEquivalentes` | Cómo se normalizan los roles de la BD («maestra», «teacher», «mestre» → `maestro`) |
+| `betaParticipantes` | β de `(2/n)^β`: cuánto penaliza el tamaño del evento |
+| `factorTiempoMinimo`, `tauTiempoAnios` | Mínimo de f_t y años en que la penalización por época cae a ~1/3 de su recorrido |
+| `factorTiempoSinFecha` | f_t de una relación sin fecha (si la central tiene época) |
+| `tiposSinTiempo` | Tipos (y sus hijos) que no caducan: `Creation`, `Mentorship`, `Related` |
+| `tablaTransferencia`, `transferenciaPorDefecto` | Tabla T `"tipo1[:rol1]>tipo2"` (heredada por los padres) y su valor si no hay ninguna |
+| `factorEntidad` | Peso de cada tipo de entidad (la etiqueta más específica que tenga, subiendo por los padres; si ninguna, 1) |
+| `tiposCoincidencia` | Tipos de evento (exactos) que, entre dos personas, son coincidencia y no relación |
+| `probabilidadCoincidencia` | Certeza que da una coincidencia en un evento de 2 |
+| `rho` (ρ) | Rendimiento decreciente de las pruebas repetidas del mismo tipo |
+| `cierreTriadico` (κ) | Certeza que aporta «es amigo de alguien que conoces» |
+| `delta` (δ) | Descuento de la certeza al deducir a dos saltos |
+| `gradoReferencia` | A partir de cuántas entidades relacionadas se penaliza a un intermediario (h) |
+| `paresTemporales` | Pares de tipos en los que importa el orden en el tiempo: `antesODurante` o `solapa` |
+| `margenAnios` | Margen de esas comparaciones |
+| `factorFueraDeTiempo` | τ cuando el camino no respeta el tiempo |
+| `transferenciaSinFecha` | τ cuando falta alguna fecha |
+| `umbralDirecto` | `F × C × fE` mínimo con la central para ser nodo directo |
+| `maxDirectos` | Máximo de nodos directos (si hay más, los de más evidencia) |
+| `mostrarDeducidosPorDefecto` | Si la casilla «Mostrar deducidos» empieza marcada |
+| `opacidadMinima` | Opacidad de un nodo con certeza 0 |
+
+Ya no existen `maxRelacionesCombinadas`, `gamma`, `toleranciaCircuito` ni `maxVueltasCircuito`.
+
+### Valores de referencia (escenario del prototipo)
+
+`escenarioAna()` del prototipo, con los parámetros de arriba, β = 1 y f_t = 1 (`tests/pruebasRelevanciaNodosTresCapas.js` lo comprueba con ± 0,005):
+
+| Nodo | S | R | C | Origen |
+|---|---|---|---|---|
+| Huerta | 1,000 | 1,000 | 1,000 | DECLARADA |
+| Joaquín Mestre | 0,950 | 0,950 | 1,000 | DECLARADA |
+| Luis Peris | 0,789 | 0,789 | 1,000 | DECLARADA |
+| Taller Valencia | 0,520 | 0,520 | 1,000 | DECLARADA |
+| Marta Soler | 0,336 | 0,596 | 0,564 | COINCIDENCIAS |
+| Paseo | 0,532 | 0,760 | 0,700 | DEDUCIDA |
+| Museo de la Ciudad | 0,314 | 0,448 | 0,700 | DEDUCIDA |
+| Retrato | 0,168 | 0,240 | 0,700 | DEDUCIDA |
+| Juan Ribes | 0,118 | 0,169 | 0,700 | DEDUCIDA |
+| Pedro Navarro | 0,098 | 0,136 | 0,720 | DEDUCIDA |
+
+En los datos simulados (con las 38 personas de relleno que hacen falta para las exposiciones grandes), los valores cambian un poco:
+
+- Luis: 0,783.
+- Marta: 0,345.
+- Retrato: 0,149.
+- Pedro: 0,093.
+- «Tardía»: 0,160.
+
+Con umbral 0,3 entran los mismos siete.
+
+### Diferencias con el prototipo
+
+- **Tope de P3 con varios padres** (añadido): si un deducido sin evidencia propia superase al mejor de sus padres, por ejemplo una obra firmada por tres maestros, se le baja R hasta igualarlo. En el ejemplo no cambia nada.
+- **Herencia en `paresTemporales`**, como en la tabla T. Así `Mentorship>Paint` usa `Mentorship>Creation`, y «Tardía», que en los datos es `Paint`, se penaliza.
+- Los textos usan el rol normalizado: «(su maestro)» también para una maestra.
+- El prototipo cuenta el grado con las entidades de su escenario. En los datos simulados, las personas de relleno de las exposiciones también cuentan. Por eso h(Marta) ≈ 0,66 y h(Luis) ≈ 0,90, y salen las pequeñas diferencias de la tabla.
+
+## Los datos con la forma de Neo4j
 
 ### Forma de los datos simulados
 
@@ -70,70 +294,44 @@ El servidor corta el vecindario en `maxEntidadesVecindario` entidades (2000) y l
 ```
 
 - Las entidades **no** se relacionan directamente: lo hacen a través de nodos intermediarios (`Relationship`, `Event` y sus subtipos), con sus periodos (`Period`), lugares (`Ubication`), imágenes (`Image`) y fuentes (`ExternalSource`).
-- Etiquetas, tipos de relación y propiedades son **exactamente** los del diseño, erratas incluidas (`Ubication`, `Employement`, `OCURRED_AT`, `coworking`). No se corrigen porque la aplicación tiene que funcionar con los nombres tal cual estén en la BD real.
+- Etiquetas, tipos de relación y propiedades son **exactamente** los del diseño, erratas incluidas (`Ubication`, `Employement`, `OCURRED_AT`, `coworking`).
 - **Ninguna relación tiene `relevance`**, igual que la BD real.
-- `jerarquia` copia los `IS_A` del diseño. Se supone que en la BD real los subtipos son varias etiquetas en el mismo nodo (`:Event:Creation:Paint`); está pendiente de confirmar.
-- Dos elementos **no están en el diseño** y están marcados con `"_comentario"` como de prueba: el subtipo `Apprenticeship` (aprendizaje, hijo de `Professional`) y la relación directa `STUDENT_OF` entre personas. Sirven para comprobar que el código no depende de una lista fija.
+- Dos elementos de prueba que **no están en el diseño** (marcados con `"_comentario"`): el subtipo `Apprenticeship` y la relación directa `STUDENT_OF`.
+- **Escenario fijo de Ana Ferrer** (ids fijos, nombres inventados, al final del archivo): el ejemplo del prototipo, con Luis Peris, Marta Soler, Pedro Navarro, Joaquín Mestre, Juan Ribes, el Taller Valencia, el Museo de la Ciudad y las obras «Huerta», «Retrato» y «Paseo».
+  - Para que las exposiciones tengan 4, 6, 12 y 40 participantes hay **38 personas de relleno**.
+  - Por eso, en la aplicación, los valores de Ana se mueven algo respecto al prototipo: Luis 0,68 y Marta 0,49, y salen algunos directos de relleno poco relevantes. La tabla exacta se comprueba en `pruebasRelevanciaNodosTresCapas.js`.
 
-Tiene 120 personas, 25 organizaciones, 60 obras y 15 lugares (ciudad → provincia → país con `IS_IN`), 1462 nodos y 2500 relaciones. Lo genera, con semilla fija, `servidor/datos/generar_datos_ejemplo.py`:
+Tiene 164 personas, 27 organizaciones, 63 obras y 15 lugares (1549 nodos y 2620 relaciones). Lo genera, con semilla fija, `servidor/datos/generar_datos_ejemplo.py`:
 
 ```
 .venv\Scripts\python.exe -m servidor.datos.generar_datos_ejemplo
 ```
 
-Escribe también `tests/vecindarioEjemplo.json`, el vecindario completo que usan las pruebas del navegador. La prueba `test_datos_ejemplo.py` comprueba que siempre genera lo mismo, que no hay ninguna `relevance` y que todo existe en el diseño salvo lo marcado como de prueba.
+Escribe también `tests/relacionesEjemplo.json`, con todas las entidades y relaciones derivadas tal como las envía el servidor, que usan las pruebas del navegador.
 
 ### Clasificación de las etiquetas y regla genérica
 
 La clasificación está en `servidor/configuracion.json`, no en el código (`ClasificadorEtiquetas`):
 
 - **Entidades** (`etiquetasEntidad`): `Person` → persona, `Organization` → organización, `HeritageItem` → obra.
-- **Auxiliares** (`etiquetasAuxiliares`, y su papel en `papelesAuxiliares`): `Period` (periodo), `Ubication` (lugar), `Image` (imagen), `ExternalSource` (fuente).
+- **Auxiliares** (`etiquetasAuxiliares`, con su papel en `papelesAuxiliares`): `Period`, `Ubication`, `Image`, `ExternalSource`.
 - **Intermediarios**: todo lo demás, también cualquier etiqueta nueva.
 
-`ProyectorRelaciones` deriva las relaciones entre entidades con una **regla genérica**, sin ningún nombre de etiqueta ni de relación en el código:
+`ProyectorRelaciones` deriva las relaciones entre entidades con una **regla genérica**:
 
-1. **Por intermediario:** si un intermediario está unido (por cualquier relación que no esté en `relacionesIgnoradas`) a dos o más entidades, hay una relación por cada **pareja**. Su tipo es la etiqueta **más específica** del intermediario. Así salen el matrimonio, la mentoría, el empleo, la creación de una obra, la fundación, la exposición o haber ido al mismo evento.
+1. **Por intermediario:** una relación por cada **pareja** de entidades unidas al mismo intermediario. Su tipo es la etiqueta más específica.
 2. **Directa:** una relación entre dos entidades se toma tal cual (por ejemplo `STUDENT_OF`).
-3. **Límites:** no se aplica a `tiposSinRelacion` (`Birth`, `Death`, `Live`: van al detalle) ni a intermediarios con más de `maxParticipantesIntermediario` (10) entidades, para que un evento grande no cree una maraña.
-4. **Datos:** roles (`role`), periodo, lugar y fecha.
+3. **Límites:** `tiposSinRelacion` (`Birth`, `Death`, `Live`) no crean relaciones.
+   - Con más de `maxParticipantesIntermediario` (10) entidades, las relaciones llegan con **`dibujable: false`**: no se dibujan, pero cuentan como evidencia.
+   - Con más de `maxParticipantesEvidencia` (200), el intermediario se ignora.
+   - Solo se devuelven las parejas de las entidades pedidas, nunca todas las de un evento.
+4. **Datos:** roles, nombre del intermediario, periodo, lugar, fecha y `participantes`.
 
-En `servidor/datos/proyector_relaciones.py` hay una consulta Cypher de referencia para el incremento 4 que hace lo mismo sin nombrar ninguna etiqueta.
+En `servidor/datos/proyector_relaciones.py` hay una consulta Cypher de referencia para el incremento 4.
 
 ### Cómo se añade un tipo nuevo
 
-Normalmente, **nada**. Si la BD añade un subtipo de relación o de evento (como `Apprenticeship`), o una relación directa (como `STUDENT_OF`):
-
-- sale solo en `/api/tipos`, en la leyenda y en el grafo;
-- recibe el peso de su padre más cercano (o `pesoPorDefecto`);
-- se nombra automáticamente a partir de su id (`STUDENT_OF` → «Student of»).
-
-Como mucho, se añade en `servidor/configuracion.json` un **peso** (`pesosRelevancia`, subiendo `versionPesos`) y un **nombre** (`nombresTipos`). Un tipo nuevo de **entidad** sí necesita una línea en `etiquetasEntidad`.
-
-### Relevancia asignada bajo demanda y guardada
-
-Las relaciones no tienen relevancia en la BD. Mientras recorre el vecindario, el servidor (`AsignadorRelevancia`) mira cada intermediario (o relación directa) que encuentra:
-
-- si ya tiene `relevance` (manual, o automática con la versión actual de los pesos), la **reutiliza**;
-- si no, la **calcula** con la estrategia `RelevanciaPorTipo` (peso del tipo → del padre más cercano → por defecto) y la **guarda** con `relevance`, `relevanceSource` y `relevanceVersion`.
-
-Así solo se calcula lo que se recorre, y una sola vez. Un valor `"manual"` nunca se sobrescribe. Los pesos de `configuracion.json` son una **propuesta pendiente de validar con el tutor**. Si se cambia uno, hay que subir `versionPesos`: las relevancias automáticas antiguas se recalculan al volver a recorrerlas.
-
-El navegador lee el valor asignado con `RelevanciaDesdeBD`. La barra de abajo muestra cuántas relevancias asignó el servidor en el último vecindario y cuántas reutilizó, y el registro del servidor lo apunta en cada petición.
-
-### El problema de los permisos (RNF-11)
-
-RNF-11 dice que la aplicación accede a la BD **solo con permisos de lectura**, pero guardar la relevancia necesita escribir. Por eso el guardado va detrás de la interfaz `AlmacenRelevancias`:
-
-1. **`AlmacenRelevanciasEnGrafo`** (la que hay ahora) escribe en el propio grafo. Con Neo4j sería un `SET … coalesce(…)` y haría falta permiso de escritura **solo** sobre esas tres propiedades (Neo4j Enterprise lo permite).
-2. Si no se consigue ese permiso, en el incremento 4 se hará otra implementación con un **almacén propio del servidor** (un fichero o una pequeña base de datos), sin cambiar nada más.
-
-Está pendiente de decidir con el tutor (ver `ANALISIS_BD_NEO4J.md` §5).
-
-## Requisitos
-
-- **Node.js** LTS (para Vite y Three.js).
-- **Python 3.12** (para el servidor).
+Normalmente, **nada**: sale solo en `/api/tipos`, en la leyenda y en el grafo, hereda el peso y la T de su padre más cercano y se nombra a partir de su id (`STUDENT_OF` → «Student of»). Como mucho, se añade un peso o una T en `public/relevancia.json` y un nombre en `nombresTipos` (`servidor/configuracion.json`).
 
 ## Instalación (una vez)
 
@@ -146,33 +344,23 @@ pip install -r servidor/requirements.txt
 
 ## Desarrollo: dos servidores
 
-Hacen falta dos terminales:
-
 - **Terminal 1, servidor Python** (puerto 8000):
   ```
   .venv\Scripts\activate
   python -m uvicorn servidor.app:app --reload --port 8000
   ```
-  `http://localhost:8000/api/salud` debe responder `{"estado": "ok"}`. La documentación de la API se genera sola en `http://localhost:8000/docs`. Si `servidor/configuracion.json` no está completa, el servidor no arranca y dice qué falta.
-- **Terminal 2, la página** (puerto 5173):
-  ```
-  npm run dev
-  ```
-  Abre `http://localhost:5173/`.
+  `http://localhost:8000/api/salud` debe responder `{"estado": "ok"}`. La documentación de la API está en `http://localhost:8000/docs`.
+- **Terminal 2, la página** (puerto 5173): `npm run dev` y abre `http://localhost:5173/`.
 
-Para parar cada uno: `Ctrl + C` en su terminal. En Windows, la recarga automática (`--reload`) a veces se queda a medias y el servidor sigue con el código anterior. Si algo no cambia, para el servidor y arráncalo de nuevo. Al arrancarlo, además, las relevancias asignadas se borran, porque solo están en memoria.
+En Windows, la recarga automática (`--reload`) a veces se queda a medias. Si algo no cambia, para el servidor y arráncalo de nuevo.
 
 ## Pruebas
 
-- **Python**: `python -m pytest`, con el entorno virtual activado. Están en `servidor/tests/` y cubren:
-  - clasificador, proyector, relevancia por tipo, asignador y almacén;
-  - repositorio, vecindario, datos de ejemplo, configuración, caché y API.
+- **Python**: `python -m pytest`. Cubren el clasificador, el proyector (`dibujable`, `participantes`, límites), el repositorio, los datos de ejemplo (y el escenario de Ana Ferrer), la configuración, la caché y la API. También comprueban que el servidor no escribe ninguna propiedad `relevance*`.
 - **Navegador**: con `npm run dev` en marcha, abre `http://localhost:5173/pruebas.html`.
-  - Cubren el modelo, la fábrica de entidades, los tipos de relación, el cálculo del subgrafo, el buscador, el gestor, el controlador, los filtros, el historial, la vista 3D, la leyenda y los paneles.
-  - Arriba aparece «X de Y pruebas correctas», y debajo cada prueba en verde o en rojo con el motivo.
-  - No necesitan el servidor: usan **dobles de prueba** y `tests/vecindarioEjemplo.json`.
-
-`EscenaGrafo` y `SelectorInteraccion` necesitan WebGL y se comprueban a mano con la lista del final.
+  - Incluyen cada pieza de la relevancia (`RelevanciaCompuesta`, `NormalizadorRoles`, `CalculadorEvidencia`, `TablaTransferencia`, `PenalizacionGrado`, `CompatibilidadTemporal`, `RefuerzoEntreDirectos`, `DeduccionPorTipos`), la tabla del prototipo (`pruebasRelevanciaNodosTresCapas.js`) y las **nueve propiedades** (`pruebasPropiedadesRelevancia.js`).
+  - También el gestor (tandas y peticiones), el constructor (orden por S, arista sintética, deducidos, máximo, un muelle por pareja), la leyenda y los paneles.
+  - No necesitan el servidor: usan un cliente falso y `tests/relacionesEjemplo.json`.
 
 ## Publicar
 
@@ -181,50 +369,28 @@ npm run build
 python -m uvicorn servidor.app:app --port 8000
 ```
 
-`npm run build` deja la página en `dist/`, y el servidor Python la sirve en `/` además de la API: en el servidor real basta con Python. La aplicación queda en `http://localhost:8000/`.
+`npm run build` deja la página en `dist/` y el servidor Python la sirve en `/` además de la API.
 
 ## API
 
 | Petición | Respuesta |
 |---|---|
 | `GET /api/salud` | `{"estado": "ok"}` |
-| `GET /api/configuracion` | `umbralPorDefecto`, `maxNodos`, `nodosObjetivo`, `entidadInicial`, `idioma`, `nombresTipos`, `etiquetasEntidad` (solo lo que necesita el navegador) |
-| `GET /api/tipos` | **Nueva.** Los tipos de relación de los datos con sus padres: `[{"id": "Marriage", "padres": ["Related", "Relationship"]}]` (RF-39) |
-| `GET /api/nombres` | Todas las entidades con sus etiquetas y sus propiedades de nombre, en bruto (el índice del buscador) |
-| `GET /api/vecindario/{id}?umbral=0.3` | `idCentral`, `umbral`, `recortado`, `entidades` (en bruto), `relaciones` (derivadas, con `valor` = relevancia asignada, `roles`, `periodo`, `lugar`, `fecha`), `relevanciasAsignadas` y `relevanciasReutilizadas` |
-| `GET /api/detalle/{id}` | **Nueva.** En bruto: `eventos` (también nacimiento, defunción y residencia, con rol, periodo, lugar, fecha y participantes), `imagenes` (por `order`), `fuentes` (con `dateUpdated` y `externalId`) y `ubicacion` (con la cadena de `IS_IN`) |
+| `GET /api/configuracion` | `umbralPorDefecto`, `maxNodos`, `nodosObjetivo`, `entidadInicial`, `idioma`, `nombresTipos`, `etiquetasEntidad` |
+| `GET /api/tipos` | Los tipos de relación con sus padres |
+| `GET /api/jerarquia` | **Nueva.** Cada etiqueta con sus padres: `{"Painter": ["Creator", "Person"]}` (para `factorEntidad`) |
+| `GET /api/nombres` | Todas las entidades con sus etiquetas y nombres (el índice del buscador) |
+| `POST /api/relaciones` `{"ids": [...]}` | **Nueva** (sustituye a `/api/vecindario`). `ids`, `entidades` (en bruto, con todas sus etiquetas) y `relaciones` (derivadas, **sin relevancia**, con `participantes` y `dibujable`) de las entidades pedidas |
+| `GET /api/detalle/{id}` | Eventos, imágenes, fuentes y ubicación |
 
-- `umbral` entre 0 y 1; si no, **422**. Si no se indica, se usa el de la configuración. Se redondea hacia abajo a 2 decimales.
-- Entidad inexistente (o un nodo que no es una entidad): **404** con `{"detail": "No existe la entidad X"}`. Cualquier otro error: **500** con un mensaje genérico.
-- El vecindario lleva `Cache-Control: no-store`, para que las estadísticas de cada petición sean las suyas. Se reutiliza de la caché del servidor; en ese caso dice «0 asignadas». El resto de rutas sí se guardan en el navegador dos minutos.
-
-## Rendimiento
-
-En el servidor: índice de relaciones por nodo, caché de respuestas (`CacheRespuestas`), umbral redondeado y, desde el 3b, cada relevancia se calcula una sola vez. Con los datos de ejemplo:
-
-- el vecindario de n1 con umbral 0,3 tarda unos 40 ms en recorrerse;
-- ocupa unos 186 KB;
-- el subgrafo de 150 nodos se calcula en el navegador en unos 15 ms la primera vez y en pocos milisegundos al cambiar el umbral.
+- `ids`: de 1 a 200, de 1 a 100 caracteres cada uno; si no, **422**. Una entidad inexistente da **404**.
+- Las relaciones se guardan en la caché del servidor entidad a entidad.
 
 ## Configuración
 
-- **`servidor/configuracion.json`** (la de verdad):
-  - ajustes generales: `origenDatos`, `umbralPorDefecto`, `maxNodos`, `nodosObjetivo` (nodos que se buscan al abrir una entidad), `maxEntidadesVecindario`, `entidadInicial`, `idioma`;
-  - clasificación de etiquetas: `etiquetasEntidad`, `etiquetasAuxiliares`, `papelesAuxiliares`, `tiposSinRelacion`, `relacionesIgnoradas`, `maxParticipantesIntermediario`;
-  - relevancia y nombres: `pesosRelevancia`, `pesoPorDefecto`, `versionPesos` y `nombresTipos`.
-
-  Las credenciales de la base de datos real **no** irán aquí, sino en variables de entorno (archivo `.env`, que Git ignora).
+- **`public/relevancia.json`**: los parámetros de la relevancia (ver arriba).
+- **`servidor/configuracion.json`**: ajustes generales (`origenDatos`, `umbralPorDefecto`, `maxNodos`, `nodosObjetivo`, `entidadInicial`, `idioma`), clasificación de etiquetas, límites (`maxParticipantesIntermediario`, `maxParticipantesEvidencia`) y `nombresTipos`. Ya **no** tiene pesos.
 - **`public/config.json`**: solo `urlServicio` (`"/api"`).
-
-## Cómo añadir otra fuente de datos
-
-Crear en `servidor/datos/` una clase que herede de `RepositorioDatos` (por ejemplo `RepositorioBDConocimiento` para Neo4j, en el incremento 4) e implemente:
-
-- `obtener_tipos`, `obtener_nombres`, `obtener_vecindario` y `obtener_detalle`;
-- `cerrar`, si abre conexiones;
-- su propio `AlmacenRelevancias`.
-
-Después, en `crear_repositorio` de `servidor/app.py`, crearla cuando `origenDatos` tenga su nombre.
 
 ## Carpetas y clases
 
@@ -232,70 +398,57 @@ Después, en `crear_repositorio` de `servidor/app.py`, crearla cuando `origenDat
 
 | Ruta | Qué es |
 |---|---|
-| `app.py` | Rutas de la API, configuración comprobada al arrancar, repositorio y página publicada. |
-| `api/conversor_json.py` | **ConversorJson**: forma del JSON (configuración y vecindario). |
-| `api/cache_respuestas.py` | **CacheRespuestas**: guarda las respuestas ya preparadas. |
-| `logica/configuracion.py` | **Configuracion**: lee y comprueba `configuracion.json`. |
-| `logica/clasificador_etiquetas.py` | **ClasificadorEtiquetas** (nueva): entidad, auxiliar o intermediario; etiqueta más específica; padres. |
-| `logica/estrategia_relevancia.py` | **«interface» EstrategiaRelevancia**: vuelve al servidor. |
-| `logica/relevancia_por_tipo.py` | **RelevanciaPorTipo** (nueva): peso del tipo, del padre más cercano o por defecto. |
-| `logica/asignador_relevancia.py` | **AsignadorRelevancia** (nueva): reutiliza o calcula y guarda la relevancia de lo que se recorre. |
-| `datos/repositorio_datos.py` | **«interface» RepositorioDatos** (`obtener_tipos`, `obtener_nombres`, `obtener_vecindario`, `obtener_detalle`) y la excepción `EntidadNoEncontrada`. |
-| `datos/repositorio_simulado.py` | **RepositorioSimulado**: el grafo de ejemplo en memoria. |
-| `datos/proyector_relaciones.py` | **ProyectorRelaciones** (nueva): la regla genérica. |
-| `datos/almacen_relevancias.py` | **«interface» AlmacenRelevancias** (nueva). |
-| `datos/almacen_relevancias_en_grafo.py` | **AlmacenRelevanciasEnGrafo** (nueva): guarda la relevancia en el grafo. |
-| `datos/generar_datos_ejemplo.py` | **GeneradorDatosEjemplo**: genera los datos de ejemplo (no la usa la aplicación). |
-| `modelo/vecindario.py` | **Vecindario**: entidades y relaciones en bruto, si está recortado y las estadísticas de asignación. |
-| `modelo/` (resto) y `datos/fabrica_entidades.py` | Modelo de los incrementos 1 y 2. Desde el 3b ya no lo usa el servidor (ver el resumen del incremento). |
+| `app.py` | Rutas de la API (`/api/relaciones`, `/api/jerarquia`...), configuración comprobada al arrancar y página publicada. |
+| `api/conversor_json.py` | **ConversorJson**: forma del JSON. |
+| `api/cache_respuestas.py` | **CacheRespuestas**. |
+| `logica/configuracion.py` | **Configuracion**. |
+| `logica/clasificador_etiquetas.py` | **ClasificadorEtiquetas**. |
+| `datos/repositorio_datos.py` | **«interface» RepositorioDatos** (`obtener_tipos`, `obtener_jerarquia`, `obtener_nombres`, `obtener_relaciones`, `obtener_detalle`). |
+| `datos/repositorio_simulado.py` | **RepositorioSimulado**: solo lee. |
+| `datos/proyector_relaciones.py` | **ProyectorRelaciones**: la regla genérica, con `participantes` y `dibujable`. |
+| `datos/generar_datos_ejemplo.py` | Genera los datos de ejemplo y el escenario de Ana Ferrer. |
 
 ### Navegador (`src/`)
 
 | Ruta | Qué es |
 |---|---|
-| `aplicacion/Aplicacion.js` | Crea y conecta todo; prepara el **contexto** (idioma, nombres de tipos, etiquetas de entidad y tipos) y el índice del buscador; barra de rendimiento. |
-| `modelo/Entidad.js`, `Persona.js`, `Organizacion.js`, `ObraDeArte.js` | Entidades creadas desde propiedades en bruto: nombres en tres idiomas (persona: nombre y apellidos), subtipos y atributos desconocidos. |
-| `modelo/TipoRelacion.js` | Con padres, familia y nombre (traducido o automático). |
-| `modelo/Relacion.js` | Con relevancia asignada, intermediario, roles, periodo, lugar y fecha. |
-| `modelo/Periodo.js`, `Evento.js`, `Imagen.js`, `FuenteExterna.js`, `DetalleEntidad.js` | **Nuevas**: el detalle de una entidad. |
-| `modelo/NodoRelevante.js`, `Subgrafo.js`, `TipoEntidad.js` | Sin cambios. |
-| `datos/FabricaEntidades.js` | `crearDesdeNeo4j`: la clase sale de las etiquetas con la tabla `etiquetasEntidad`. |
-| `datos/RepositorioVecindario.js` | El vecindario en memoria; tipos con nombre, padres, familia y color estable. |
-| `datos/ClienteServicio.js` | Configuración, tipos, nombres, vecindarios y detalle (`convertirDetalle`). |
-| `logica/` | `RelevanciaDesdeBD` (lee el valor asignado), `ConstructorSubgrafo`, `CalculadorCentralidad`, `PaletaColores`, `GestorSubgrafos` (y el detalle), `AjustadorUmbral` (umbral inicial de cada entidad para que salgan unos `nodosObjetivo` nodos), `Buscador` (todos los nombres), `ControladorExploracion` (pide el detalle sin bloquear), `FiltroVisualizacion`, `HistorialNavegacion`, `EstadoCarga`, `DetectorComunidades` (grupos de entidades muy relacionadas, por propagación de etiquetas). |
-| `vista3d/` | La vista 3D; la etiqueta de una relación incluye los roles. `ModoDisposicion` (libre o por grupos) y la fuerza que junta a cada grupo en su zona (`SimulacionFuerzas`, `CalculadorDisposicion`). |
-| `interfaz/ControlDisposicion.js` | Botones «Libre» y «Por grupos» de la barra superior. |
-| `interfaz/` | `PanelInformacion` (subtipos, detalle, imágenes, fuentes, roles), `Leyenda` (agrupada por familias) y el resto de componentes del incremento 3. |
+| `aplicacion/Aplicacion.js` | Crea y conecta todo, lee `public/relevancia.json` y elige la estrategia de nodos. |
+| `modelo/EvidenciaPareja.js`, `ResultadoRelevanciaNodo.js`, `OrigenRelevancia.js` | Evidencia (dirigida) de una pareja con todos sus tipos; R, C y S de un nodo, sus padres y lo que transmite; su origen. |
+| `modelo/Relacion.js`, `NodoRelevante.js`, `Subgrafo.js`, `Entidad.js` | Relación con participantes, `dibujable`, roles y nombre; nodo con su resultado; subgrafo con la evidencia de cada pareja y sus muelles; entidad con sus etiquetas. |
+| `datos/RepositorioVecindario.js` | La **caché** de relaciones: va acumulando tandas y sabe qué entidades tiene completas. |
+| `datos/ClienteServicio.js` | `obtenerRelaciones` (POST en trozos de 200), `obtenerJerarquia` y el resto. |
+| `logica/RelevanciaCompuesta.js` | Cada relación: `peso × (2/n)^β × f_t`. |
+| `logica/NormalizadorRoles.js`, `CalculadorEvidencia.js` | Capa 0: roles normalizados y evidencia de cada pareja. |
+| `logica/TablaTransferencia.js`, `PenalizacionGrado.js`, `CompatibilidadTemporal.js` | T y T̄ con rol y herencia, factorEntidad; h; τ. |
+| `logica/RefuerzoEntreDirectos.js`, `DeduccionPorTipos.js` | Capas 1 y 2 (sustituye a `CircuitoRelevancia`) y capa 3. |
+| `logica/EstrategiaRelevanciaNodos.js`, `RelevanciaNodosTresCapas.js`, `RelevanciaNodosMejorCamino.js` | **Nuevas**: la interfaz y sus dos implementaciones. |
+| `logica/GestorSubgrafos.js`, `ConstructorSubgrafo.js` | Carga en dos tandas; orden y corte por S, aristas, arista sintética y un muelle por pareja. |
+| `vista3d/`, `interfaz/` | Opacidad según C, líneas discontinuas, muelles del cálculo, sección «Origen» de la leyenda y panel con S, R, C y la explicación. |
 
 ## Uso
 
-- **Buscar**: escribe en el buscador (basta con 2 letras; vale cualquiera de los nombres: castellano, valenciano, inglés o apellidos; se toleran erratas). Flechas, Intro y Escape.
-- **Ver información**: clic en un nodo (su información y, al momento, su detalle) o en una línea (tipo, roles, periodo, lugar). Pasando el puntero se ve su nombre.
-- **Navegar**: doble clic en un nodo o «Explorar su red». «← Volver» (o `Alt + ←`) regresa.
-- **Filtrar**: pulsa un tipo en la leyenda para ocultarlo (sale apagado y tachado) o volver a mostrarlo; están agrupados por familia. «Todas» y «Ninguna» cambian todas las relaciones a la vez.
-- **Cámara**: arrastra para girar, rueda para acercar, «Vista inicial» (o `Inicio`).
-- **Disposición**: «Libre» (las fuerzas reparten los nodos) o «Por grupos» (las entidades muy relacionadas entre sí se juntan, cada grupo en su zona, con una mancha de color detrás de los grupos de 5 o más). En los dos, la distancia al centro sigue siendo la relevancia. El modo se mantiene al cambiar de entidad o de umbral.
+- **Buscar**: escribe en el buscador (2 letras; cualquier idioma o apellido; se toleran erratas).
+- **Ver información**: clic en un nodo o en una línea. Al pasar el puntero se ve el nombre y por qué es relevante.
+- **Navegar**: doble clic o «Explorar su red»; «← Volver» (o `Alt + ←`).
+- **Filtrar**: pulsa un tipo en la leyenda. «Mostrar deducidos» muestra u oculta los nodos deducidos.
+- **Cámara** y **Disposición**: como antes.
 
-## Lista de comprobación del incremento 3b (a mano)
+## Lista de comprobación (a mano)
 
-Arranca el servidor Python **de nuevo** (para empezar sin ninguna relevancia asignada), con `npm run dev` en marcha, y abre `http://localhost:5173/`:
+Con los dos servidores en marcha, abre `http://localhost:5173/`, busca **Ana Ferrer** y pon el umbral en **0,3**:
 
-- [ ] La leyenda muestra tipos como «Matrimonio», «Mentoría» y «Pintura», agrupados por familia («Parentesco», «Relación profesional», «Creación»…). También salen «Apprenticeship» y «Student of», que no estaban en el diseño.
-- [ ] La primera vez que se abre la entidad inicial, la barra muestra «Relevancias asignadas: 320 · reutilizadas: 0». Al volver a abrirla, todas reutilizadas («asignadas: 0»). El registro del servidor lo apunta igual.
-  - Como los datos de ejemplo están todos conectados, en la primera visita se asignan las de todo el grafo, y después cualquier otra entidad las reutiliza.
-- [ ] Al poner el umbral en 0,6 desaparecen de la leyenda las relaciones de empleo y de co-participación en eventos (Trabajo, Boda, Exposición, Evento), **sin petición nueva** (F12 → *Red*).
-- [ ] El panel de una persona (por ejemplo Elena Ferrando Peris) muestra lo siguiente: «Persona · Pintor/a · Creador/a», nacimiento y defunción (fecha y lugar), eventos y relaciones, imágenes y fuentes («Fuente: … (Libro), actualizada el …»).
-  - Las imágenes son direcciones inventadas: se ve su texto alternativo.
-- [ ] El panel de una relación muestra roles y periodo: «Elena Ferrando Peris (maestra) → … (discípulo)», 1893–1903, el lugar y la relevancia «asignada según el tipo de relación».
-- [ ] Al pasar el puntero por una relación, la etiqueta incluye los roles.
-- [ ] Buscar «Museu» (valenciano) o «Workshop» (inglés) encuentra las organizaciones, y buscar por un apellido («Ferrando») encuentra a la persona.
-- [ ] Ningún evento grande crea una maraña: los dos congresos (14 asistentes) y la exposición de 12 obras no crean relaciones.
+- [ ] Joaquín Mestre y «Huerta» quedan pegados al centro, y el Taller Valencia claramente más lejos que Luis Peris.
+- [ ] Marta Soler aparece semitransparente y con línea discontinua, y su panel dice «probable». También lista la «Exposición colectiva de 1911 (40 artistas)», aunque no se dibuja.
+- [ ] «Paseo» y el Museo de la Ciudad aparecen como deducidos. «Retrato», Juan Ribes, Pedro Navarro y «Tardía» **no** aparecen.
+- [ ] La etiqueta de «Paseo» dice «Pintura de Joaquín Mestre (su maestro)», y en el dibujo queda junto a Joaquín por el muelle fuerte.
+- [ ] Mover el umbral en los dos sentidos no hace ninguna petición en la pestaña *Red* (F12). Desmarcar «Mostrar deducidos», tampoco.
+- [ ] Con `"estrategiaNodos": "mejorCamino"` (y recargando) vuelve el comportamiento antiguo: «Paseo» y «Tardía» valen 0,95 y todo se ve opaco.
+- [ ] La barra muestra «Tandas: 2 · Directos: … · Deducidos: …» al abrir una entidad nueva, y «Tandas: 0» al volver a ella.
 
-Y del incremento 3 (sigue igual):
+## Pendiente de validar con el grupo de investigación
 
-- [ ] Al **subir** el umbral no hay petición nueva; al **bajarlo**, sí.
-- [ ] Erratas («sanchiz», «belloc»), sin tildes y en mayúsculas («HORTOLA»). Búsqueda sin resultados («zzqx»). Buscador solo con teclado.
-- [ ] Clic, arrastre (no selecciona), doble clic, «Volver», filtros (la central nunca desaparece), «Vista inicial» y atajos.
-- [ ] Con el servidor parado, aviso de error sin romper la página.
-- [ ] Ventana estrecha (menos de 700 px) usable. Los fps se mantienen por encima de 30.
-- [ ] Entre dos entidades con varias relaciones se ven curvas separadas (Elena Ferrando Peris y su primer discípulo: «Matrimonio» y «Colaboración»).
+- Todos los valores de `public/relevancia.json` (pesos, pesos por rol, tabla T, ρ, κ, δ, `gradoReferencia`, pares temporales, factores…).
+- La fórmula del factor de tiempo f_t de cada relación (época de la central, `factorTiempoMinimo` 0,5, τ = 25 años, sin fecha 0,9, `tiposSinTiempo`).
+- El tope de P3 con varios padres y la herencia en `paresTemporales` (no están en el prototipo).
+- Qué roles hay en la BD real, para completar `rolesEquivalentes`.
+- Si en la BD real los subtipos son varias etiquetas en el mismo nodo (`:Event:Creation:Paint`).

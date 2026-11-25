@@ -1,12 +1,10 @@
 import { TipoEntidad } from '../modelo/TipoEntidad.js';
 
 /**
- * FiltroVisualizacion
- *
  * Qué tipos de nodo y de relación quiere ver el usuario. Lo cambia el
  * usuario pulsando los tipos de la leyenda y lo aplica EscenaGrafo, que
- * oculta o muestra cada nodo y cada línea. No pide nada al servidor ni recalcula el subgrafo:
- * solo decide qué se ve.
+ * oculta o muestra cada nodo y cada línea. No pide nada al servidor ni
+ * recalcula el subgrafo: solo decide qué se ve.
  *
  * Reglas:
  *  - La entidad central SIEMPRE se ve, aunque su tipo esté oculto (si no,
@@ -18,12 +16,8 @@ import { TipoEntidad } from '../modelo/TipoEntidad.js';
  *    objetos: el «Maestro de» de un subgrafo no es el mismo objeto que el
  *    del siguiente, pero sí tiene el mismo id.
  *  - Los filtros SE MANTIENEN al navegar a otra entidad o cambiar el umbral.
- *    (Pendiente de confirmar con el tutor: la alternativa sería
- *    restablecerlos en cada subgrafo nuevo, llamando a restablecer() desde
- *    ControladorExploracion.cargarSubgrafo.)
- *
- * Requisitos: RF-32 (filtrar por tipo de nodo), RF-33 (filtrar por tipo de
- * relación).
+ *    Para restablecerlos en cada subgrafo nuevo, bastaría con llamar a
+ *    restablecer() desde ControladorExploracion.cargarSubgrafo.
  */
 export class FiltroVisualizacion {
   #tiposNodoVisibles;
@@ -49,11 +43,7 @@ export class FiltroVisualizacion {
     }
   }
 
-  /**
-   * Si el tipo de relación se veía, lo oculta; si estaba oculto, lo muestra.
-   *
-   * @param {TipoRelacion} tipo
-   */
+  /** Si el tipo de relación se veía, lo oculta; si estaba oculto, lo muestra. */
   alternarTipoRelacion(tipo) {
     this.setTipoRelacionActivo(tipo, !this.esTipoRelacionActivo(tipo));
   }
@@ -61,9 +51,6 @@ export class FiltroVisualizacion {
   /**
    * Muestra (activo = true) u oculta (activo = false) un tipo de relación.
    * Lo usan los botones «Todas» y «Ninguna» de la leyenda.
-   *
-   * @param {TipoRelacion} tipo
-   * @param {boolean} activo
    */
   setTipoRelacionActivo(tipo, activo) {
     const idTipo = tipo.getId();
@@ -86,7 +73,6 @@ export class FiltroVisualizacion {
   }
 
   /**
-   * @param {TipoRelacion} tipo
    * @returns {boolean} true si ese tipo de relación se ve.
    */
   esTipoRelacionActivo(tipo) {
@@ -94,9 +80,7 @@ export class FiltroVisualizacion {
   }
 
   /**
-   * @param {NodoRelevante} nodo
    * @param {string} idCentral - id de la entidad central (siempre se ve).
-   * @returns {boolean}
    */
   esVisibleNodo(nodo, idCentral) {
     const entidad = nodo.getEntidad();
@@ -106,13 +90,7 @@ export class FiltroVisualizacion {
     return this.esTipoNodoActivo(entidad.getTipo());
   }
 
-  /**
-   * Una relación se ve si su tipo está activo y sus dos extremos se ven.
-   *
-   * @param {Relacion} relacion
-   * @param {string} idCentral
-   * @returns {boolean}
-   */
+  /** Una relación se ve si su tipo está activo y sus dos extremos se ven. */
   esVisibleRelacion(relacion, idCentral) {
     if (!this.esTipoRelacionActivo(relacion.getTipo())) {
       return false;
@@ -132,12 +110,8 @@ export class FiltroVisualizacion {
   }
 
   /**
-   * (Privado) Lo mismo que esVisibleNodo, pero con una Entidad (los
+   * Lo mismo que esVisibleNodo, pero con una Entidad (los
    * extremos de una relación son entidades, no nodos).
-   *
-   * @param {Entidad} entidad
-   * @param {string} idCentral
-   * @returns {boolean}
    */
   #esVisibleEntidad(entidad, idCentral) {
     if (entidad.getId() === idCentral) {

@@ -26,9 +26,6 @@ import { Subgrafo } from '../src/modelo/Subgrafo.js';
  *   C ──── M  (organización, solo unida a la central)
  */
 
-/**
- * @returns {Subgrafo}
- */
 function crearSubgrafoConDosGrupos() {
   const tipo = new TipoRelacion("t", "T", "#ffffff");
   const central = new Persona({ id: "C" });

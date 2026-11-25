@@ -1,0 +1,38 @@
+@startuml clases_interfaz
+' Paquetes interfaz y aplicacion (cliente).
+' Los siete paneles se apilan en dos columnas para que el diagrama sea estrecho.
+!include estilo.iuml
+left to right direction
+
+class Aplicacion {
+  + {static} main()
+  - crearDependencias()
+}
+class InterfazUsuario <<fachada>> {
+  + mostrarEntidad(...)
+  + mostrarEstado(estado)
+  + setUmbral(valor)
+  + actualizarLeyenda(datos)
+}
+abstract class ComponenteUI {
+  + montar(padre)
+  + {abstract} renderizar()
+}
+class PanelBusqueda
+class PanelInformacion
+class ControlUmbral
+class ControlDisposicion
+class Leyenda
+class IndicadorEstado
+class BarraNavegacion
+
+Aplicacion ..> InterfazUsuario : crea
+InterfazUsuario *-- "7" ComponenteUI
+ComponenteUI <|-- PanelBusqueda
+ComponenteUI <|-- PanelInformacion
+ComponenteUI <|-- ControlUmbral
+ComponenteUI <|-- ControlDisposicion
+ComponenteUI <|-- Leyenda
+ComponenteUI <|-- IndicadorEstado
+ComponenteUI <|-- BarraNavegacion
+@enduml

@@ -11,27 +11,17 @@ import { DetectorComunidades } from '../logica/DetectorComunidades.js';
 import { PaletaColores } from '../logica/PaletaColores.js';
 
 /**
- * EscenaGrafo
- *
  * Crea la escena 3D y la anima: cámara, luces, renderizadores (el de WebGL
  * para las formas y el de CSS para las etiquetas), controles de la cámara y
  * el bucle que avanza la simulación de fuerzas y dibuja cada fotograma.
  *
- * Composición (◆): tiene sus propios NodoVisual, EnlaceVisual,
- * CalculadorDisposicion, SimulacionFuerzas, FabricaNodosVisuales y
- * SelectorInteraccion (el que detecta los clics sobre los nodos).
- *
- * Desde el incremento 3 también aplica los filtros de la leyenda (oculta o
- * muestra nodos y líneas) y resalta lo que el usuario selecciona.
+ * También aplica los filtros de la leyenda (oculta o muestra nodos y líneas)
+ * y resalta lo que el usuario selecciona.
  *
  * Y tiene dos modos de disposición (ModoDisposicion): libre y por grupos.
  * En «Por grupos» busca los grupos con DetectorComunidades, junta a cada
  * grupo en su zona y dibuja una mancha de color transparente detrás de cada
  * grupo grande (5 o más entidades).
- *
- * Requisitos: RF-16 a RF-22 (representación 3D del subgrafo), RF-25 y RF-26
- * (girar y acercar la cámara), RF-27 (vista inicial), RF-28 y RF-29
- * (selección), RF-32 y RF-33 (filtros), RNF-18 (Three.js).
  */
 export class EscenaGrafo {
   // Pasos de simulación por fotograma: con 3, los 300 pasos tardan unos
@@ -130,11 +120,7 @@ export class EscenaGrafo {
     }
   }
 
-  /**
-   * Dibuja un subgrafo nuevo (borra el anterior).
-   *
-   * @param {Subgrafo} subgrafo
-   */
+  /** Dibuja un subgrafo nuevo (borra el anterior). */
   mostrarSubgrafo(subgrafo) {
     this.#limpiar();
     this.#idCentral = subgrafo.getEntidadCentral().getId();
@@ -225,8 +211,6 @@ export class EscenaGrafo {
    * Los nodos ocultos SIGUEN en la simulación de fuerzas (siguen empujando
    * y tirando de los demás); solo dejan de verse. Así, al volver a
    * mostrarlos, todo está donde estaba.
-   *
-   * @param {FiltroVisualizacion} filtro
    */
   aplicarFiltro(filtro) {
     for (const visual of this.#nodos.values()) {
@@ -241,8 +225,6 @@ export class EscenaGrafo {
   /**
    * Los objetos 3D sobre los que se puede hacer clic: las mallas de los
    * nodos y las líneas de las relaciones que se ven ahora.
-   *
-   * @returns {THREE.Object3D[]}
    */
   getObjetosSeleccionables() {
     const objetos = [];
@@ -262,7 +244,6 @@ export class EscenaGrafo {
 
   /**
    * @param {string} id - id de la entidad.
-   * @returns {NodoVisual|null}
    */
   getNodoVisual(id) {
     if (this.#nodos.has(id)) {
@@ -283,9 +264,6 @@ export class EscenaGrafo {
     this.#controles.update();
   }
 
-  /**
-   * @returns {THREE.PerspectiveCamera}
-   */
   getCamara() {
     return this.#camara;
   }
@@ -307,8 +285,6 @@ export class EscenaGrafo {
   /**
    * Cuántas relaciones visibles hay de cada tipo (para la leyenda). Solo
    * cuenta las que se ven: las ocultas por el filtro no.
-   *
-   * @returns {Map<TipoRelacion, number>}
    */
   getRelacionesVisiblesPorTipo() {
     const cantidadPorTipo = new Map();
@@ -326,12 +302,9 @@ export class EscenaGrafo {
     return cantidadPorTipo;
   }
 
-  /**
-   * (Privado) Renderizador WebGL (formas) y, encima, el de CSS (etiquetas).
-   */
+  /** Renderizador WebGL (formas) y, encima, el de CSS (etiquetas). */
   #crearRenderizadores() {
-    // preserveDrawingBuffer permitirá sacar una imagen del lienzo (RF-36,
-    // opcional y pendiente de confirmar con el tutor).
+    // preserveDrawingBuffer permitirá sacar una imagen del lienzo.
     this.#renderizador = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     // En pantallas de mucha densidad se limita a 2 para no perder fluidez.
     this.#renderizador.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -344,9 +317,7 @@ export class EscenaGrafo {
     this.#contenedor.appendChild(this.#renderizadorEtiquetas.domElement);
   }
 
-  /**
-   * (Privado) Controles de la cámara: girar arrastrando y acercar con la rueda.
-   */
+  /** Controles de la cámara: girar arrastrando y acercar con la rueda. */
   #crearControles() {
     this.#controles = new OrbitControls(this.#camara, this.#renderizador.domElement);
     // La amortiguación hace que el giro se frene poco a poco, más natural.
@@ -363,7 +334,7 @@ export class EscenaGrafo {
   }
 
   /**
-   * (Privado) Una luz ambiental (para que nada quede negro) y dos
+   * Una luz ambiental (para que nada quede negro) y dos
    * direccionales desde lados opuestos (para que se noten las caras de las formas).
    */
   #crearLuces() {
@@ -377,12 +348,9 @@ export class EscenaGrafo {
   }
 
   /**
-   * (Privado) Un NodoVisual por nodo. Se muestra el nombre de la central, de
+   * Un NodoVisual por nodo. Se muestra el nombre de la central, de
    * los nodos muy relevantes (≥ 0,75) y de los muy conectados (centralidad
    * ≥ 0,5); el resto se deja sin nombre para no llenar la pantalla de texto.
-   *
-   * @param {Subgrafo} subgrafo
-   * @param {Map<string, THREE.Vector3>} posicionesIniciales
    */
   #crearNodos(subgrafo, posicionesIniciales) {
     const nodos = subgrafo.getNodos();
@@ -405,11 +373,9 @@ export class EscenaGrafo {
   }
 
   /**
-   * (Privado) Una línea por relación. Las relaciones se agrupan por par de
+   * Una línea por relación. Las relaciones se agrupan por par de
    * entidades (getClavePar) para que cada una sepa su posición (indice) y
-   * cuántas hay en el par (total); así se dibujan como curvas separadas (RF-38).
-   *
-   * @param {Subgrafo} subgrafo
+   * cuántas hay en el par (total); así se dibujan como curvas separadas.
    */
   #crearEnlaces(subgrafo) {
     const relaciones = subgrafo.getRelaciones();
@@ -428,7 +394,8 @@ export class EscenaGrafo {
         const relacion = relacionesDelPar[indice];
         const origen = this.#nodos.get(relacion.getOrigen().getId());
         const destino = this.#nodos.get(relacion.getDestino().getId());
-        const enlace = new EnlaceVisual(relacion, origen, destino, indice, total);
+        const enlace = new EnlaceVisual(relacion, origen, destino, indice, total,
+          EscenaGrafo.#esDiscontinua(subgrafo, relacion));
         this.#grupo.add(enlace.getLinea());
         this.#enlaces.push(enlace);
       }
@@ -436,8 +403,18 @@ export class EscenaGrafo {
   }
 
   /**
-   * (Privado) Se ejecuta en cada fotograma.
+   * ¿Se dibuja discontinua? Las aristas COINCIDENCIAS (sintéticas) y las de
+   * una pareja sin ninguna relación declarada (solo coincidencias).
    */
+  static #esDiscontinua(subgrafo, relacion) {
+    if (relacion.esSintetica()) {
+      return true;
+    }
+    const evidencia = subgrafo.getEvidencia(relacion.getOrigen().getId(), relacion.getDestino().getId());
+    return evidencia !== null && !evidencia.esDeclarada();
+  }
+
+  /** Se ejecuta en cada fotograma. */
   #animar() {
     if (this.#simulacion.estaActiva()) {
       this.#avanzarSimulacion();
@@ -448,7 +425,7 @@ export class EscenaGrafo {
   }
 
   /**
-   * (Privado) Avanza la simulación unos pasos, mueve los nodos y las líneas
+   * Avanza la simulación unos pasos, mueve los nodos y las líneas
    * y, si el usuario no ha tocado la cámara, la acerca suavemente al encuadre.
    */
   #avanzarSimulacion() {
@@ -463,9 +440,7 @@ export class EscenaGrafo {
     }
   }
 
-  /**
-   * (Privado) Lleva las posiciones de la simulación a los nodos y recoloca las líneas.
-   */
+  /** Lleva las posiciones de la simulación a los nodos y recoloca las líneas. */
   #copiarPosicionesDeLaSimulacion() {
     for (const id of this.#nodos.keys()) {
       const posicion = this.#simulacion.getPosicion(id);
@@ -480,7 +455,7 @@ export class EscenaGrafo {
   }
 
   /**
-   * (Privado) Aplica el modo de disposición al subgrafo actual: calcula los
+   * Aplica el modo de disposición al subgrafo actual: calcula los
    * grupos (si hace falta), la dirección de cada nodo y las manchas.
    */
   #aplicarModo() {
@@ -494,7 +469,7 @@ export class EscenaGrafo {
   }
 
   /**
-   * (Privado) Una esfera transparente detrás de cada grupo de 5 o más
+   * Una esfera transparente detrás de cada grupo de 5 o más
    * entidades (solo en «Por grupos»), cada una de un color. Se ve como una
    * mancha que envuelve al grupo. No se puede seleccionar con el ratón.
    */
@@ -528,7 +503,7 @@ export class EscenaGrafo {
   }
 
   /**
-   * (Privado) Coloca cada mancha en el centro de su grupo y le da un tamaño
+   * Coloca cada mancha en el centro de su grupo y le da un tamaño
    * según lo separados que están sus nodos (ver FACTOR_MANCHA).
    */
   #actualizarManchas() {
@@ -557,9 +532,7 @@ export class EscenaGrafo {
     }
   }
 
-  /**
-   * (Privado) Quita y libera las manchas de los grupos.
-   */
+  /** Quita y libera las manchas de los grupos. */
   #quitarManchas() {
     for (let i = 0; i < this.#manchas.length; i++) {
       this.#grupo.remove(this.#manchas[i].malla);
@@ -570,12 +543,10 @@ export class EscenaGrafo {
   }
 
   /**
-   * (Privado) Dónde poner la cámara para ver todo el grafo.
+   * Dónde poner la cámara para ver todo el grafo.
    * Se usa la distancia al centro del nodo del percentil 90 (el que deja
    * más cerca al 90 % de los nodos), no la del más lejano: así un único nodo
    * muy alejado no obliga a alejar la cámara y dejar el resto diminuto.
-   *
-   * @returns {THREE.Vector3}
    */
   #posicionEncuadre() {
     const distancias = [];
@@ -594,20 +565,12 @@ export class EscenaGrafo {
     return new THREE.Vector3(0, radio * 0.35, radio * 2 + 4);
   }
 
-  /**
-   * (Privado) Para ordenar números de menor a mayor.
-   *
-   * @param {number} a
-   * @param {number} b
-   * @returns {number}
-   */
+  /** Para ordenar números de menor a mayor. */
   static #compararNumeros(a, b) {
     return a - b;
   }
 
-  /**
-   * (Privado) Ajusta cámara y renderizadores al tamaño del contenedor.
-   */
+  /** Ajusta cámara y renderizadores al tamaño del contenedor. */
   #redimensionar() {
     const ancho = this.#contenedor.clientWidth;
     const alto = this.#contenedor.clientHeight;
@@ -621,7 +584,7 @@ export class EscenaGrafo {
   }
 
   /**
-   * (Privado) Quita y libera todos los nodos y líneas del subgrafo anterior,
+   * Quita y libera todos los nodos y líneas del subgrafo anterior,
    * y oculta la etiqueta flotante (el objeto que señalaba ya no existe).
    */
   #limpiar() {

@@ -6,19 +6,17 @@ import { Persona } from '../src/modelo/Persona.js';
 import { Organizacion } from '../src/modelo/Organizacion.js';
 import { ObraDeArte } from '../src/modelo/ObraDeArte.js';
 import { TipoEntidad } from '../src/modelo/TipoEntidad.js';
-import { VECINDARIO_EJEMPLO, CONTEXTO_PRUEBAS } from './utilidadesPruebas.js';
+import { RELACIONES_EJEMPLO, CONTEXTO_PRUEBAS } from './utilidadesPruebas.js';
 
 /*
- * Pruebas de RepositorioVecindario (src/datos/) con el formato de
- * /api/vecindario desde el incremento 3b (entidades en bruto de Neo4j y
- * relaciones derivadas). Incluyen las de RepositorioSimulado del incremento 1.
+ * Pruebas de RepositorioVecindario (src/datos/), la caché de relaciones,
+ * con el formato de /api/relaciones (entidades en bruto de Neo4j y
+ * relaciones derivadas, sin relevancias).
  */
 
 /**
  * El contexto de las pruebas: idioma, nombres de los tipos, etiquetas de
  * entidad y los tipos que hay en los datos (con sus padres).
- *
- * @returns {Object}
  */
 function crearContexto() {
   return {
@@ -35,18 +33,10 @@ function crearContexto() {
   };
 }
 
-/**
- * Un vecindario pequeño con el formato de /api/vecindario.
- *
- * @returns {Object}
- */
+/** Una respuesta pequeña con el formato de /api/relaciones (pedidas: A y B). */
 function crearVecindarioDePrueba() {
   return {
-    idCentral: "A",
-    umbral: 0.3,
-    recortado: false,
-    relevanciasAsignadas: 3,
-    relevanciasReutilizadas: 1,
+    ids: ["A", "B"],
     entidades: [
       { id: "A", etiquetas: ["Person", "Creator", "Painter"], propiedades: { name: "Ana", lastName: "Roig Peris" } },
       { id: "B", etiquetas: ["Person"], propiedades: { name: "Bruno" } },
@@ -56,23 +46,18 @@ function crearVecindarioDePrueba() {
     ],
     relaciones: [
       { id: "m1|A|B", idIntermedio: "m1", origen: "A", destino: "B", tipo: "Mentorship", padres: ["Relationship"],
-        valor: 0.85, roles: { A: "maestra", B: "aprendiz" },
+        roles: { A: "maestra", B: "aprendiz" },
         periodo: { from: "1902", to: "1908", description: "" }, lugar: "Valencia", fecha: null },
       { id: "p1|B|C", idIntermedio: "p1", origen: "B", destino: "C", tipo: "Paint", padres: ["Creation", "Event"],
-        valor: 0.9, roles: { B: "autor" }, periodo: null, lugar: null, fecha: "1910" },
+        roles: { B: "autor" }, periodo: null, lugar: null, fecha: "1910" },
       { id: "p2|A|C", idIntermedio: "p2", origen: "A", destino: "C", tipo: "Paint", padres: ["Creation", "Event"],
-        valor: 0.9, roles: {}, periodo: null, lugar: null, fecha: null },
+        roles: {}, periodo: null, lugar: null, fecha: null },
       { id: "e1|C|D", idIntermedio: "e1", origen: "C", destino: "D", tipo: "Exposition", padres: ["Event"],
-        valor: 0.5, roles: {}, periodo: null, lugar: null, fecha: null }
+        roles: {}, periodo: null, lugar: null, fecha: null }
     ]
   };
 }
 
-/**
- * @param {RepositorioVecindario} repositorio
- * @param {string} idRelacion
- * @returns {Promise<Relacion|null>}
- */
 async function buscarRelacion(repositorio, idRelacion) {
   const tipos = ["A", "B", "C", "D"];
   for (let i = 0; i < tipos.length; i++) {
@@ -86,11 +71,6 @@ async function buscarRelacion(repositorio, idRelacion) {
   return null;
 }
 
-/**
- * @param {RepositorioVecindario} repositorio
- * @param {string} idTipo
- * @returns {Promise<TipoRelacion|null>}
- */
 async function buscarTipo(repositorio, idTipo) {
   const tipos = await repositorio.obtenerTiposRelacion();
   for (let i = 0; i < tipos.length; i++) {
@@ -125,7 +105,7 @@ prueba("RepositorioVecindario: obtenerRelaciones devuelve las relaciones en los 
 prueba("RepositorioVecindario: las relaciones llevan valor, roles, periodo, lugar y fecha", async function () {
   const repositorio = new RepositorioVecindario(crearVecindarioDePrueba(), crearContexto());
   const mentoria = await buscarRelacion(repositorio, "m1|A|B");
-  comprobarIgual(mentoria.getValor(), 0.85, "valor (la relevancia asignada)");
+  comprobarIgual(mentoria.getValor(), 0, "valor 0: la BD no trae relevancia (la calcula RelevanciaCompuesta)");
   comprobarIgual(mentoria.getIdIntermedio(), "m1", "id del intermediario");
   comprobarIgual(mentoria.getRol(mentoria.getOrigen()), "maestra", "rol del origen");
   comprobarIgual(mentoria.getRol(mentoria.getDestino()), "aprendiz", "rol del destino");
@@ -152,24 +132,26 @@ prueba("RepositorioVecindario: un solo TipoRelacion por id, con nombre, padres y
 prueba("RepositorioVecindario: los colores se reparten sobre todos los tipos en orden alfabético", async function () {
   const repositorio = new RepositorioVecindario(crearVecindarioDePrueba(), crearContexto());
   // Orden alfabético de los tipos del contexto: Exposition, Marriage, Mentorship, Paint, STUDENT_OF.
-  comprobarIgual((await buscarTipo(repositorio, "Exposition")).getColor(), PaletaColores.colorPara(0), "Exposition, el 1.º");
-  comprobarIgual((await buscarTipo(repositorio, "Mentorship")).getColor(), PaletaColores.colorPara(2), "Mentorship, el 3.º");
-  comprobarIgual((await buscarTipo(repositorio, "Paint")).getColor(), PaletaColores.colorPara(3), "Paint, el 4.º");
+  comprobarIgual((await buscarTipo(repositorio, "Exposition")).getColor(), PaletaColores.colorPara(1), "Exposition, el 2.º (tras COINCIDENCIAS)");
+  comprobarIgual((await buscarTipo(repositorio, "Mentorship")).getColor(), PaletaColores.colorPara(3), "Mentorship, el 4.º");
+  // Orden: COINCIDENCIAS, Exposition, Marriage, Mentorship, Paint, STUDENT_OF.
+  comprobarIgual((await buscarTipo(repositorio, "Paint")).getColor(), PaletaColores.colorPara(4),
+    "Paint, el 5.º (tras COINCIDENCIAS, el tipo de las aristas sintéticas)");
 });
 
 prueba("RepositorioVecindario: mismo color para el mismo tipo en dos vecindarios distintos", async function () {
   const primero = new RepositorioVecindario(crearVecindarioDePrueba(), crearContexto());
   const segundo = new RepositorioVecindario({
-    idCentral: "X", umbral: 0.5, recortado: false,
+    ids: ["X"],
     entidades: [
       { id: "X", etiquetas: ["Person"], propiedades: { name: "Xavi" } },
       { id: "Y", etiquetas: ["Person"], propiedades: { name: "Yago" } }
     ],
     relaciones: [
-      { id: "s|X|Y", idIntermedio: "s", origen: "X", destino: "Y", tipo: "STUDENT_OF", padres: [], valor: 0.5,
+      { id: "s|X|Y", idIntermedio: "s", origen: "X", destino: "Y", tipo: "STUDENT_OF", padres: [],
         roles: {}, periodo: null, lugar: null, fecha: null },
       { id: "m9|X|Y", idIntermedio: "m9", origen: "X", destino: "Y", tipo: "Mentorship", padres: ["Relationship"],
-        valor: 0.85, roles: {}, periodo: null, lugar: null, fecha: null }
+        roles: {}, periodo: null, lugar: null, fecha: null }
     ]
   }, crearContexto());
   const tipos = ["Mentorship", "Paint", "Exposition", "STUDENT_OF"];
@@ -182,7 +164,7 @@ prueba("RepositorioVecindario: mismo color para el mismo tipo en dos vecindarios
 prueba("RepositorioVecindario: un tipo nuevo (sin nombre en la configuración) tiene nombre automático", async function () {
   const datos = crearVecindarioDePrueba();
   datos.relaciones.push({ id: "c1|A|D", idIntermedio: "c1", origen: "A", destino: "D", tipo: "Apprenticeship",
-    padres: ["Professional", "Relationship"], valor: 0.55, roles: {}, periodo: null, lugar: null, fecha: null });
+    padres: ["Professional", "Relationship"], roles: {}, periodo: null, lugar: null, fecha: null });
   const repositorio = new RepositorioVecindario(datos, crearContexto());
   const tipo = await buscarTipo(repositorio, "Apprenticeship");
   comprobarIgual(tipo.getNombre(), "Apprenticeship", "nombre automático");
@@ -215,7 +197,7 @@ prueba("RepositorioVecindario: buscarEntidades filtra por subcadena, tipo y lím
 prueba("RepositorioVecindario: una relación con una entidad que no está da error", function () {
   const datos = crearVecindarioDePrueba();
   datos.relaciones.push({ id: "z|A|Z", idIntermedio: "z", origen: "A", destino: "Z", tipo: "Paint", padres: [],
-    valor: 0.5, roles: {}, periodo: null, lugar: null, fecha: null });
+    roles: {}, periodo: null, lugar: null, fecha: null });
   let huboError = false;
   try {
     new RepositorioVecindario(datos, crearContexto());
@@ -238,10 +220,10 @@ prueba("RepositorioVecindario: la interfaz RepositorioDatos no está implementad
     "implementa RepositorioDatos");
 });
 
-prueba("RepositorioVecindario: el vecindario que envía el servidor se carga sin errores", async function () {
-  const repositorio = new RepositorioVecindario(VECINDARIO_EJEMPLO, CONTEXTO_PRUEBAS);
+prueba("RepositorioVecindario: todas las relaciones de los datos de ejemplo se cargan sin errores", async function () {
+  const repositorio = new RepositorioVecindario(RELACIONES_EJEMPLO, CONTEXTO_PRUEBAS);
   const todas = await repositorio.buscarEntidades("", null, null);
-  comprobarIgual(todas.length, VECINDARIO_EJEMPLO.entidades.length, "número de entidades");
+  comprobarIgual(todas.length, RELACIONES_EJEMPLO.entidades.length, "número de entidades");
   const nombres = [];
   const tipos = await repositorio.obtenerTiposRelacion();
   for (let i = 0; i < tipos.length; i++) {
@@ -250,4 +232,42 @@ prueba("RepositorioVecindario: el vecindario que envía el servidor se carga sin
   comprobar(nombres.includes("Matrimonio"), "Matrimonio");
   comprobar(nombres.includes("Apprenticeship"), "Apprenticeship (tipo de prueba, nombre automático)");
   comprobar(nombres.includes("Student of"), "Student of (relación directa de prueba)");
+});
+
+prueba("RepositorioVecindario: va acumulando tandas y sabe qué entidades tiene completas", async function () {
+  const repositorio = new RepositorioVecindario(null, crearContexto());
+  comprobar(!repositorio.tieneCompletas("A"), "vacía al principio");
+  repositorio.incorporar(crearVecindarioDePrueba());
+  comprobar(repositorio.tieneCompletas("A") && repositorio.tieneCompletas("B"), "A y B pedidas: completas");
+  comprobar(!repositorio.tieneCompletas("C"), "C solo aparece en relaciones de otras: no completa");
+  const ana = repositorio.entidad("A");
+  repositorio.incorporar({
+    ids: ["C"],
+    entidades: [{ id: "A", etiquetas: ["Person"], propiedades: { name: "Otra Ana" } },
+      { id: "C", etiquetas: ["HeritageItem"], propiedades: { name_es: "Cuadro azul" } }],
+    relaciones: [{ id: "p2|A|C", idIntermedio: "p2", origen: "A", destino: "C", tipo: "Paint", padres: [], roles: {},
+      periodo: null, lugar: null, fecha: null, participantes: 2, dibujable: true }]
+  });
+  comprobar(repositorio.tieneCompletas("C"), "C ya completa");
+  comprobar(repositorio.entidad("A") === ana, "una entidad que ya estaba no se sustituye");
+  comprobarIgual(repositorio.relacionesDe("A").length, 2, "una relación repetida no se duplica");
+});
+
+prueba("RepositorioVecindario: las relaciones guardan participantes, dibujable y nombre, sin relevancia", async function () {
+  const datos = crearVecindarioDePrueba();
+  datos.relaciones.push({ id: "e9|A|B", idIntermedio: "e9", origen: "A", destino: "B", tipo: "Exposition",
+    padres: ["Event"], roles: {}, nombre: "Gran exposición", periodo: null, lugar: null, fecha: null,
+    participantes: 40, dibujable: false });
+  const repositorio = new RepositorioVecindario(datos, crearContexto());
+  const grande = await buscarRelacion(repositorio, "e9|A|B");
+  comprobarIgual(grande.getParticipantes(), 40, "participantes");
+  comprobarIgual(grande.esDibujable(), false, "no se dibuja");
+  comprobarIgual(grande.getNombre(), "Gran exposición", "nombre del intermediario");
+  comprobarIgual(grande.getValor(), 0, "la BD no trae relevancia");
+  const mentoria = await buscarRelacion(repositorio, "m1|A|B");
+  comprobarIgual(mentoria.getParticipantes(), 2, "sin participantes: 2");
+  comprobarIgual(mentoria.esDibujable(), true, "sin dibujable: se dibuja");
+  comprobar(repositorio.getTipo("COINCIDENCIAS") !== null, "existe el tipo de las aristas sintéticas (COINCIDENCIAS)");
+  const conNombre = new RepositorioVecindario(null, CONTEXTO_PRUEBAS);
+  comprobarIgual(conNombre.getTipo("COINCIDENCIAS").getNombre(), "Coincidencias en eventos", "con su nombre de nombresTipos");
 });

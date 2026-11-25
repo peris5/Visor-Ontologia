@@ -1,4 +1,4 @@
-"""Subgrafo (traducción de src/modelo/Subgrafo.js)."""
+"""Subgrafo (la misma clase que src/modelo/Subgrafo.js)."""
 from servidor.modelo.entidad import Entidad
 from servidor.modelo.nodo_relevante import NodoRelevante
 from servidor.modelo.relacion import Relacion
@@ -13,8 +13,6 @@ class Subgrafo:
        nunca está vacío.
      - Agregación con Relacion [*]: las relaciones existen fuera (en el
        repositorio); el subgrafo solo apunta a ellas.
-
-    Requisitos: RF-08 a RF-12.
     """
 
     def __init__(self, entidad_central: Entidad, umbral: float) -> None:

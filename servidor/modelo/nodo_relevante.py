@@ -1,4 +1,4 @@
-"""NodoRelevante (traducción de src/modelo/NodoRelevante.js)."""
+"""NodoRelevante (la misma clase que src/modelo/NodoRelevante.js)."""
 from servidor.modelo.entidad import Entidad
 
 
@@ -8,8 +8,6 @@ class NodoRelevante:
      - relevancia: producto de las relevancias del camino desde la central.
      - nivel: número de saltos desde la entidad central (la central es 0).
      - centralidad: importancia del nodo dentro del subgrafo (entre 0 y 1).
-
-    Requisitos: RF-08 a RF-12 (relevancia y nivel) y RF-37 (centralidad).
     """
 
     def __init__(self, entidad: Entidad, relevancia: float, nivel: int) -> None:

@@ -1,0 +1,30 @@
+@startuml sec_filtrar
+' Operaciones: filtrar un tipo y cambiar la disposición.
+!include estilo.iuml
+actor Usuario
+participant ":Controlador\nExploracion" as CTRL
+participant ":Filtro\nVisualizacion" as FIL
+participant ":EscenaGrafo" as ESC
+
+== Filtrar un tipo (leyenda) ==
+Usuario -> CTRL : alternarFiltroNodo(tipo)
+activate CTRL
+CTRL -> FIL : alternarTipoNodo(tipo)
+CTRL -> ESC : aplicarFiltro(filtro)
+activate ESC
+loop cada nodo y enlace
+  ESC -> FIL : esVisibleNodo(n)
+  ESC -> ESC : setVisible(...)
+end
+deactivate ESC
+deactivate CTRL
+
+== Cambiar la disposición ==
+Usuario -> CTRL : cambiarDisposicion(modo)
+activate CTRL
+CTRL -> ESC : setModoDisposicion(modo)
+activate ESC
+ESC -> ESC : detectar grupos y\nreactivar la simulación
+deactivate ESC
+deactivate CTRL
+@enduml

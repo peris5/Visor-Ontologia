@@ -1,0 +1,38 @@
+@startuml sec_navegar
+' Operaciones: navegar a un vecino y volver.
+!include estilo.iuml
+actor Usuario
+participant ":SelectorInteraccion\n/ PanelInformacion" as ORIG
+participant ":BarraNavegacion" as BAR
+participant ":ControladorExploracion" as CTRL
+participant ":HistorialNavegacion" as HIS
+participant ":InterfazUsuario" as UI
+
+== Navegar a un vecino ==
+Usuario -> ORIG : doble clic en un nodo\no botón «Explorar su red»
+ORIG -> CTRL : navegarA(id)
+activate CTRL
+alt id es la entidad actual o ya se está cargando
+  note over CTRL : no hace nada
+else
+  CTRL -> HIS : registrar(idActual)
+  CTRL -> CTRL : ~#cargarSubgrafo(id, true)
+  note right of CTRL : como en «Explorar una entidad»
+  CTRL -> UI : setHabilitadoVolver(true)
+end
+deactivate CTRL
+
+== Volver ==
+Usuario -> BAR : «Volver» (o Alt + ←)
+BAR -> BAR : ~#onVolver()
+BAR -> CTRL : volver()
+activate CTRL
+CTRL -> HIS : volver()
+HIS --> CTRL : idAnterior (o null)
+opt idAnterior no es null
+  CTRL -> UI : setHabilitadoVolver(HIS.puedeVolver())
+  CTRL -> CTRL : ~#cargarSubgrafo(idAnterior, true)
+  note right of CTRL : no se vuelve a registrar en el historial
+end
+deactivate CTRL
+@enduml

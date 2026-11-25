@@ -1,0 +1,24 @@
+@startuml clases_datos
+' Paquete datos (cliente).
+!include estilo.iuml
+
+class ClienteServicio {
+  + obtenerConfiguracion()
+  + obtenerNombres()
+  + obtenerTipos()
+  + obtenerVecindario(id, umbral)
+  + obtenerDetalle(id)
+}
+interface RepositorioDatos <<interface>> {
+  + obtenerEntidad(id)
+  + obtenerRelaciones(id)
+}
+class RepositorioVecindario {
+  - relacionesPorEntidad
+}
+class FabricaEntidades {
+  + {static} crearDesdeNeo4j(...)
+}
+RepositorioDatos <|.. RepositorioVecindario
+RepositorioVecindario ..> FabricaEntidades
+@enduml

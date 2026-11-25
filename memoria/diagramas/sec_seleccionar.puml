@@ -1,0 +1,31 @@
+@startuml sec_seleccionar
+' Operación: seleccionar un nodo o una relación.
+!include estilo.iuml
+actor Usuario
+participant ":Selector\nInteraccion" as SEL
+participant ":Controlador\nExploracion" as CTRL
+participant ":EscenaGrafo" as ESC
+participant ":Interfaz\nUsuario" as UI
+participant ":Gestor\nSubgrafos" as GES
+
+Usuario -> SEL : clic
+activate SEL
+SEL -> SEL : ~#detectarObjeto()
+alt nodo
+  SEL -> CTRL : seleccionarNodo(nodo)
+  activate CTRL
+  CTRL -> ESC : resaltarNodo(id)
+  CTRL -> UI : mostrarEntidad(entidad)
+  CTRL -> GES : obtenerDetalle(id)
+  GES --> CTRL : detalle
+  opt sigue seleccionada
+    CTRL -> UI : mostrarDetalle(detalle)
+  end
+  deactivate CTRL
+else relación
+  SEL -> CTRL : seleccionarRelacion(r)
+  CTRL -> ESC : resaltarRelacion(id)
+  CTRL -> UI : mostrarRelacion(r)
+end
+deactivate SEL
+@enduml

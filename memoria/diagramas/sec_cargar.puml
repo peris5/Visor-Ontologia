@@ -1,0 +1,30 @@
+@startuml sec_cargar
+' Operación: cargar la aplicación.
+!include estilo.iuml
+participant ":Aplicacion" as APP
+participant ":ClienteServicio" as CLI
+participant ":Controlador\nExploracion" as CTRL
+participant ":EscenaGrafo" as ESC
+participant ":Interfaz\nUsuario" as UI
+
+[-> APP : main()
+activate APP
+par Promise.all
+  APP -> CLI : obtenerConfiguracion()
+else
+  APP -> CLI : obtenerNombres()
+else
+  APP -> CLI : obtenerTipos()
+end
+note right of CLI : GET /api/configuracion,\n/api/nombres, /api/tipos
+CLI --> APP : configuración, nombres, tipos
+APP -> APP : ~#crearDependencias()
+APP -> ESC : inicializar(contenedor, ctrl)
+APP -> UI : inicializar(raiz, ctrl)
+APP -> CTRL : iniciar(entidadInicial)
+activate CTRL
+CTRL -> CTRL : ~#cargarSubgrafo(id, true)
+note right of CTRL : como en «Explorar»
+deactivate CTRL
+deactivate APP
+@enduml

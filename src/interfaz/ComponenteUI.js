@@ -1,8 +1,6 @@
 import { TipoEntidad } from '../modelo/TipoEntidad.js';
 
 /**
- * «abstract» ComponenteUI
- *
  * Base de los componentes 2D de la interfaz (Leyenda, PanelBusqueda,
  * PanelInformacion, ControlUmbral, IndicadorEstado y BarraNavegacion). Cada
  * componente tiene un elemento HTML propio que se añade a la página con
@@ -10,9 +8,6 @@ import { TipoEntidad } from '../modelo/TipoEntidad.js';
  * avisan de lo que hace el usuario.
  *
  * Es abstracta: no se puede hacer new ComponenteUI(...).
- *
- * Requisitos: base de RF-23 y RF-24 (leyenda) y de los componentes de
- * exploración del incremento 3; RNF-25 (accesibilidad).
  */
 export class ComponenteUI {
   // Protegidos (los usan las subclases).
@@ -33,11 +28,7 @@ export class ComponenteUI {
     this._elemento = crear(etiquetaHtml, { clase: clase }, []);
   }
 
-  /**
-   * Añade el componente a la página y lo dibuja.
-   *
-   * @param {HTMLElement} padre
-   */
+  /** Añade el componente a la página y lo dibuja. */
   montar(padre) {
     padre.appendChild(this._elemento);
     this.renderizar();
@@ -51,22 +42,17 @@ export class ComponenteUI {
     this._elemento.hidden = true;
   }
 
-  /**
-   * Dibuja el contenido del componente. Cada subclase lo implementa.
-   *
-   * @abstract
-   */
+  /** Dibuja el contenido del componente. Cada subclase lo implementa. */
   renderizar() {
     throw new Error("No implementado: cada subclase de ComponenteUI debe implementar renderizar().");
   }
 
   /**
-   * (Protegido) El símbolo de un tipo de entidad, con la misma forma y el
+   * El símbolo de un tipo de entidad, con la misma forma y el
    * mismo color que en la escena: círculo azul, cuadrado naranja o rombo
    * verde. Lo usan la leyenda, el buscador y el panel de información.
    *
    * @param {string} tipo - un valor de TipoEntidad.
-   * @returns {HTMLElement}
    */
   static _crearSimboloEntidad(tipo) {
     let claseDelSimbolo = "simbolo-obra";
@@ -80,10 +66,9 @@ export class ComponenteUI {
   }
 
   /**
-   * (Protegido) Nombre para mostrar de un tipo de entidad.
+   * Nombre para mostrar de un tipo de entidad.
    *
    * @param {string} tipo - un valor de TipoEntidad.
-   * @returns {string}
    */
   static _nombreTipoEntidad(tipo) {
     if (tipo === TipoEntidad.PERSONA) {
@@ -108,7 +93,6 @@ export class ComponenteUI {
  * @param {Object} propiedades - "clase" pone la clase CSS, "texto" el texto y
  *   cualquier otra se pone como atributo HTML (por ejemplo "title").
  * @param {Array<HTMLElement|string>} hijos - elementos o textos que van dentro.
- * @returns {HTMLElement}
  */
 export function crear(etiqueta, propiedades, hijos) {
   const elemento = document.createElement(etiqueta);

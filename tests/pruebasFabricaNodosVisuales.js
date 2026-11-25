@@ -14,11 +14,6 @@ import { NodoRelevante } from '../src/modelo/NodoRelevante.js';
  * Crean mallas de Three.js, pero no dibujan: no necesitan WebGL.
  */
 
-/**
- * @param {Entidad} entidad
- * @param {number} centralidad
- * @returns {NodoRelevante}
- */
 function crearNodo(entidad, centralidad) {
   const nodo = new NodoRelevante(entidad, 0.8, 1);
   nodo.setCentralidad(centralidad);

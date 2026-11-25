@@ -1,0 +1,68 @@
+@startuml sec_explorar_cliente
+' Operación: explorar una entidad (parte del navegador).
+' La parte del servidor está en sec_explorar_servidor.
+!include estilo.iuml
+actor Usuario
+participant ":PanelBusqueda" as PB
+participant ":ControladorExploracion" as CTRL
+participant ":GestorSubgrafos" as GES
+participant ":ClienteServicio" as CLI
+participant ":ConstructorSubgrafo" as CONS
+participant ":EscenaGrafo" as ESC
+participant ":InterfazUsuario" as UI
+participant "API (FastAPI)" as API
+
+Usuario -> PB : elige una sugerencia
+PB -> PB : ~#onSeleccionar(entrada)
+PB -> CTRL : seleccionarEntidad(id)
+activate CTRL
+CTRL -> CTRL : navegarA(id)
+CTRL -> CTRL : ~#cargarSubgrafo(id, true)
+CTRL -> UI : mostrarEstado(CARGANDO)
+CTRL -> GES : obtenerSubgrafoAjustado(id, ajustador, umbralDePartida)
+activate GES
+GES -> GES : ~#necesitaPedir(id, umbral)
+alt vecindario guardado (misma entidad y umbral >= el guardado)
+  note over GES : se reutiliza; no hay petición
+else
+  GES -> CLI : obtenerVecindario(id, umbral)
+  CLI -> API : GET /api/vecindario/{id}?umbral=u
+  API --> CLI : JSON del vecindario
+  CLI --> GES : vecindario
+  GES -> GES : ~#guardar(id, umbral, vecindario)
+end
+GES -> GES : ~#elegirUmbral(...) con AjustadorUmbral.elegir(...)
+GES -> GES : obtenerSubgrafo(id, umbralElegido)
+GES -> CONS : construir(id)
+activate CONS
+loop primero el mejor, mientras haya pendientes y nodos < maxNodos
+  CONS -> CONS : ~#sacarElMasRelevante(pendientes)
+  CONS -> CONS : ~#expandir(candidato, subgrafo, umbral)
+end
+CONS -> CONS : ~#guardarCentralidad(subgrafo)
+CONS --> GES : subgrafo
+deactivate CONS
+GES --> CTRL : subgrafo
+deactivate GES
+
+CTRL -> UI : setUmbral(subgrafo.getUmbral())
+CTRL -> ESC : mostrarSubgrafo(subgrafo)
+activate ESC
+ESC -> ESC : CalculadorDisposicion.calcular(subgrafo)
+ESC -> ESC : ~#crearNodos(...) y ~#crearEnlaces(...)
+ESC -> ESC : SimulacionFuerzas.iniciar(subgrafo, posiciones)
+ESC -> ESC : ~#aplicarModo()
+ESC -> ESC : restablecerCamara()
+deactivate ESC
+CTRL -> ESC : aplicarFiltro(filtro)
+CTRL -> UI : actualizarLeyenda(datos)
+CTRL -> UI : mostrarEntidad(central, nodo, subgrafo)
+CTRL -> UI : mostrarEstado(LISTO)
+CTRL ->> GES : obtenerDetalle(idCentral)
+note right of CTRL : sin esperar (ver «Seleccionar»)
+deactivate CTRL
+
+loop cada fotograma (requestAnimationFrame)
+  ESC -> ESC : ~#animar(): 3 × SimulacionFuerzas.paso()\ny ~#copiarPosicionesDeLaSimulacion()
+end
+@enduml

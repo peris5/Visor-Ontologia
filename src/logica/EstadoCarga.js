@@ -1,6 +1,4 @@
 /**
- * «enumeration» EstadoCarga
- *
  * En qué punto está la carga del subgrafo. Lo usa ControladorExploracion
  * para decirle a la interfaz qué mostrar ("Cargando…", el aviso de error...).
  *
@@ -10,8 +8,6 @@
  *  - ERROR:    la última carga ha fallado.
  *
  * Object.freeze impide añadir o cambiar valores después.
- *
- * Requisitos: RF-14 (aviso de carga), RF-15 (aviso de error).
  */
 export const EstadoCarga = Object.freeze({
   INACTIVO: "INACTIVO",

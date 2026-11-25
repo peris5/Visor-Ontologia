@@ -1,4 +1,4 @@
-"""FabricaEntidades (traducción de src/datos/FabricaEntidades.js)."""
+"""FabricaEntidades (la misma clase que src/datos/FabricaEntidades.js)."""
 from typing import Any
 
 from servidor.modelo.entidad import Entidad

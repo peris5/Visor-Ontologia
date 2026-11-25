@@ -4,14 +4,9 @@ import { NodoOrganizacion } from './NodoOrganizacion.js';
 import { NodoObra } from './NodoObra.js';
 
 /**
- * FabricaNodosVisuales
- *
  * Crea el NodoVisual que corresponde a cada NodoRelevante (patrón Fábrica):
  * la subclase según el tipo de entidad y el tamaño según su centralidad.
  * Así EscenaGrafo no tiene que saber qué clase concreta usar.
- *
- * Requisitos: RF-18 (un objeto 3D por nodo), RF-19 (forma según el tipo),
- * RF-37 (tamaño según la centralidad).
  */
 export class FabricaNodosVisuales {
   #tamanoMinimo;
@@ -22,10 +17,6 @@ export class FabricaNodosVisuales {
     this.#tamanoMaximo = 1.8;
   }
 
-  /**
-   * @param {NodoRelevante} nodo
-   * @returns {NodoVisual}
-   */
   crear(nodo) {
     const tamano = this.#calcularTamano(nodo.getCentralidad());
     const tipo = nodo.getEntidad().getTipo();
@@ -42,7 +33,7 @@ export class FabricaNodosVisuales {
   }
 
   /**
-   * (Privado) Tamaño = mínimo + (máximo − mínimo) · √centralidad.
+   * Tamaño = mínimo + (máximo − mínimo) · √centralidad.
    *
    * ¿Por qué la raíz cuadrada? La centralidad está normalizada con el nodo
    * más conectado (que vale 1, casi siempre la central), así que la mayoría
@@ -52,7 +43,6 @@ export class FabricaNodosVisuales {
    * así las diferencias entre nodos poco conectados también se ven.
    *
    * @param {number} centralidad - entre 0 y 1.
-   * @returns {number}
    */
   #calcularTamano(centralidad) {
     let centralidadAcotada = centralidad;

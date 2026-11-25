@@ -1,0 +1,151 @@
+@startuml clases_modelo
+' Paquete modelo (cliente). #campo → -, _campo → #.
+!include estilo.iuml
+skinparam nodesep 30
+skinparam ranksep 45
+
+abstract class Entidad {
+  - id : string
+  - nombres : Map<string, string>
+  - idioma : string
+  - subtipos : string[]
+  - atributos : Map<string, *>
+  + getId() : string
+  + getNombre() : string
+  + getTodosLosNombres() : string[]
+  + getSubtipos() : string[]
+  + getAtributos() : Map
+  + {abstract} getTipo() : TipoEntidad
+  # _propiedadesConocidas() : string[]
+  + {static} nombreEnIdioma(propiedades, idioma) : string
+}
+class Persona {
+  - nombrePropio : string
+  - apellidos : string
+  + getTipo() : TipoEntidad
+  + getNombre() : string
+}
+class Organizacion {
+  + getTipo() : TipoEntidad
+}
+class ObraDeArte {
+  - dimensiones : string
+  + getTipo() : TipoEntidad
+  + getDimensiones() : string
+}
+enum TipoEntidad <<enumeration>> {
+  PERSONA
+  ORGANIZACION
+  OBRA_DE_ARTE
+}
+
+class Relacion {
+  - id : string
+  - valor : number
+  - relevancia : number
+  - idIntermedio : string
+  - roles : Map<string, string>
+  - lugar : string
+  - fecha : string
+  + getOrigen() : Entidad
+  + getDestino() : Entidad
+  + getTipo() : TipoRelacion
+  + getValor() : number
+  + getRelevancia() : number
+  + setRelevancia(valor : number)
+  + getOtroExtremo(entidad : Entidad) : Entidad
+  + getClavePar() : string
+  + getRol(entidad : Entidad) : string
+}
+class TipoRelacion {
+  - id : string
+  - nombre : string
+  - color : string
+  - padres : string[]
+  - nombreFamilia : string
+  + getFamilia() : string
+  + {static} nombrar(id, nombresTipos) : string
+}
+class Periodo {
+  - desde : string
+  - hasta : string
+  - descripcion : string
+  + getTexto() : string
+  + {static} desdePropiedades(p) : Periodo
+}
+
+class Subgrafo {
+  - umbral : number
+  - nodos : Map<string, NodoRelevante>
+  - relaciones : Relacion[]
+  + getEntidadCentral() : Entidad
+  + getNodos() : NodoRelevante[]
+  + getRelaciones() : Relacion[]
+  + getNodo(id : string) : NodoRelevante
+  + agregarNodo(nodo : NodoRelevante)
+  + agregarRelacion(relacion : Relacion)
+  + eliminarNodo(id : string)
+  + contieneEntidad(id : string) : boolean
+}
+class NodoRelevante {
+  - relevancia : number
+  - nivel : number
+  - centralidad : number
+  + getEntidad() : Entidad
+  + getRelevancia() : number
+  + getNivel() : number
+  + setCentralidad(valor : number)
+}
+
+class DetalleEntidad {
+  - idEntidad : string
+  - ubicacion : string[]
+  + getEventos() : Evento[]
+  + getEventosDeTipo(tipo : string) : Evento[]
+  + getImagenes() : Imagen[]
+  + getFuentes() : FuenteExterna[]
+}
+class Evento {
+  - id : string
+  - tipo : string
+  - padres : string[]
+  - nombre : string
+  - rol : string
+  - lugar : string
+  - fecha : string
+  - participantes : string[]
+  - sinRelacion : boolean
+  + getCuando() : string
+}
+class Imagen {
+  - url : string
+  - pie : string
+  - orden : number
+}
+class FuenteExterna {
+  - nombre : string
+  - tipo : string
+  - url : string
+  - actualizada : string
+  - idExterno : string
+}
+
+Entidad <|-- Persona
+Entidad <|-- Organizacion
+Entidad <|-- ObraDeArte
+Entidad ..> TipoEntidad
+
+Relacion --> "2" Entidad : origen, destino
+Relacion --> "1" TipoRelacion
+Relacion --> "0..1" Periodo
+
+Subgrafo --> "1" Entidad : central
+Subgrafo o-- "1..*" NodoRelevante
+Subgrafo o-- "0..*" Relacion
+NodoRelevante --> "1" Entidad
+
+DetalleEntidad *-- "0..*" Evento
+DetalleEntidad *-- "0..*" Imagen
+DetalleEntidad *-- "0..*" FuenteExterna
+Evento --> "0..1" Periodo
+@enduml

@@ -1,11 +1,7 @@
 /**
- * HistorialNavegacion
- *
  * Recuerda por qué entidades ha pasado el usuario para poder volver atrás,
  * como el botón «Atrás» de un navegador web. Es una pila: lo último que
  * entra es lo primero que sale.
- *
- * Requisitos: RF-31 (volver a la entidad anterior).
  */
 export class HistorialNavegacion {
   #pila;
@@ -17,8 +13,6 @@ export class HistorialNavegacion {
   /**
    * Apunta una entidad en el historial. Si es la misma que la última, no se
    * apunta otra vez (si no, «Volver» llevaría a la misma entidad).
-   *
-   * @param {string} idEntidad
    */
   registrar(idEntidad) {
     if (typeof idEntidad !== "string" || idEntidad === "") {
@@ -50,9 +44,7 @@ export class HistorialNavegacion {
     return this.#pila.length > 0;
   }
 
-  /**
-   * Borra todo el historial.
-   */
+  /** Borra todo el historial. */
   limpiar() {
     this.#pila = [];
   }

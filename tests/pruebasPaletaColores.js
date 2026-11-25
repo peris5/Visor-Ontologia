@@ -2,7 +2,7 @@ import { prueba, comprobar, comprobarIgual } from './miniPruebas.js';
 import { PaletaColores } from '../src/logica/PaletaColores.js';
 
 /*
- * Pruebas de PaletaColores (src/logica/), recuperadas del incremento 1.
+ * Pruebas de PaletaColores (src/logica/).
  */
 
 prueba("Paleta: los colores tienen el formato #rrggbb", function () {

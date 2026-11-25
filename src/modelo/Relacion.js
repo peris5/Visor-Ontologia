@@ -2,25 +2,28 @@ import { Entidad } from './Entidad.js';
 import { TipoRelacion } from './TipoRelacion.js';
 
 /**
- * Relacion
- *
  * Una relación entre dos entidades (origen → destino) de un tipo concreto.
  * Guarda dos números:
  *  - valor: el que viene de la base de datos.
  *  - relevancia: la que calcula la EstrategiaRelevancia a partir del valor.
  *    Hasta que la estrategia la calcula, vale lo mismo que el valor.
  *
- * Desde el incremento 3b es una relación DERIVADA (ver ProyectorRelaciones
- * en el servidor): en Neo4j las entidades se unen a través de un nodo
+ * Es una relación DERIVADA (ver ProyectorRelaciones en el servidor): en Neo4j las entidades se unen a través de un nodo
  * intermediario (una relación personal o un evento). Por eso guarda también:
  *  - idIntermedio: el id del intermediario (o de la relación directa);
  *  - roles: el papel de cada entidad («maestra», «aprendiz»...);
- *  - periodo, lugar y fecha, si el intermediario los tiene.
- * El valor es la relevancia que ASIGNÓ el servidor según el tipo.
+ *  - nombre (el del intermediario, por ejemplo «Exposición colectiva de
+ *    1911»), periodo, lugar y fecha, si el intermediario los tiene;
+ *  - participantes: cuántas entidades tiene el intermediario (2 en una
+ *    relación directa). Cuanto más grande el evento, menos dice;
+ *  - dibujable: false si el intermediario es demasiado grande para
+ *    dibujarlo (más de maxParticipantesIntermediario en el servidor). No
+ *    se dibuja, pero cuenta como evidencia para la relevancia;
+ *  - sintetica: true en las aristas COINCIDENCIAS que añade
+ *    ConstructorSubgrafo (no existen en la base de datos), con su texto.
  *
- * Requisitos: RF-08 a RF-12 (la relevancia de las relaciones decide el
- * subgrafo), RF-20 y RF-21 (color y opacidad de cada relación), RF-29
- * (información de la relación), RF-38.
+ * La base de datos NO trae relevancias: el valor de una relación de la BD
+ * es 0 y la relevancia la calcula el navegador (RelevanciaCompuesta).
  */
 export class Relacion {
   #id;
@@ -34,15 +37,19 @@ export class Relacion {
   #periodo;
   #lugar;
   #fecha;
+  #participantes;
+  #nombre;
+  #dibujable;
+  #sintetica;
+  #texto;
 
   /**
-   * @param {string} id
-   * @param {Entidad} origen
-   * @param {Entidad} destino
-   * @param {TipoRelacion} tipo
-   * @param {number} valor - relevancia asignada por el servidor.
+   * @param {number} valor - valor de partida de la relevancia (0 en las de
+   *   la BD; la evidencia de la pareja en las sintéticas).
    * @param {Object} datos - opcional: { idIntermedio, roles (objeto o Map
-   *   idEntidad → rol), periodo (Periodo o null), lugar, fecha }.
+   *   idEntidad → rol), nombre, periodo (Periodo o null), lugar, fecha,
+   *   participantes (2 si no se indica), dibujable (true si no se indica),
+   *   sintetica (false si no se indica), texto }.
    */
   constructor(id, origen, destino, tipo, valor, datos) {
     if (typeof id !== "string" || id === "") {
@@ -76,6 +83,56 @@ export class Relacion {
     }
     this.#lugar = Relacion.#textoONulo(extra.lugar);
     this.#fecha = Relacion.#textoONulo(extra.fecha);
+    this.#participantes = 2;
+    if (Number.isInteger(extra.participantes) && extra.participantes >= 2) {
+      this.#participantes = extra.participantes;
+    }
+    this.#dibujable = extra.dibujable !== false;
+    this.#nombre = "";
+    if (typeof extra.nombre === "string") {
+      this.#nombre = extra.nombre;
+    }
+    this.#sintetica = extra.sintetica === true;
+    this.#texto = "";
+    if (typeof extra.texto === "string") {
+      this.#texto = extra.texto;
+    }
+  }
+
+  /**
+   * @returns {number} entidades del intermediario (2 en una relación directa).
+   */
+  getParticipantes() {
+    return this.#participantes;
+  }
+
+  /**
+   * @returns {string} nombre del intermediario («Exposición colectiva de 1911»), o "".
+   */
+  getNombre() {
+    return this.#nombre;
+  }
+
+  /**
+   * @returns {boolean} false si solo cuenta como evidencia y no se dibuja.
+   */
+  esDibujable() {
+    return this.#dibujable;
+  }
+
+  /**
+   * @returns {boolean} true si es una arista COINCIDENCIAS añadida por
+   *   ConstructorSubgrafo (no está en la base de datos).
+   */
+  esSintetica() {
+    return this.#sintetica;
+  }
+
+  /**
+   * @returns {string} texto de una arista sintética («Coinciden en 3 eventos»); "" en las demás.
+   */
+  getTexto() {
+    return this.#texto;
   }
 
   /**
@@ -103,9 +160,6 @@ export class Relacion {
     return "";
   }
 
-  /**
-   * @returns {Periodo|null}
-   */
   getPeriodo() {
     return this.#periodo;
   }
@@ -117,37 +171,22 @@ export class Relacion {
     return this.#lugar;
   }
 
-  /**
-   * @returns {string|null}
-   */
   getFecha() {
     return this.#fecha;
   }
 
-  /**
-   * @returns {string}
-   */
   getId() {
     return this.#id;
   }
 
-  /**
-   * @returns {Entidad}
-   */
   getOrigen() {
     return this.#origen;
   }
 
-  /**
-   * @returns {Entidad}
-   */
   getDestino() {
     return this.#destino;
   }
 
-  /**
-   * @returns {TipoRelacion}
-   */
   getTipo() {
     return this.#tipo;
   }
@@ -207,12 +246,7 @@ export class Relacion {
     return idDestino + "|" + idOrigen;
   }
 
-  /**
-   * (Privado) Los roles como Map (admite un objeto normal o un Map).
-   *
-   * @param {*} roles
-   * @returns {Map<string, string>}
-   */
+  /** Los roles como Map (admite un objeto normal o un Map). */
   static #leerRoles(roles) {
     const resultado = new Map();
     if (roles === undefined || roles === null) {
@@ -233,12 +267,7 @@ export class Relacion {
     return resultado;
   }
 
-  /**
-   * (Privado) El valor si es un texto con contenido; si no, null.
-   *
-   * @param {*} valor
-   * @returns {string|null}
-   */
+  /** El valor si es un texto con contenido; si no, null. */
   static #textoONulo(valor) {
     if (typeof valor === "string" && valor !== "") {
       return valor;

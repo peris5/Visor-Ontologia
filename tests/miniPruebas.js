@@ -24,7 +24,6 @@ const listaDePruebasRegistradas = [];
 /**
  * Apunta una prueba para ejecutarla después.
  *
- * @param {string} nombre
  * @param {Function} funcion - normal o async.
  */
 export function prueba(nombre, funcion) {
@@ -34,7 +33,6 @@ export function prueba(nombre, funcion) {
 /**
  * Falla (lanza un error) si la condición no se cumple.
  *
- * @param {boolean} condicion
  * @param {string} mensaje - qué se esperaba.
  */
 export function comprobar(condicion, mensaje) {
@@ -60,9 +58,6 @@ export function comprobarIgual(obtenido, esperado, mensaje) {
  * Redondea a 6 decimales. Los ordenadores guardan los decimales con un
  * pequeño error (0.1 + 0.2 da 0.30000000000000004), así que para comparar
  * resultados con decimales redondeamos antes.
- *
- * @param {number} numero
- * @returns {number}
  */
 export function redondear(numero) {
   return Math.round(numero * 1000000) / 1000000;
@@ -88,20 +83,14 @@ export async function ejecutarTodasLasPruebas() {
   return resultados;
 }
 
-/**
- * Ejecuta las pruebas y pinta el resultado en pruebas.html.
- */
+/** Ejecuta las pruebas y pinta el resultado en pruebas.html. */
 export async function ejecutarPruebas() {
   const resultados = await ejecutarTodasLasPruebas();
   mostrarResumen(resultados);
   mostrarListaDeResultados(resultados);
 }
 
-/**
- * Pinta arriba "X de Y pruebas correctas".
- *
- * @param {Object[]} resultados
- */
+/** Pinta arriba "X de Y pruebas correctas". */
 function mostrarResumen(resultados) {
   let numeroDeCorrectas = 0;
   for (let i = 0; i < resultados.length; i++) {
@@ -118,11 +107,7 @@ function mostrarResumen(resultados) {
   }
 }
 
-/**
- * Pinta cada prueba: verde si es correcta, roja con el mensaje si falla.
- *
- * @param {Object[]} resultados
- */
+/** Pinta cada prueba: verde si es correcta, roja con el mensaje si falla. */
 function mostrarListaDeResultados(resultados) {
   const lista = document.getElementById("listaPruebas");
   for (let i = 0; i < resultados.length; i++) {

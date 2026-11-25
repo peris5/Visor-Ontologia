@@ -20,7 +20,7 @@
   --visor-fondo: #10141f;
   --visor-panel: #151a26;
   --visor-borde: #283043;
-  /* Borde de los controles: más claro, para que se distingan del fondo (RNF-25). */
+  /* Borde de los controles: más claro, para que se distingan del fondo. */
   --visor-borde-control: #6b7590;
   --visor-texto: #e6e9f0;
   --visor-texto-suave: #9aa3b5;
@@ -236,7 +236,7 @@ body {
   gap: 8px;
 }
 
-/* Paneles: mismo aspecto oscuro del incremento 2 */
+/* Paneles: aspecto oscuro común */
 .barra-superior,
 .leyenda,
 .panel-informacion,
@@ -330,7 +330,7 @@ body {
   opacity: 0.6;
 }
 
-/* Foco visible (RNF-25): un borde amarillo que se ve bien sobre el fondo oscuro.
+/* Foco visible: un borde amarillo que se ve bien sobre el fondo oscuro.
    :focus-visible lo muestra al usar el teclado, no al hacer clic con el ratón. */
 .pagina-visor :focus-visible {
   outline: 3px solid var(--visor-foco);
@@ -640,6 +640,45 @@ body {
   flex: none;
 }
 
+/* Origen de la relevancia: línea continua, discontinua y nodo semitransparente
+   (no dependen solo del color, RNF-26). */
+.simbolo-origen {
+  display: inline-block;
+  flex: none;
+  width: 18px;
+}
+
+.simbolo-continua {
+  border-top: 3px solid var(--visor-texto-suave);
+}
+
+.simbolo-discontinua {
+  border-top: 3px dashed var(--visor-texto-suave);
+}
+
+.simbolo-deducido {
+  width: 12px;
+  height: 12px;
+  margin: 0 3px;
+  border-radius: 50%;
+  background: var(--visor-texto-suave);
+  opacity: 0.45;
+}
+
+.leyenda-casilla {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 8px;
+  cursor: pointer;
+}
+
+/* Etiqueta de un nodo deducido: en cursiva (además de semitransparente). */
+.etiqueta-deducido {
+  font-style: italic;
+  opacity: 0.75;
+}
+
 .simbolo-pequeno {
   width: 6px;
   height: 6px;
@@ -751,7 +790,7 @@ body {
   border-color: var(--visor-acento) !important;
 }
 
-/* Detalle de la entidad (incremento 3b): vida, eventos, imágenes y fuentes */
+/* Detalle de la entidad: vida, eventos, imágenes y fuentes */
 .detalle-cargando {
   color: var(--visor-texto-suave);
   font-style: italic;
@@ -886,7 +925,7 @@ body {
 }
 
 /*
- * Pantallas estrechas (RNF-09, básico): el buscador a todo el ancho, la
+ * Pantallas estrechas: el buscador a todo el ancho, la
  * leyenda plegada tras su botón, el panel de información abajo (como mucho
  * media pantalla) y zonas táctiles de al menos 44 × 44 px.
  */

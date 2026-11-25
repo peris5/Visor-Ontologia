@@ -28,9 +28,6 @@ class ControladorFalsoBusqueda {
   }
 }
 
-/**
- * @returns {Object[]}
- */
 function crearSugerenciasDePrueba() {
   return [
     { id: "p01", nombre: "Elena Montsalvat", tipo: TipoEntidad.PERSONA },
@@ -61,7 +58,6 @@ function crearPanelBusqueda() {
 /**
  * Simula una tecla pulsada en el campo.
  *
- * @param {HTMLElement} campo
  * @param {string} tecla - por ejemplo "ArrowDown".
  */
 function pulsar(campo, tecla) {

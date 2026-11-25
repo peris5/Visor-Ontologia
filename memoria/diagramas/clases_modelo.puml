@@ -1,0 +1,47 @@
+@startuml clases_modelo
+' Paquete modelo (cliente).
+!include estilo.iuml
+
+abstract class Entidad {
+  - id, nombres, subtipos, atributos
+  + getNombre()
+  + {abstract} getTipo()
+}
+class Persona
+class Organizacion
+class ObraDeArte
+
+class Relacion {
+  - valor, relevancia
+  - idIntermedio, roles
+  + getOtroExtremo(e)
+}
+class TipoRelacion {
+  - nombre, color, padres
+}
+class Subgrafo {
+  - umbral
+  + agregarNodo(n)
+  + agregarRelacion(r)
+}
+class NodoRelevante {
+  - relevancia, nivel
+  - centralidad
+}
+class DetalleEntidad
+class Evento
+class Imagen
+class FuenteExterna
+
+Entidad <|-- Persona
+Entidad <|-- Organizacion
+Entidad <|-- ObraDeArte
+Relacion --> "2" Entidad
+Relacion --> "1" TipoRelacion
+Subgrafo o-- "1..*" NodoRelevante
+Subgrafo o-- "*" Relacion
+NodoRelevante --> "1" Entidad
+DetalleEntidad *-- "*" Evento
+DetalleEntidad *-- "*" Imagen
+DetalleEntidad *-- "*" FuenteExterna
+@enduml

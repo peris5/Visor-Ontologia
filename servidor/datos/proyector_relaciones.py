@@ -4,28 +4,38 @@ from typing import Any
 from servidor.logica.clasificador_etiquetas import ClasificadorEtiquetas
 from servidor.logica.configuracion import Configuracion
 
-# Consulta Cypher de REFERENCIA para el incremento 4 (no se usa todavía).
-# Obtiene, para una entidad, las otras entidades unidas a ella por un mismo
-# intermediario, SIN nombrar ninguna etiqueta de intermediario: las
-# etiquetas de entidad, las auxiliares, los tipos sin relación, las
-# relaciones ignoradas y el límite llegan como parámetros desde la
-# configuración. Por eso sirve aunque la BD añada tipos nuevos.
+# Consulta Cypher de REFERENCIA para el repositorio de Neo4j (no se usa todavía).
+# Obtiene, para las entidades pedidas ($ids), las otras entidades unidas a
+# cada una por un mismo intermediario, SIN nombrar ninguna etiqueta de
+# intermediario: las etiquetas de entidad, las auxiliares, los tipos sin
+# relación, las relaciones ignoradas y los límites llegan como parámetros
+# desde la configuración. Por eso sirve aunque la BD añada tipos nuevos.
 #
-#   MATCH (a)-[r1]-(i)-[r2]-(b)
-#   WHERE elementId(a) = $id
-#     AND any(e IN labels(a) WHERE e IN $etiquetasEntidad)
-#     AND any(e IN labels(b) WHERE e IN $etiquetasEntidad)
+# Solo devuelve las parejas en las que está una entidad pedida, nunca todas
+# las parejas de un evento: un evento de 150 personas da 149 filas por cada
+# entidad pedida, no 150 × 149 / 2.
+#
+#   MATCH (a)-[r1]-(i)
+#   WHERE elementId(a) IN $ids
 #     AND none(e IN labels(i) WHERE e IN $etiquetasEntidad + $etiquetasAuxiliares + $tiposSinRelacion)
-#     AND NOT type(r1) IN $relacionesIgnoradas AND NOT type(r2) IN $relacionesIgnoradas
-#     AND a <> b
-#   WITH a, i, collect(DISTINCT b) AS otras, collect(DISTINCT r1.role)[0] AS rolA
-#   WHERE size(otras) + 1 <= $maxParticipantes
-#   UNWIND otras AS b
-#   RETURN elementId(i) AS idIntermedio, labels(i) AS etiquetas, i.relevance AS relevancia,
-#          elementId(b) AS idOtra, rolA
+#     AND NOT type(r1) IN $relacionesIgnoradas
+#   MATCH (i)-[r2]-(b)
+#   WHERE any(e IN labels(b) WHERE e IN $etiquetasEntidad) AND NOT type(r2) IN $relacionesIgnoradas
+#   WITH a, i, collect(DISTINCT b) AS todas
+#   WHERE size(todas) >= 2 AND size(todas) <= $maxParticipantesEvidencia
+#   UNWIND todas AS b
+#   WITH a, i, b, size(todas) AS participantes
+#   WHERE a <> b
+#   RETURN elementId(a) AS idPedida, elementId(i) AS idIntermedio, labels(i) AS etiquetas,
+#          elementId(b) AS idOtra, labels(b) AS etiquetasOtra, participantes,
+#          participantes <= $maxParticipantesIntermediario AS dibujable
 #
 # (La relación directa entre dos entidades es otra consulta, más sencilla:
-#  MATCH (a)-[r]-(b) con a y b entidades y type(r) no ignorado.)
+#  MATCH (a)-[r]-(b) con a en $ids, b entidad y type(r) no ignorado;
+#  participantes = 2 y dibujable = true.)
+#
+# La consulta NO lee ni escribe ninguna propiedad de relevancia: la
+# relevancia la calcula siempre el navegador.
 
 
 class ProyectorRelaciones:
@@ -33,7 +43,7 @@ class ProyectorRelaciones:
     directamente sino a través de nodos intermediarios (Relationship, Event...),
     en relaciones entre entidades, que es lo que dibuja la aplicación.
 
-    Regla genérica (ANALISIS_BD_NEO4J.md §3.2), sin ningún nombre de etiqueta
+    Regla genérica, sin ningún nombre de etiqueta
     ni de relación escrito en el código (todo sale del ClasificadorEtiquetas y
     de la configuración):
       1. POR INTERMEDIARIO: si un intermediario está unido (por cualquier
@@ -43,26 +53,28 @@ class ProyectorRelaciones:
       2. DIRECTA: una relación (no ignorada) entre dos entidades se toma tal
          cual. Tipo = el tipo de la relación.
       3. LÍMITES: no se aplica a los tiposSinRelacion (nacimiento, muerte,
-         residencia: van al detalle) ni a intermediarios con más de
-         maxParticipantesIntermediario entidades (un evento con 50
-         asistentes daría 1225 parejas).
+         residencia: van al detalle). Un intermediario con más de
+         maxParticipantesIntermediario entidades da relaciones con
+         dibujable = False: el navegador no las dibuja, pero cuentan como
+         evidencia para la relevancia (coincidir en una exposición grande
+         dice algo, aunque poco). Con más de maxParticipantesEvidencia se
+         ignora del todo.
       4. DATOS: roles (propiedad "role" de la relación que une cada entidad
-         al intermediario), periodo, lugar y fecha.
+         al intermediario), nombre del intermediario, periodo, lugar y fecha.
 
     Cada relación derivada es un diccionario:
       { "id": "<idIntermedio>|<idA>|<idB>", "idIntermedio", "origen": idA,
         "destino": idB, "tipo", "padres", "roles": {idA: rol, ...},
-        "periodo": {...} o None, "lugar": "..." o None, "fecha": "..." o None }
-    con la pareja ordenada por id (idA < idB). "valor" (la relevancia) lo
-    añade el repositorio con el AsignadorRelevancia.
+        "nombre": nombre del intermediario en el idioma configurado ("" si no
+        tiene o es una relación directa),
+        "periodo": {...} o None, "lugar": "..." o None, "fecha": "..." o None,
+        "participantes": número de entidades del intermediario (2 en una
+        relación directa), "dibujable": True o False }
+    con la pareja ordenada por id (idA < idB). NO lleva relevancia: la
+    calcula siempre el navegador (el servidor no calcula ni escribe nada).
 
-    Esto trabaja sobre el grafo EN MEMORIA de los datos simulados. En el
-    repositorio real (incremento 4) lo harán consultas Cypher (ver la
-    consulta de referencia de arriba).
-
-    Requisitos: RF-08 (relaciones de la entidad), RF-38 (varias relaciones
-    entre el mismo par), RF-39 (tipos no conocidos de antemano), nuevo RNF
-    de mantenibilidad.
+    Esto trabaja sobre el grafo EN MEMORIA de los datos simulados. Con Neo4j
+    lo harán consultas Cypher (ver la consulta de referencia de arriba).
     """
 
     # Propiedades de las relaciones de Neo4j que se leen (son nombres de
@@ -80,7 +92,8 @@ class ProyectorRelaciones:
         self.__clasificador = clasificador
         self.__ignoradas = configuracion.get_relaciones_ignoradas()
         self.__sin_relacion = configuracion.get_tipos_sin_relacion()
-        self.__maximo = configuracion.get_max_participantes_intermediario()
+        self.__maximo_dibujable = configuracion.get_max_participantes_intermediario()
+        self.__maximo_evidencia = configuracion.get_max_participantes_evidencia()
         self.__papeles = configuracion.get_papeles_auxiliares()
         self.__idioma = configuracion.get_idioma()
 
@@ -195,11 +208,13 @@ class ProyectorRelaciones:
 
     def __relaciones_por_intermediario(self, id_intermediario: str, id_entidad: str) -> list[dict[str, Any]]:
         """(Privado) Regla 1: una relación por cada pareja (entidad, otra
-        participante) del intermediario, si no supera el límite.
+        participante) del intermediario, si no supera maxParticipantesEvidencia.
+        Con más de maxParticipantesIntermediario, no se dibujan.
         """
         participantes = self.participantes(id_intermediario)
-        if len(participantes) < 2 or len(participantes) > self.__maximo:
+        if len(participantes) < 2 or len(participantes) > self.__maximo_evidencia:
             return []
+        dibujable = len(participantes) <= self.__maximo_dibujable
         intermediario = self.__nodos[id_intermediario]
         tipo = self.__clasificador.mas_especifica(intermediario["etiquetas"])
         periodo = None
@@ -211,6 +226,7 @@ class ProyectorRelaciones:
         if nodo_lugar is not None:
             lugar = self.nombre_en_idioma(nodo_lugar["propiedades"])
         fecha = self.fecha(id_intermediario)
+        nombre = self.nombre_en_idioma(intermediario["propiedades"])
 
         relaciones: list[dict[str, Any]] = []
         for id_otra in participantes:
@@ -218,15 +234,16 @@ class ProyectorRelaciones:
                 roles: dict[str, str] = {}
                 self.__anadir_rol(roles, id_intermediario, id_entidad)
                 self.__anadir_rol(roles, id_intermediario, id_otra)
-                relaciones.append(self.__crear(id_intermediario, id_entidad, id_otra, tipo, roles,
-                                               periodo, lugar, fecha))
+                relaciones.append(self.__crear(id_intermediario, id_entidad, id_otra, tipo, roles, nombre,
+                                               periodo, lugar, fecha, len(participantes), dibujable))
         return relaciones
 
     def __relacion_directa(self, relacion: dict[str, Any]) -> dict[str, Any]:
         """(Privado) Regla 2: la relación entre dos entidades, tal cual."""
         roles: dict[str, str] = {}
         return self.__crear(relacion["id"], relacion["desde"], relacion["hasta"], relacion["tipo"],
-                            roles, None, None, relacion["propiedades"].get(ProyectorRelaciones.PROPIEDAD_FECHA))
+                            roles, "", None, None, relacion["propiedades"].get(ProyectorRelaciones.PROPIEDAD_FECHA),
+                            2, True)
 
     def __anadir_rol(self, roles: dict[str, str], id_intermediario: str, id_entidad: str) -> None:
         """(Privado) Apunta el rol de la entidad, si lo tiene."""
@@ -234,8 +251,9 @@ class ProyectorRelaciones:
         if rol is not None:
             roles[id_entidad] = rol
 
-    def __crear(self, id_intermedio: str, id_uno: str, id_otro: str, tipo: str, roles: dict[str, str],
-                periodo: dict[str, Any] | None, lugar: str | None, fecha: str | None) -> dict[str, Any]:
+    def __crear(self, id_intermedio: str, id_uno: str, id_otro: str, tipo: str, roles: dict[str, str], nombre: str,
+                periodo: dict[str, Any] | None, lugar: str | None, fecha: str | None,
+                participantes: int, dibujable: bool) -> dict[str, Any]:
         """(Privado) La relación derivada, con la pareja ordenada por id: así
         la misma pareja da el mismo id la busque desde un lado o desde el otro.
         """
@@ -252,9 +270,12 @@ class ProyectorRelaciones:
             "tipo": tipo,
             "padres": self.__clasificador.padres(tipo),
             "roles": roles,
+            "nombre": nombre,
             "periodo": periodo,
             "lugar": lugar,
             "fecha": fecha,
+            "participantes": participantes,
+            "dibujable": dibujable,
         }
 
     @staticmethod

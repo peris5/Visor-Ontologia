@@ -1,4 +1,4 @@
-"""Pruebas de Configuracion (las de tests/pruebasConfiguracion.js del incremento 1)."""
+"""Pruebas de Configuracion."""
 import json
 from pathlib import Path
 
@@ -17,7 +17,6 @@ def test_lee_los_valores_indicados() -> None:
         "umbralPorDefecto": 0.5,
         "maxNodos": 40,
         "nodosObjetivo": 25,
-        "maxEntidadesVecindario": 500,
         "entidadInicial": "p02",
     })
     assert configuracion.get_origen_datos() == "real"
@@ -25,7 +24,6 @@ def test_lee_los_valores_indicados() -> None:
     assert configuracion.get_umbral_por_defecto() == 0.5
     assert configuracion.get_max_nodos() == 40
     assert configuracion.get_nodos_objetivo() == 25
-    assert configuracion.get_max_entidades_vecindario() == 500
     assert configuracion.get_entidad_inicial() == "p02"
 
 
@@ -37,17 +35,15 @@ def test_valores_por_defecto_si_faltan() -> None:
     assert configuracion.get_umbral_por_defecto() == 0.3
     assert configuracion.get_max_nodos() == 150
     assert configuracion.get_nodos_objetivo() == 100
-    assert configuracion.get_max_entidades_vecindario() == 2000
     assert configuracion.get_entidad_inicial() == ""
 
 
 def test_valores_por_defecto_si_no_son_validos() -> None:
     configuracion = Configuracion()
-    configuracion.cargar({"umbralPorDefecto": 7, "maxNodos": -3, "nodosObjetivo": 0, "maxEntidadesVecindario": "mucho"})
+    configuracion.cargar({"umbralPorDefecto": 7, "maxNodos": -3, "nodosObjetivo": 0})
     assert configuracion.get_umbral_por_defecto() == 0.3
     assert configuracion.get_max_nodos() == 150
     assert configuracion.get_nodos_objetivo() == 100
-    assert configuracion.get_max_entidades_vecindario() == 2000
 
 
 def test_el_archivo_configuracion_json_se_lee_bien() -> None:
@@ -70,7 +66,7 @@ def test_comprobar_acepta_el_archivo_de_verdad() -> None:
     assert configuracion.get_idioma() == "es"
     assert configuracion.get_etiquetas_entidad()["HeritageItem"] == "OBRA_DE_ARTE"
     assert configuracion.get_max_participantes_intermediario() == 10
-    assert configuracion.get_version_pesos() == 1
+    assert configuracion.get_max_participantes_evidencia() == 200
     assert configuracion.get_papeles_auxiliares()["Period"] == "periodo"
 
 
@@ -80,17 +76,24 @@ def test_comprobar_dice_que_falta() -> None:
     with pytest.raises(ValueError) as error:
         configuracion.comprobar()
     assert "etiquetasEntidad" in str(error.value)
-    assert "pesosRelevancia" in str(error.value)
+    assert "maxParticipantesEvidencia" in str(error.value)
 
 
-def test_comprobar_rechaza_un_peso_fuera_de_rango() -> None:
+def test_comprobar_rechaza_un_limite_de_evidencia_menor_que_el_de_dibujar() -> None:
     configuracion = Configuracion()
-    configuracion.cargar_archivo(ARCHIVO_CONFIGURACION)
     datos = {}
     with open(ARCHIVO_CONFIGURACION, encoding="utf-8") as archivo:
         datos = json.load(archivo)
-    datos["pesosRelevancia"]["Marriage"] = 1.5
+    datos["maxParticipantesEvidencia"] = 5
     configuracion.cargar(datos)
     with pytest.raises(ValueError) as error:
         configuracion.comprobar()
-    assert "Marriage" in str(error.value)
+    assert "maxParticipantesEvidencia" in str(error.value)
+
+
+def test_el_servidor_ya_no_tiene_pesos() -> None:
+    # La relevancia la calcula siempre el navegador (public/relevancia.json).
+    with open(ARCHIVO_CONFIGURACION, encoding="utf-8") as archivo:
+        datos = json.load(archivo)
+    for clave in ["pesosRelevancia", "pesoPorDefecto", "versionPesos", "maxEntidadesVecindario"]:
+        assert clave not in datos

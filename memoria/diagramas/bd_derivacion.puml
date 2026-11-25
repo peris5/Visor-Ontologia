@@ -1,0 +1,32 @@
+@startuml bd_derivacion
+' Del grafo de REFRACTS (arriba) al grafo derivado del visor (abajo).
+!include estilo.iuml
+skinparam object {
+  BackgroundColor #FFFFFF
+  BorderColor #333333
+}
+
+package "REFRACTS (Neo4j)" {
+  object "ana : Person" as ana
+  object "m1 : Marriage" as m1 {
+    relevance = 0.95
+  }
+  object "luis : Person" as luis
+  object "c1 : Paint" as c1 {
+    relevance = 0.90
+  }
+  object "retrato : HeritageItem" as retrato
+  ana --> m1 : esposa
+  luis --> m1 : esposo
+  ana --> c1 : autora
+  c1 --> retrato : PRODUCED
+}
+
+package "Grafo derivado (visor)" {
+  object "Ana" as ana2
+  object "Luis" as luis2
+  object "Retrato" as retrato2
+  ana2 -- luis2 : Marriage (0,95)
+  ana2 -- retrato2 : Paint (0,90)
+}
+@enduml

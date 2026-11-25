@@ -2,9 +2,7 @@ import { prueba, comprobar, comprobarIgual } from './miniPruebas.js';
 import { ClienteServicio } from '../src/datos/ClienteServicio.js';
 
 /*
- * Pruebas de ClienteServicio (src/datos/). Desde el incremento 3 solo pide
- * datos (convertirSubgrafo ya no existe: la conversión la hace
- * RepositorioVecindario, que tiene sus propias pruebas).
+ * Pruebas de ClienteServicio (src/datos/).
  *
  * Para no necesitar el servidor, cada prueba cambia un momento la función
  * fetch del navegador por un DOBLE DE PRUEBA que apunta la URL pedida y
@@ -21,9 +19,20 @@ import { ClienteServicio } from '../src/datos/ClienteServicio.js';
 async function conFetchFalso(codigo, cuerpo, pruebaConFetch) {
   const fetchDeVerdad = window.fetch;
   const urlsPedidas = [];
-  window.fetch = async function (url) {
+  window.fetch = async function (url, opciones) {
     urlsPedidas.push(url);
-    return new Response(cuerpo, { status: codigo, headers: { "Content-Type": "application/json" } });
+    if (opciones !== undefined) {
+      urlsPedidas.opciones = opciones;
+      if (urlsPedidas.cuerpos === undefined) {
+        urlsPedidas.cuerpos = [];
+      }
+      urlsPedidas.cuerpos.push(JSON.parse(opciones.body));
+    }
+    let texto = cuerpo;
+    if (typeof cuerpo === "function") {
+      texto = cuerpo(opciones);
+    }
+    return new Response(texto, { status: codigo, headers: { "Content-Type": "application/json" } });
   };
   try {
     await pruebaConFetch(urlsPedidas);
@@ -33,7 +42,6 @@ async function conFetchFalso(codigo, cuerpo, pruebaConFetch) {
 }
 
 /**
- * @param {Function} funcionAsincrona
  * @returns {Promise<string>} el mensaje del error, o "" si no hubo error.
  */
 async function mensajeDeError(funcionAsincrona) {
@@ -45,12 +53,45 @@ async function mensajeDeError(funcionAsincrona) {
   return "";
 }
 
-prueba("ClienteServicio: obtenerVecindario pide la ruta con el id codificado y el umbral", async function () {
-  await conFetchFalso(200, "{\"idCentral\":\"p01\"}", async function (urlsPedidas) {
+prueba("ClienteServicio: obtenerRelaciones hace un POST con los ids en JSON", async function () {
+  const respuesta = "{\"ids\":[\"p 01/x\"],\"entidades\":[{\"id\":\"p 01/x\"}],\"relaciones\":[]}";
+  await conFetchFalso(200, respuesta, async function (urlsPedidas) {
     const cliente = new ClienteServicio("/api");
-    const datos = await cliente.obtenerVecindario("p 01/x", 0.35);
-    comprobarIgual(urlsPedidas[0], "/api/vecindario/p%2001%2Fx?umbral=0.35", "URL");
-    comprobarIgual(datos.idCentral, "p01", "devuelve el JSON tal cual");
+    const datos = await cliente.obtenerRelaciones(["p 01/x"]);
+    comprobarIgual(urlsPedidas[0], "/api/relaciones", "URL");
+    comprobarIgual(urlsPedidas.opciones.method, "POST", "método");
+    comprobarIgual(urlsPedidas.cuerpos[0].ids[0], "p 01/x", "el id va en el cuerpo, sin cambiar");
+    comprobarIgual(datos.entidades[0].id, "p 01/x", "devuelve el JSON");
+  });
+});
+
+prueba("ClienteServicio: obtenerRelaciones parte las listas en trozos de 200 y junta las respuestas", async function () {
+  const ids = [];
+  for (let i = 0; i < 450; i++) {
+    ids.push("n" + i);
+  }
+  // Cada respuesta trae sus ids, la entidad compartida «comun» y una relación por trozo.
+  function responder(opciones) {
+    const cuerpo = JSON.parse(opciones.body);
+    return JSON.stringify({ ids: cuerpo.ids, entidades: [{ id: "comun" }, { id: cuerpo.ids[0] }],
+      relaciones: [{ id: "r" + cuerpo.ids[0] }] });
+  }
+  await conFetchFalso(200, responder, async function (urlsPedidas) {
+    const datos = await new ClienteServicio("/api").obtenerRelaciones(ids);
+    comprobarIgual(urlsPedidas.length, 3, "3 peticiones");
+    comprobarIgual(urlsPedidas.cuerpos[0].ids.length + "," + urlsPedidas.cuerpos[1].ids.length + "," +
+      urlsPedidas.cuerpos[2].ids.length, "200,200,50", "trozos de 200 como mucho");
+    comprobarIgual(datos.ids.length, 450, "todos los ids");
+    comprobarIgual(datos.entidades.length, 4, "la entidad compartida, una sola vez");
+    comprobarIgual(datos.relaciones.length, 3, "una relación por trozo");
+  });
+});
+
+prueba("ClienteServicio: obtenerJerarquia pide su ruta", async function () {
+  await conFetchFalso(200, "{\"Painter\":[\"Creator\",\"Person\"]}", async function (urlsPedidas) {
+    const jerarquia = await new ClienteServicio("/api").obtenerJerarquia();
+    comprobarIgual(urlsPedidas[0], "/api/jerarquia", "URL");
+    comprobarIgual(jerarquia.Painter[0], "Creator", "devuelve el JSON tal cual");
   });
 });
 
@@ -67,7 +108,7 @@ prueba("ClienteServicio: un 404 con detail lanza ese mensaje", async function ()
   await conFetchFalso(404, "{\"detail\":\"No existe la entidad P99\"}", async function () {
     const cliente = new ClienteServicio("/api");
     const mensaje = await mensajeDeError(function () {
-      return cliente.obtenerVecindario("P99", 0.3);
+      return cliente.obtenerRelaciones(["P99"]);
     });
     comprobarIgual(mensaje, "No existe la entidad P99", "mensaje");
   });
@@ -107,8 +148,9 @@ prueba("ClienteServicio: mide los bytes de la última respuesta", async function
   });
 });
 
-prueba("ClienteServicio: ya no tiene los métodos del incremento 2", function () {
+prueba("ClienteServicio: ya no tiene los métodos de los incrementos anteriores", function () {
   const cliente = new ClienteServicio("/api");
+  comprobar(typeof cliente.obtenerVecindario === "undefined", "obtenerVecindario");
   comprobar(typeof cliente.obtenerSubgrafo === "undefined", "obtenerSubgrafo");
   comprobar(typeof cliente.buscarEntidades === "undefined", "buscarEntidades");
   comprobar(typeof ClienteServicio.convertirSubgrafo === "undefined", "convertirSubgrafo");

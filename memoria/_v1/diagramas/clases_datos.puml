@@ -1,0 +1,52 @@
+@startuml clases_datos
+' Paquete datos (cliente).
+!include estilo.iuml
+
+class ClienteServicio {
+  - urlBase : string
+  - bytesUltimaRespuesta : number
+  + obtenerConfiguracion() : Promise<Object>
+  + obtenerNombres() : Promise<Object[]>
+  + obtenerTipos() : Promise<Object[]>
+  + obtenerVecindario(idEntidad : string, umbral : number) : Promise<Object>
+  + obtenerDetalle(idEntidad : string, contexto) : Promise<DetalleEntidad>
+  + getBytesUltimaRespuesta() : number
+  + {static} convertirDetalle(json, contexto) : DetalleEntidad
+  - pedir(ruta : string) : Promise<Object>
+}
+
+interface RepositorioDatos <<interface>> {
+  + buscarEntidades(texto, tipo, limite) : Promise<Entidad[]>
+  + obtenerEntidad(id : string) : Promise<Entidad>
+  + obtenerRelaciones(idEntidad : string) : Promise<Relacion[]>
+  + obtenerTiposRelacion() : Promise<TipoRelacion[]>
+}
+
+class RepositorioVecindario {
+  - entidades : Map<string, Entidad>
+  - tipos : Map<string, TipoRelacion>
+  - relaciones : Relacion[]
+  - relacionesPorEntidad : Map<string, Relacion[]>
+  - contexto : Object
+  + RepositorioVecindario(datosVecindario, contexto)
+  + obtenerEntidad(id : string) : Promise<Entidad>
+  + obtenerRelaciones(idEntidad : string) : Promise<Relacion[]>
+  - indexar()
+  - descubrirTipos(listaDeRelaciones) : Map
+  - crearRelacion(datos) : Relacion
+}
+
+class FabricaEntidades {
+  + {static} crearEntidad(tipo : TipoEntidad, datos) : Entidad
+  + {static} crearDesdeNeo4j(etiquetas, propiedades, id, idioma, etiquetasEntidad) : Entidad
+}
+
+RepositorioDatos <|.. RepositorioVecindario
+RepositorioVecindario ..> FabricaEntidades : usa >
+RepositorioVecindario ..> "PaletaColores\n(logica)" : usa >
+ClienteServicio ..> "DetalleEntidad\n(modelo)" : crea >
+note bottom of ClienteServicio
+  Única clase del cliente que hace peticiones HTTP
+  (fetch a /api/...).
+end note
+@enduml

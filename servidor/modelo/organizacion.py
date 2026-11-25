@@ -1,4 +1,4 @@
-"""Organizacion extends Entidad (traducción de src/modelo/Organizacion.js)."""
+"""Organizacion (la misma clase que src/modelo/Organizacion.js)."""
 from typing import Any
 
 from servidor.modelo.entidad import Entidad
@@ -6,10 +6,7 @@ from servidor.modelo.tipo_entidad import TipoEntidad
 
 
 class Organizacion(Entidad):
-    """Una organización del grafo (academia, taller, fundación, museo...).
-
-    Requisitos: modelo de dominio usado en RF-08 a RF-12.
-    """
+    """Una organización del grafo (academia, taller, fundación, museo...)."""
 
     def __init__(self, datos: dict[str, Any]) -> None:
         """datos: los de Entidad más fechaFundacion y sede (opcionales)."""

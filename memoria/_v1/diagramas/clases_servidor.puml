@@ -1,0 +1,153 @@
+@startuml clases_servidor
+' Diagrama de clases de diseño del servidor (Python), con atributos y métodos.
+' Privado (__x) → -, público → +. Los miembros de clase se subrayan.
+' RepositorioNeo4j es la clase prevista para el incremento 4.
+!include estilo.iuml
+skinparam nodesep 40
+skinparam ranksep 60
+
+class app <<módulo FastAPI (servidor/app.py)>> {
+  + obtener_configuracion() : dict
+  + obtener_tipos() : Response
+  + obtener_nombres() : Response
+  + obtener_vecindario(id_entidad : str, umbral : float) : Response
+  + obtener_detalle(id_entidad : str) : Response
+  + crear_repositorio(configuracion : Configuracion) : RepositorioDatos
+  + redondear_hacia_abajo(umbral : float) : float
+}
+
+package "api" {
+  class CacheRespuestas {
+    - max_entradas : int
+    - segundos_vigencia : float
+    - entradas : dict
+    + obtener(clave : str, calcular : Callable) : Any
+    + get_numero_entradas() : int
+  }
+  class ConversorJson {
+    + {static} configuracion_a_diccionario(c : Configuracion) : dict
+    + {static} vecindario_a_diccionario(id : str, umbral : float, v : Vecindario) : dict
+  }
+}
+
+package "logica" {
+  class Configuracion {
+    - datos : dict
+    + cargar_archivo(ruta : Path)
+    + comprobar()
+    + get_umbral_por_defecto() : float
+    + get_max_nodos() : int
+    + get_nodos_objetivo() : int
+    + get_max_entidades_vecindario() : int
+    + get_etiquetas_entidad() : dict
+    + get_etiquetas_auxiliares() : list
+    + get_tipos_sin_relacion() : list
+    + get_relaciones_ignoradas() : list
+    + get_max_participantes_intermediario() : int
+    + get_pesos_relevancia() : dict
+    + get_peso_por_defecto() : float
+    + get_version_pesos() : int
+  }
+  class ClasificadorEtiquetas {
+    - jerarquia : dict<str, str>
+    + es_entidad(etiquetas : list) : bool
+    + es_auxiliar(etiquetas : list) : bool
+    + es_intermediario(etiquetas : list) : bool
+    + mas_especifica(etiquetas : list) : str
+    + padres(etiqueta : str) : list
+  }
+  interface EstrategiaRelevancia <<interface>> {
+    + {abstract} calcular_relevancia(tipo : str) : float
+  }
+  class RelevanciaPorTipo {
+    - pesos : dict<str, float>
+    - peso_por_defecto : float
+    + calcular_relevancia(tipo : str) : float
+  }
+  class AsignadorRelevancia {
+    - version : int
+    - asignadas : int
+    - reutilizadas : int
+    + obtener(id_elemento : str, tipo : str) : float
+    + get_estadisticas() : dict
+  }
+}
+
+package "datos" {
+  abstract class RepositorioDatos {
+    + {abstract} obtener_tipos() : list
+    + {abstract} obtener_nombres() : list
+    + {abstract} obtener_vecindario(id : str, umbral : float, max : int) : Vecindario
+    + {abstract} obtener_detalle(id : str) : dict
+    + cerrar()
+  }
+  class RepositorioSimulado {
+    - nodos : dict
+    - relaciones : dict
+    - adyacencia : dict
+    + obtener_vecindario(id : str, umbral : float, max : int) : Vecindario
+    + obtener_detalle(id : str) : dict
+    - valor_de(relacion : dict, valores : dict) : float
+  }
+  class RepositorioNeo4j <<previsto incremento 4>> {
+    - controlador : AsyncDriver
+    + obtener_vecindario(id : str, umbral : float, max : int) : Vecindario
+    + obtener_detalle(id : str) : dict
+    + cerrar()
+  }
+  class ProyectorRelaciones {
+    - maximo : int
+    + relaciones_de(id_entidad : str) : list
+    + participantes(id_intermediario : str) : list
+    + rol(id_intermediario : str, id_entidad : str) : str
+    - relaciones_por_intermediario(id_i : str, id_e : str) : list
+    - relacion_directa(relacion : dict) : dict
+  }
+  abstract class AlmacenRelevancias {
+    + {abstract} leer(id_elemento : str) : dict
+    + {abstract} guardar(id_elemento : str, valor : float, version : int)
+  }
+  class AlmacenRelevanciasEnGrafo {
+    + leer(id_elemento : str) : dict
+    + guardar(id_elemento : str, valor : float, version : int)
+  }
+  class AlmacenRelevanciasNeo4j <<previsto incremento 4>> {
+    + leer(id_elemento : str) : dict
+    + guardar(id_elemento : str, valor : float, version : int)
+  }
+}
+
+package "modelo" {
+  class Vecindario {
+    + entidades : list
+    + relaciones : list
+    + recortado : bool
+    + asignadas : int
+    + reutilizadas : int
+  }
+}
+
+app --> RepositorioDatos : usa >
+app --> CacheRespuestas
+app ..> ConversorJson
+app ..> Configuracion
+ConversorJson ..> Vecindario
+
+RepositorioDatos <|-- RepositorioSimulado
+RepositorioDatos <|-- RepositorioNeo4j
+RepositorioDatos ..> Vecindario : crea >
+
+RepositorioSimulado *-- "1" ProyectorRelaciones
+RepositorioSimulado *-- "1" AsignadorRelevancia
+RepositorioSimulado --> "1" ClasificadorEtiquetas
+RepositorioNeo4j --> "1" AsignadorRelevancia
+ProyectorRelaciones --> "1" ClasificadorEtiquetas
+ClasificadorEtiquetas --> "1" Configuracion
+
+AsignadorRelevancia o-- "1" EstrategiaRelevancia
+AsignadorRelevancia o-- "1" AlmacenRelevancias
+EstrategiaRelevancia <|.. RelevanciaPorTipo
+RelevanciaPorTipo --> ClasificadorEtiquetas
+AlmacenRelevancias <|-- AlmacenRelevanciasEnGrafo
+AlmacenRelevancias <|-- AlmacenRelevanciasNeo4j
+@enduml

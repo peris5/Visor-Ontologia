@@ -11,8 +11,7 @@ import { Subgrafo } from '../src/modelo/Subgrafo.js';
 import { FabricaEntidades } from '../src/datos/FabricaEntidades.js';
 
 /*
- * Pruebas del modelo de dominio (src/modelo/). Las de getOtroExtremo,
- * nombreDesdeId y eliminarNodo vuelven del incremento 1, como esos métodos.
+ * Pruebas del modelo de dominio (src/modelo/).
  */
 
 /**
@@ -129,7 +128,6 @@ prueba("Modelo: Subgrafo no guarda dos veces la misma relación", function () {
   comprobarIgual(subgrafo.getRelaciones().length, 1, "número de relaciones");
 });
 
-// Esta prueba estaba en pruebasRepositorio.js en el incremento 1.
 // FabricaEntidades la usa RepositorioVecindario.
 prueba("FabricaEntidades: crea cada tipo y da error con un tipo desconocido", function () {
   const persona = FabricaEntidades.crearEntidad(TipoEntidad.PERSONA, { id: "x1" });

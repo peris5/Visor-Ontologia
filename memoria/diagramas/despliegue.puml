@@ -1,0 +1,25 @@
+@startuml despliegue
+' Despliegue previsto.
+!include estilo.iuml
+
+node "Equipo del usuario" {
+  node "Navegador (WebGL)" {
+    artifact "página (dist/)" as pagina
+  }
+}
+node "Servidor de aplicación" {
+  node "Uvicorn" {
+    artifact "FastAPI (app.py)" as api
+    artifact "dist/" as estaticos
+  }
+  artifact ".env" as env
+}
+node "Servidor IRTIC" {
+  database "Neo4j" as bd
+}
+
+pagina --> estaticos : HTTPS
+pagina --> api : HTTPS (JSON)
+api --> bd : Bolt
+api ..> env : credenciales
+@enduml

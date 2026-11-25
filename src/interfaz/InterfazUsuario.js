@@ -8,23 +8,16 @@ import { ControlDisposicion } from './ControlDisposicion.js';
 import { EstadoCarga } from '../logica/EstadoCarga.js';
 
 /**
- * InterfazUsuario
- *
- * Patrón FACHADA: es la única puerta de entrada a la interfaz 2D. El
+ * Es la única puerta de entrada a la interfaz 2D. El
  * controlador solo habla con ella (mostrarEntidad, mostrarError...) y ella
  * reparte el trabajo entre los componentes. Así el controlador no tiene
  * que saber cuántos paneles hay ni cómo se llaman, y se pueden cambiar los
  * paneles sin tocar el controlador.
  *
- * Composición (◆): crea y tiene sus siete componentes.
- *
  * La página (index.html) tiene unas zonas vacías marcadas con data-zona;
  * inicializar() monta cada componente en la suya:
  *   superior: buscador, umbral, disposición y navegación · izquierda: leyenda ·
  *   derecha: información · estado: aviso de carga y de error.
- *
- * Requisitos: RF-01 a RF-07, RF-13 a RF-15, RF-23, RF-27 a RF-33 (a través
- * de sus componentes); RNF-09 y RNF-25.
  */
 export class InterfazUsuario {
   #panelBusqueda;
@@ -49,7 +42,6 @@ export class InterfazUsuario {
    * Crea los componentes y los monta en las zonas de la página.
    *
    * @param {HTMLElement} raiz - el elemento que contiene las zonas (data-zona).
-   * @param {ControladorExploracion} controlador
    * @param {Object} contexto - { idioma, nombresTipos, ... } (para los
    *   nombres de los tipos en el panel de información).
    */
@@ -72,39 +64,20 @@ export class InterfazUsuario {
     this.#indicadorEstado.montar(InterfazUsuario.#zona(raiz, "estado"));
   }
 
-  /**
-   * @param {Entidad} entidad
-   * @param {NodoRelevante} nodo
-   * @param {Subgrafo} subgrafo
-   */
   mostrarEntidad(entidad, nodo, subgrafo) {
     this.#panelInformacion.mostrarEntidad(entidad, nodo, subgrafo);
   }
 
-  /**
-   * El detalle de una entidad (eventos, imágenes, fuentes) ha llegado.
-   *
-   * @param {string} idEntidad
-   * @param {DetalleEntidad} detalle
-   */
+  /** El detalle de una entidad (eventos, imágenes, fuentes) ha llegado. */
   mostrarDetalle(idEntidad, detalle) {
     this.#panelInformacion.mostrarDetalle(idEntidad, detalle);
   }
 
-  /**
-   * No se ha podido obtener el detalle de una entidad.
-   *
-   * @param {string} idEntidad
-   * @param {string} mensaje
-   */
+  /** No se ha podido obtener el detalle de una entidad. */
   mostrarErrorDetalle(idEntidad, mensaje) {
     this.#panelInformacion.mostrarErrorDetalle(idEntidad, mensaje);
   }
 
-  /**
-   * @param {Relacion} relacion
-   * @param {Subgrafo} subgrafo
-   */
   mostrarRelacion(relacion, subgrafo) {
     this.#panelInformacion.mostrarRelacion(relacion, subgrafo);
   }
@@ -131,23 +104,14 @@ export class InterfazUsuario {
     }
   }
 
-  /**
-   * @param {string} mensaje
-   */
   mostrarError(mensaje) {
     this.#indicadorEstado.mostrarError(mensaje);
   }
 
-  /**
-   * @param {boolean} habilitado
-   */
   setHabilitadoVolver(habilitado) {
     this.#barraNavegacion.setHabilitadoVolver(habilitado);
   }
 
-  /**
-   * @param {number} valor
-   */
   setUmbral(valor) {
     this.#controlUmbral.setValor(valor);
   }
@@ -166,13 +130,7 @@ export class InterfazUsuario {
     this.#leyenda.actualizar(datos);
   }
 
-  /**
-   * (Privado) La zona de la página con ese nombre (data-zona="...").
-   *
-   * @param {HTMLElement} raiz
-   * @param {string} nombre
-   * @returns {HTMLElement}
-   */
+  /** La zona de la página con ese nombre (data-zona="..."). */
   static #zona(raiz, nombre) {
     const zona = raiz.querySelector("[data-zona=\"" + nombre + "\"]");
     if (zona === null) {

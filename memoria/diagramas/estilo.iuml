@@ -1,0 +1,40 @@
+' Estilo común de los diagramas del capítulo 5.
+' Pensado para que el texto se lea al encajar la figura en la página:
+' letra grande, poco margen y PNG a 250 ppp.
+' smetana: no hace falta Graphviz para los diagramas de clases.
+!pragma layout smetana
+skinparam dpi 250
+skinparam shadowing false
+skinparam roundcorner 0
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 14
+skinparam classAttributeIconSize 0
+skinparam nodesep 25
+skinparam ranksep 35
+skinparam packageStyle rectangle
+skinparam ArrowColor #333333
+skinparam ArrowFontSize 12
+skinparam sequenceMessageAlign left
+skinparam responseMessageBelowArrow true
+skinparam ParticipantPadding 2
+skinparam BoxPadding 4
+skinparam maxMessageSize 190
+skinparam sequence {
+  LifeLineBorderColor #888888
+  ParticipantBorderColor #333333
+  ParticipantBackgroundColor #FFFFFF
+  ActorBorderColor #333333
+  ActorBackgroundColor #FFFFFF
+}
+skinparam class {
+  BackgroundColor #FFFFFF
+  BorderColor #333333
+}
+skinparam note {
+  BackgroundColor #FFFBE6
+  BorderColor #999999
+  FontSize 12
+}
+hide circle
+hide empty members
+hide footbox

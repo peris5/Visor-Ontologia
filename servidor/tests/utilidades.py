@@ -38,7 +38,10 @@ def crear_grafo_pequeno() -> dict[str, Any]:
         Ana, Luis ─HAS_ROLE_IN─▶ [Relationship:Commission]           (etiqueta que NO está en el diseño)
         Ana, Luis ─HAS_ROLE_IN─▶ [Relationship:Friendship]           (segundo intermediario del mismo par)
         Ana ─PARTICIPATES_IN─▶ [Event:Birth] ─TOOK_PLACE_AT─▶ València (tipo sin relación)
-        Ana, Luis, Eva, Pep ─PARTICIPATES_IN─▶ [Event] (4 participantes, más del límite de 3 de las pruebas)
+        Ana, Luis, Eva, Pep ─PARTICIPATES_IN─▶ [Event] (4 participantes: más del límite de 3 de las
+                                                        pruebas para dibujar, pero dentro del de evidencia, 4)
+        Ana, Luis, Eva, Pep ─PARTICIPATES_IN─▶ [Event:Exposition] ─IS_EXPOSED─▶ Cuadro
+                                                       (5 participantes: más del límite de evidencia)
         Ana ─HAS_IMAGE─▶ (Image)    Museo ─LOCATED_IN─▶ València ─IS_IN─▶ España
         Zoe ─HAS_ROLE_IN─▶ [Relationship:Marriage] ◀─ Teo           (zona no conectada)
     """
@@ -74,6 +77,7 @@ def crear_grafo_pequeno() -> dict[str, Any]:
             nodo("zoe", ["Person"], {"name": "Zoe"}),
             nodo("teo", ["Person"], {"name": "Teo"}),
             nodo("boda", ["Relationship", "Related", "Marriage"], {}),
+            nodo("feria", ["Event", "Exposition"], {}),
         ],
         "relaciones": [
             relacion("r1", "HAS_ROLE_IN", "ana", "mentoria", {"role": "maestra"}),
@@ -101,17 +105,23 @@ def crear_grafo_pequeno() -> dict[str, Any]:
             relacion("r23", "IS_IN", "valencia", "espana", {}),
             relacion("r24", "HAS_ROLE_IN", "zoe", "boda", {"role": "esposa"}),
             relacion("r25", "HAS_ROLE_IN", "teo", "boda", {"role": "esposo"}),
+            relacion("r26", "PARTICIPATES_IN", "ana", "feria", {}),
+            relacion("r27", "PARTICIPATES_IN", "luis", "feria", {}),
+            relacion("r28", "PARTICIPATES_IN", "eva", "feria", {}),
+            relacion("r29", "PARTICIPATES_IN", "pep", "feria", {}),
+            relacion("r30", "IS_EXPOSED", "feria", "cuadro", {}),
         ],
     }
 
 
 def crear_configuracion_pruebas() -> Configuracion:
-    """La configuración de verdad, pero con un límite de 3 participantes
-    (para probarlo con el grafo pequeño).
+    """La configuración de verdad, pero con límites de 3 participantes para
+    dibujar y de 4 para la evidencia (para probarlos con el grafo pequeño).
     """
     with open(ARCHIVO_CONFIGURACION, encoding="utf-8") as archivo:
         datos = json.load(archivo)
     datos["maxParticipantesIntermediario"] = 3
+    datos["maxParticipantesEvidencia"] = 4
     configuracion = Configuracion()
     configuracion.cargar(datos)
     configuracion.comprobar()

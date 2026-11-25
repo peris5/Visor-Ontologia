@@ -1,3 +1,5 @@
+import { ConstructorSubgrafo } from '../src/logica/ConstructorSubgrafo.js';
+import { configuracionEscenario, crearPiezas, JERARQUIA_ESCENARIO, cacheEscenario, contextoEscenario } from './escenarioPrototipo.js';
 import { prueba, comprobar, comprobarIgual } from './miniPruebas.js';
 import { PanelInformacion } from '../src/interfaz/PanelInformacion.js';
 import { Subgrafo } from '../src/modelo/Subgrafo.js';
@@ -23,9 +25,7 @@ import { ObraDeArte } from '../src/modelo/ObraDeArte.js';
 const NOMBRES_TIPOS = { Paint: "Pintura", Mentorship: "Mentoría", Friendship: "Amistad", Painter: "Pintor/a",
   Creator: "Creador/a", Book: "Libro", Work: "Trabajo" };
 
-/**
- * Doble de ControladorExploracion: apunta lo que le pide el panel.
- */
+/** Doble de ControladorExploracion: apunta lo que le pide el panel. */
 class ControladorFalsoInformacion {
   constructor() {
     this.llamadas = [];
@@ -72,11 +72,9 @@ function crearPanelInformacion() {
   return { panel: panel, controlador: controlador, padre: padre, subgrafo: subgrafo };
 }
 
-/**
- * Un detalle de Elena: nacimiento, defunción, un trabajo, una imagen y una fuente.
- *
- * @returns {DetalleEntidad}
- */
+const CONTEXTO_PRUEBAS_PANEL = contextoEscenario();
+
+/** Un detalle de Elena: nacimiento, defunción, un trabajo, una imagen y una fuente. */
 function crearDetalle() {
   const eventos = [
     new Evento({ id: "e1", tipo: "Birth", padres: ["Event"], periodo: new Periodo("1861", "1861", ""),
@@ -93,7 +91,6 @@ function crearDetalle() {
 }
 
 /**
- * @param {HTMLElement} padre
  * @returns {Object} nombre de cada dato (<dt>) → su valor (<dd>).
  */
 function leerDatos(padre) {
@@ -116,7 +113,7 @@ prueba("PanelInformacion: nombre, tipo con subtipos, atributos y relaciones de u
 
   const datos = leerDatos(p.padre);
   comprobarIgual(datos["Apodo"], "La Ferrando", "una propiedad que el modelo no conoce también se ve");
-  comprobarIgual(datos["Relevancia"], "100 %", "relevancia");
+  comprobarIgual(datos["Relevancia (S)"], "100 %", "relevancia S");
   comprobarIgual(datos["Nivel"], "Entidad central", "nivel");
   comprobarIgual(datos["Relaciones en el subgrafo"], "3", "número de relaciones");
 
@@ -177,7 +174,7 @@ prueba("PanelInformacion: «Explorar su red» solo si no es la central", functio
   p.panel.mostrarEntidad(otro.getEntidad(), otro, p.subgrafo);
   const boton = p.padre.querySelector(".boton-explorar");
   comprobar(boton !== null, "los demás sí");
-  comprobarIgual(leerDatos(p.padre)["Nivel"], "Relación directa", "nivel 1");
+  comprobarIgual(leerDatos(p.padre)["Nivel"], "Nodo directo (evidencia propia con la central)", "nivel 1");
   comprobarIgual(leerDatos(p.padre)["Dimensiones"], "60 × 40 cm", "dimensiones de la obra");
   boton.click();
   comprobarIgual(p.controlador.llamadas.join(","), "navegar:n3", "navega a esa entidad");
@@ -193,7 +190,7 @@ prueba("PanelInformacion: tipo, roles, periodo y lugar de una relación", functi
   const datos = leerDatos(p.padre);
   comprobarIgual(datos["Periodo"], "1902–1908", "periodo");
   comprobarIgual(datos["Lugar"], "Valencia", "lugar");
-  comprobarIgual(datos["Relevancia"], "85 % (asignada según el tipo de relación)", "relevancia");
+  comprobarIgual(datos["Relevancia"], "85 % (peso del tipo × participantes × época)", "relevancia");
   comprobar(p.padre.textContent.includes("Otras relaciones entre estas dos entidades"), "avisa de la amistad");
   p.padre.querySelectorAll(".boton-nodo")[1].click();
   comprobarIgual(p.controlador.llamadas.join(","), "nodo:n2", "al pulsar un extremo se selecciona su nodo");
@@ -208,4 +205,42 @@ prueba("PanelInformacion: se cierra con la × y es una región aria-live", funct
   comprobarIgual(p.padre.querySelector("[aria-live]").getAttribute("aria-live"), "polite", "aria-live");
   p.padre.querySelector(".boton-cerrar").click();
   comprobarIgual(panel.hidden, true, "cerrado");
+});
+
+prueba("PanelInformacion: S, R, C, origen, evidencia propia y camino de los nodos", async function () {
+  const escenario = cacheEscenario();
+  const piezas = crearPiezas(configuracionEscenario(), JERARQUIA_ESCENARIO);
+  const subgrafo = await new ConstructorSubgrafo(escenario, piezas.estrategia, piezas.calculador, 0, 150).construir("ana");
+  const panel = new PanelInformacion(null, CONTEXTO_PRUEBAS_PANEL);
+  const padre = document.createElement("div");
+  panel.montar(padre);
+
+  const marta = subgrafo.getNodo("marta");
+  panel.mostrarEntidad(marta.getEntidad(), marta, subgrafo);
+  let datos = leerDatos(padre);
+  comprobarIgual(datos["Origen"], "Solo coincidencias en eventos con la entidad central", "origen de Marta");
+  comprobarIgual(datos["Por qué"], "Coinciden en 3 exposiciones · Amistad con Luis Peris", "explicación");
+  comprobar(datos["Evidencia propia"] !== undefined, "evidencia propia");
+  comprobarIgual(datos["Relevancia (S)"], "34 %", "S");
+  comprobarIgual(datos["Fuerza (R)"], "60 %", "R");
+  comprobarIgual(datos["Certeza (C)"], "56 % (probable)", "C en número y en palabras");
+  comprobar(datos["Refuerzo"] === undefined, "ya no hay «Refuerzo»");
+  const ocultos = padre.querySelectorAll(".informacion-eventos-ocultos li");
+  comprobarIgual(ocultos.length, 1, "la exposición de 40 no se dibuja, pero se lista");
+  comprobar(ocultos[0].textContent.includes("40 participantes"), "con su número de participantes");
+
+  const paseo = subgrafo.getNodo("paseo");
+  panel.mostrarEntidad(paseo.getEntidad(), paseo, subgrafo);
+  datos = leerDatos(padre);
+  comprobarIgual(datos["Origen"], "Deducido a través de un nodo directo", "origen de Paseo");
+  comprobarIgual(datos["Camino"], "Ana Ferrer → Joaquín Mestre → Paseo", "camino");
+  comprobarIgual(datos["Por qué"], "Creación de Joaquín Mestre (su maestro)", "explicación");
+  comprobarIgual(datos["Certeza (C)"], "70 % (probable)", "certeza de un deducido");
+
+  const huerta = subgrafo.getNodo("huerta");
+  panel.mostrarEntidad(huerta.getEntidad(), huerta, subgrafo);
+  comprobarIgual(leerDatos(padre)["Certeza (C)"], "100 % (segura)", "declarada: segura");
+  comprobarIgual(PanelInformacion.textoDeLaCerteza(0.9), "segura", "0,9: segura");
+  comprobarIgual(PanelInformacion.textoDeLaCerteza(0.5), "probable", "0,5: probable");
+  comprobarIgual(PanelInformacion.textoDeLaCerteza(0.49), "supuesta", "menos: supuesta");
 });

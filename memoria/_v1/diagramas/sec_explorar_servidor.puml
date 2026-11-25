@@ -1,0 +1,60 @@
+@startuml sec_explorar_servidor
+' Operación: explorar una entidad (parte del servidor), incremento 4.
+' RepositorioNeo4j y AlmacenRelevanciasNeo4j son las clases previstas.
+!include estilo.iuml
+participant ":ClienteServicio" as CLI
+participant "API (FastAPI)" as API
+participant ":CacheRespuestas" as CACHE
+participant ":RepositorioNeo4j" as REPO
+participant ":ProyectorRelaciones" as PROY
+participant ":AsignadorRelevancia" as ASIG
+participant ":RelevanciaPorTipo" as EST
+participant ":AlmacenRelevanciasNeo4j" as ALM
+database "Neo4j" as BD
+
+CLI -> API : GET /api/vecindario/{id}?umbral=u
+activate API
+API -> API : redondear_hacia_abajo(umbral)
+API -> CACHE : obtener("vecindario|id|u", preparar)
+activate CACHE
+alt respuesta en la caché y vigente (600 s)
+  CACHE --> API : JSON guardado
+else
+  CACHE -> REPO : obtener_vecindario(id, u, max_entidades)
+  activate REPO
+  loop recorrido en anchura: cada entidad de la cola
+    REPO -> PROY : relaciones_de(id_actual)
+    PROY -> BD : MATCH (e)-[]-(i)-[]-(otra)
+    BD --> PROY : intermediarios y participantes
+    PROY --> REPO : relaciones derivadas
+    loop cada relación (una vez por intermediario)
+      REPO -> ASIG : obtener(id_intermedio, tipo)
+      activate ASIG
+      ASIG -> ALM : leer(id_intermedio)
+      ALM -> BD : MATCH (i) RETURN i.relevance, ...
+      BD --> ALM : guardada o null
+      ALM --> ASIG : guardada
+      alt guardada y (manual o relevanceVersion = versionPesos)
+        ASIG -> ASIG : reutilizadas + 1
+      else falta o versión antigua
+        ASIG -> EST : calcular_relevancia(tipo)
+        EST --> ASIG : peso del tipo, de su padre o por defecto
+        ASIG -> ALM : guardar(id_intermedio, valor, version)
+        ALM -> BD : SET con coalesce (no pisa un valor manual)
+        ASIG -> ASIG : asignadas + 1
+      end
+      ASIG --> REPO : valor
+      deactivate ASIG
+      opt valor > u
+        REPO -> REPO : guarda la relación y encola la otra entidad\n(si quedan menos de max_entidades; si no, recortado)
+      end
+    end
+  end
+  REPO --> CACHE : Vecindario
+  deactivate REPO
+  CACHE --> API : diccionario (ConversorJson.vecindario_a_diccionario)
+end
+deactivate CACHE
+API --> CLI : 200 JSON { idCentral, umbral, recortado, entidades,\nrelaciones, relevanciasAsignadas, relevanciasReutilizadas }
+deactivate API
+@enduml

@@ -91,7 +91,8 @@ def test_todos_los_metodos_son_asincronos() -> None:
     repositorio = crear_repositorio()
     assert inspect.iscoroutinefunction(repositorio.obtener_tipos)
     assert inspect.iscoroutinefunction(repositorio.obtener_nombres)
-    assert inspect.iscoroutinefunction(repositorio.obtener_vecindario)
+    assert inspect.iscoroutinefunction(repositorio.obtener_relaciones)
+    assert inspect.iscoroutinefunction(repositorio.obtener_jerarquia)
     assert inspect.iscoroutinefunction(repositorio.obtener_detalle)
 
 

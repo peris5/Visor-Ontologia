@@ -1,6 +1,4 @@
 /**
- * AjustadorUmbral
- *
  * Elige el umbral con el que se abre una entidad para que salgan MÁS O
  * MENOS el mismo número de nodos (nodosObjetivo), sea cual sea la entidad:
  * una muy conectada se abre con un umbral alto y una poco conectada, con
@@ -17,9 +15,6 @@
  * Solo prueba los valores que tiene el deslizador (de 0,05 en 0,05) y se
  * queda con el que da un número de nodos más cercano al objetivo. Si dos
  * quedan igual de cerca, el más alto (menos nodos, más ligero).
- *
- * Requisitos: RF-13 (umbral), RNF-28 (que el grafo se vea bien: ni casi
- * vacío ni lleno).
  */
 export class AjustadorUmbral {
   static MINIMO = 0.05;
@@ -39,9 +34,6 @@ export class AjustadorUmbral {
     this.#nodosObjetivo = nodosObjetivo;
   }
 
-  /**
-   * @returns {number}
-   */
   getNodosObjetivo() {
     return this.#nodosObjetivo;
   }
@@ -88,9 +80,6 @@ export class AjustadorUmbral {
    * nodos de relevancia mayor que el umbral, como mucho maxNodos.
    *
    * @param {number[]} relevancias - sin la central.
-   * @param {number} umbral
-   * @param {number} maxNodos
-   * @returns {number}
    */
   contarNodos(relevancias, umbral, maxNodos) {
     let nodos = 1;

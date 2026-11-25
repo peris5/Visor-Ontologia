@@ -2,8 +2,8 @@
 import json
 from typing import Any
 
-from servidor.datos.generar_datos_ejemplo import (ARCHIVO_VECINDARIO_PRUEBAS, GeneradorDatosEjemplo,
-                                                  convertir_a_texto, vecindario_de_pruebas)
+from servidor.datos.generar_datos_ejemplo import (ARCHIVO_RELACIONES_PRUEBAS, GeneradorDatosEjemplo,
+                                                  convertir_a_texto, relaciones_de_pruebas)
 from servidor.tests.utilidades import ARCHIVO_DATOS_EJEMPLO, ARCHIVO_DISENO
 
 
@@ -13,7 +13,7 @@ def leer_diseno() -> dict[str, Any]:
     Del diseño se quitan los espacios del final ('Death ') y el tipo que
     arrows.app añade a algunas propiedades ('coordinates:point' →
     'coordinates'). En Event, los nombres aparecen como etiquetas (seguramente
-    por error, ver ANALISIS_BD_NEO4J.md §7): se cuentan como propiedades.
+    por error): se cuentan como propiedades.
     """
     with open(ARCHIVO_DISENO, encoding="utf-8") as archivo:
         grafo = json.load(archivo)["graph"]
@@ -108,11 +108,12 @@ def test_tamano_de_los_datos() -> None:
         for etiqueta in contador:
             if etiqueta in nodo["etiquetas"]:
                 contador[etiqueta] = contador[etiqueta] + 1
-    assert contador == {"Person": 120, "Organization": 25, "HeritageItem": 60, "Ubication": 15}
+    # 120 personas al azar, más las 6 del escenario de Ana Ferrer y sus 38 de relleno.
+    assert contador == {"Person": 164, "Organization": 27, "HeritageItem": 64, "Ubication": 15}
 
 
-def test_el_vecindario_de_las_pruebas_del_navegador_esta_al_dia() -> None:
+def test_las_relaciones_de_las_pruebas_del_navegador_estan_al_dia() -> None:
     # Si falla: .venv\Scripts\python.exe -m servidor.datos.generar_datos_ejemplo
-    esperado = vecindario_de_pruebas(GeneradorDatosEjemplo().generar())
-    with open(ARCHIVO_VECINDARIO_PRUEBAS, encoding="utf-8") as archivo:
+    esperado = relaciones_de_pruebas(GeneradorDatosEjemplo().generar())
+    with open(ARCHIVO_RELACIONES_PRUEBAS, encoding="utf-8") as archivo:
         assert archivo.read() == esperado

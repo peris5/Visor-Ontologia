@@ -14,7 +14,7 @@ from typing import Any
 
 CARPETA_DATOS = Path(__file__).resolve().parent
 ARCHIVO_DATOS = CARPETA_DATOS / "datos_ejemplo.json"
-ARCHIVO_VECINDARIO_PRUEBAS = CARPETA_DATOS.parent.parent / "tests" / "vecindarioEjemplo.json"
+ARCHIVO_RELACIONES_PRUEBAS = CARPETA_DATOS.parent.parent / "tests" / "relacionesEjemplo.json"
 SEMILLA = 2026
 
 COMENTARIO = (
@@ -24,7 +24,7 @@ COMENTARIO = (
     "EXACTAMENTE los del diseño, erratas incluidas (Ubication, Employement, OCURRED_AT, coworking...): no "
     "se corrigen porque la aplicación tiene que funcionar con los nombres tal cual estén en la BD real. "
     "Solo se han quitado los espacios del final de algunas etiquetas del diseño ('Death ', 'Friendship '...). "
-    "Igual que la BD real, ninguna relación tiene 'relevance': se asigna al consultar. "
+    "Igual que la BD real, ninguna relación tiene 'relevance': la calcula siempre el navegador. "
     "'jerarquia' copia los IS_A del diseño (cada etiqueta -> su padre). Se supone que en la BD real los "
     "subtipos son varias etiquetas en el mismo nodo (:Event:Creation:Paint); falta confirmar si son una "
     "taxonomía aparte. Del diseño se ha quitado 'Event IS_A Creation', que con 'Creation IS_A Event' "
@@ -33,6 +33,24 @@ COMENTARIO = (
 
 COMENTARIO_PRUEBA_APRENDIZAJE = ("DE PRUEBA: Apprenticeship no está en el diseño. Sirve para comprobar que "
                                  "un subtipo nuevo funciona sin tocar el código.")
+COMENTARIO_ESCENARIO = ("ESCENARIO FIJO del ejemplo de relevancia en tres capas (docs/prototipo_relevancia.mjs): "
+                        "nombres inventados, ids fijos. Ana Ferrer es la entidad central del ejemplo.")
+# Ids fijos de las entidades del escenario (no dependen de la semilla).
+ID_ANA = "ana_ferrer"
+ID_LUIS = "luis_peris"
+ID_MARTA = "marta_soler"
+ID_PEDRO = "pedro_navarro"
+ID_JOAQUIN = "joaquin_mestre"
+ID_JUAN = "juan_ribes"
+ID_TALLER = "taller_valencia"
+ID_HUERTA = "obra_huerta"
+ID_RETRATO = "obra_retrato"
+ID_PASEO = "obra_paseo"
+ID_TARDIA = "obra_tardia"
+ID_MUSEO = "museo_ciudad"
+# Personas de relleno: sin ellas no habría exposiciones de 4, 6 o 40 participantes.
+NUMERO_RELLENO = 38
+
 COMENTARIO_PRUEBA_ALUMNO = ("DE PRUEBA: STUDENT_OF no está en el diseño. Sirve para comprobar que una "
                             "relación directa entre personas funciona sin tocar el código.")
 
@@ -153,6 +171,9 @@ class GeneradorDatosEjemplo:
         self.__alumnos_de_prueba(grupos)
         self.__imagenes(personas, organizaciones, obras)
         self.__fuentes_de_las_entidades(personas, organizaciones, obras)
+        # El escenario va al final: no usa números al azar, así que no cambia
+        # nada de lo anterior.
+        self.__escenario_ana_ferrer()
         return {
             "_comentario": COMENTARIO,
             "jerarquia": dict(JERARQUIA),
@@ -596,6 +617,132 @@ class GeneradorDatosEjemplo:
                     "dateUpdated": "2026-10-01", "externalId": "REF-" + str(numero_de_referencia).rjust(5, "0")})
                 numero_de_referencia = numero_de_referencia + 1
 
+    # ───────────── Escenario fijo del ejemplo de relevancia ─────────────
+
+    def __escenario_ana_ferrer(self) -> None:
+        """El ejemplo de escenarioAna() de docs/prototipo_relevancia_v2.mjs con
+        nombres inventados:
+
+          Ana Ferrer (pintora, la central del ejemplo)
+            ─ Amistad con Luis Peris y 5 exposiciones de 4 participantes juntos
+            ─ 3 exposiciones con Marta Soler (de 3, 6 y 40 participantes),
+              sin ninguna relación declarada
+            ─ una exposición de 12 participantes con Pedro Navarro
+            ─ Mentoría de Joaquín Mestre entre 1900 y 1910 (roles «aprendiz»
+              y «maestro»), autor de «Paseo» (1905) y de «Tardía» (1945)
+            ─ Empleo en el Taller Valencia, donde también trabaja Juan Ribes
+            ─ autora de «Huerta», expuesta en el Museo de la Ciudad
+          Luis: Amistad con Marta, Matrimonio con Pedro, autor de «Retrato».
+
+        «Tardía» no está en escenarioAna(): es la del escenario de la
+        propiedad P7 (la obra del maestro 35 años después de la mentoría).
+
+        Las exposiciones necesitan más participantes: son personas de relleno
+        (sin subtipo, distintas en cada exposición pequeña). Casi todo tiene
+        fecha entre 1900 y 1915.
+        """
+        self.__entidad_fija(ID_ANA, ["Person", "Creator", "Painter"], {"name": "Ana", "lastName": "Ferrer"}, True)
+        self.__entidad_fija(ID_LUIS, ["Person", "Creator", "Painter"], {"name": "Luis", "lastName": "Peris"}, False)
+        self.__entidad_fija(ID_MARTA, ["Person", "Creator", "Painter"], {"name": "Marta", "lastName": "Soler"},
+                            True)
+        self.__entidad_fija(ID_PEDRO, ["Person"], {"name": "Pedro", "lastName": "Navarro"}, False)
+        self.__entidad_fija(ID_JOAQUIN, ["Person", "Creator", "Painter"],
+                            {"name": "Joaquín", "lastName": "Mestre"}, False)
+        self.__entidad_fija(ID_JUAN, ["Person", "Creator", "Painter"], {"name": "Juan", "lastName": "Ribes"}, False)
+        self.__entidad_fija(ID_TALLER, ["Organization"], {"name_es": "Taller Valencia", "name_ca": "Taller València",
+                                                          "name_en": "Valencia Workshop"}, False)
+        self.__entidad_fija(ID_MUSEO, ["Organization"], {"name_es": "Museo de la Ciudad", "name_ca": "Museu de la Ciutat",
+                                                         "name_en": "City Museum"}, False)
+        self.__entidad_fija(ID_HUERTA, ["HeritageItem"], {"name_es": "Huerta", "name_ca": "Horta", "name_en": "Orchard",
+                                                          "dimensions": "60 × 80 cm"}, False)
+        self.__entidad_fija(ID_RETRATO, ["HeritageItem"], {"name_es": "Retrato", "name_ca": "Retrat",
+                                                           "name_en": "Portrait", "dimensions": "50 × 40 cm"}, False)
+        self.__entidad_fija(ID_PASEO, ["HeritageItem"], {"name_es": "Paseo", "name_ca": "Passeig", "name_en": "Stroll",
+                                                         "dimensions": "70 × 100 cm"}, False)
+        self.__entidad_fija(ID_TARDIA, ["HeritageItem"], {"name_es": "Tardía", "name_ca": "Tardana", "name_en": "Late",
+                                                          "dimensions": "65 × 90 cm"}, False)
+        relleno = self.__personas_de_relleno()
+
+        # Relaciones declaradas (nodos Relationship).
+        self.__intermediario(["Relationship", "Friendship"], [(ID_ANA, "amiga"), (ID_LUIS, "amigo")],
+                             (1905, 1915), None, None, None)
+        self.__intermediario(["Relationship", "Friendship"], [(ID_LUIS, "amigo"), (ID_MARTA, "amiga")],
+                             (1906, 1915), None, None, None)
+        self.__intermediario(["Relationship", "Related", "Marriage"], [(ID_LUIS, "esposo"), (ID_PEDRO, "esposo")],
+                             (1907, 1915), None, None, None)
+        self.__intermediario(["Relationship", "Mentorship"], [(ID_JOAQUIN, "maestro"), (ID_ANA, "aprendiz")],
+                             (1900, 1910), None, None, None)
+        self.__intermediario(["Relationship", "Professional", "Employement"], [(ID_ANA, "pintora")],
+                             (1908, 1914), None, ID_TALLER, None)
+        self.__intermediario(["Relationship", "Professional", "Employement"], [(ID_JUAN, "pintor")],
+                             (1906, 1912), None, ID_TALLER, None)
+
+        # Obras (Creation) y la exposición de «Huerta» en el museo.
+        self.__obra_fija(ID_ANA, "autora", ID_HUERTA, "Huerta", 1909)
+        self.__obra_fija(ID_LUIS, "autor", ID_RETRATO, "Retrato", 1910)
+        self.__obra_fija(ID_JOAQUIN, "autor", ID_PASEO, "Paseo", 1905)
+        self.__obra_fija(ID_JOAQUIN, "autor", ID_TARDIA, "Tardía", 1945)
+        id_exposicion = self.__evento(["Event", "Exposition"], ("Huerta en el Museo de la Ciudad",
+                                                               "Horta al Museu de la Ciutat", "Orchard at the City Museum"),
+                                      [], (1912, 1912), None, "1912", ID_MUSEO)
+        self.__relacion("IS_EXPOSED", id_exposicion, ID_HUERTA, {})
+
+        # Exposiciones con varias personas (coincidencias).
+        for indice in range(5):
+            self.__exposicion_colectiva(1906 + indice * 2, [ID_ANA, ID_LUIS] + relleno[10 + indice * 2:12 + indice * 2])
+        self.__exposicion_colectiva(1907, [ID_ANA, ID_MARTA] + relleno[20:21])
+        self.__exposicion_colectiva(1909, [ID_ANA, ID_MARTA] + relleno[21:25])
+        self.__exposicion_colectiva(1911, [ID_ANA, ID_MARTA] + relleno[0:38])
+        self.__exposicion_colectiva(1913, [ID_ANA, ID_PEDRO] + relleno[0:10])
+
+    def __entidad_fija(self, id_entidad: str, etiquetas: list[str], propiedades: dict[str, Any], es_mujer: bool) -> None:
+        """(Privado) Una entidad del escenario, con su id fijo."""
+        self.__nodos.append({"id": id_entidad, "etiquetas": etiquetas, "propiedades": propiedades,
+                             "_comentario": COMENTARIO_ESCENARIO})
+        if es_mujer:
+            self.__mujeres.add(id_entidad)
+        if "name_es" in propiedades:
+            self.__nombres[id_entidad] = propiedades["name_es"]
+        else:
+            self.__nombres[id_entidad] = propiedades["name"] + " " + propiedades["lastName"]
+
+    def __personas_de_relleno(self) -> list[str]:
+        """(Privado) Las personas de relleno de las exposiciones del escenario
+        (nombres inventados, sin azar).
+        """
+        nombres_propios = NOMBRES_MUJER + NOMBRES_HOMBRE
+        ids: list[str] = []
+        for indice in range(NUMERO_RELLENO):
+            id_persona = "relleno_" + str(indice + 1)
+            nombre = nombres_propios[(indice * 7) % len(nombres_propios)]
+            apellidos = APELLIDOS[(indice * 11) % len(APELLIDOS)] + " " + APELLIDOS[(indice * 13 + 5) % len(APELLIDOS)]
+            self.__nodos.append({"id": id_persona, "etiquetas": ["Person"],
+                                 "propiedades": {"name": nombre, "lastName": apellidos},
+                                 "_comentario": COMENTARIO_ESCENARIO})
+            self.__nombres[id_persona] = nombre + " " + apellidos
+            ids.append(id_persona)
+        return ids
+
+    def __obra_fija(self, autor: str, rol: str, obra: str, titulo: str, anio: int) -> None:
+        """(Privado) La creación (Event:Creation:Paint) de una obra del escenario."""
+        id_evento = self.__evento(["Event", "Creation", "Paint"], ("Pintura de " + titulo, "Pintura de " + titulo,
+                                                                  "Painting of " + titulo),
+                                  [(autor, rol)], (anio, anio), None, None, None)
+        self.__relacion("PRODUCED", id_evento, obra, {})
+
+    def __exposicion_colectiva(self, anio: int, participantes: list[str]) -> None:
+        """(Privado) Una exposición con varias personas y nada más (así su
+        número de participantes es exactamente el de la lista).
+        """
+        con_rol: list[tuple[str, str]] = []
+        for participante in participantes:
+            con_rol.append((participante, self.__segun_genero(participante, "expositora", "expositor")))
+        numero = str(len(participantes))
+        self.__evento(["Event", "Exposition"], ("Exposición colectiva de " + str(anio) + " (" + numero + " artistas)",
+                                                "Exposició col·lectiva de " + str(anio) + " (" + numero + " artistes)",
+                                                "Group exhibition " + str(anio) + " (" + numero + " artists)"),
+                      con_rol, (anio, anio), None, str(anio), None)
+
     # ───────────── Ayudas ─────────────
 
     def __intermediario(self, etiquetas: list[str], participantes: list[tuple[str, str]],
@@ -700,15 +847,16 @@ def lineas_json(elementos: list[dict[str, Any]]) -> list[str]:
     return lineas
 
 
-def vecindario_de_pruebas(datos: dict[str, Any]) -> str:
-    """El texto de tests/vecindarioEjemplo.json: los tipos (/api/tipos) y el
-    vecindario completo de la entidad inicial con umbral 0 (/api/vecindario),
-    calculados por el servidor sobre estos datos. Lo usan las pruebas del
-    navegador, que así trabajan con el mismo formato que envía el servidor.
+def relaciones_de_pruebas(datos: dict[str, Any]) -> str:
+    """El texto de tests/relacionesEjemplo.json: los tipos (/api/tipos), la
+    jerarquía (/api/jerarquia) y TODAS las entidades y relaciones derivadas
+    (las de /api/relaciones de todas las entidades), calculadas por el
+    servidor sobre estos datos. Lo usan las pruebas del navegador: su cliente
+    falso responde a cada petición con las relaciones de las entidades
+    pedidas, en el mismo formato que el servidor.
     """
     # Se importan aquí para que el generador no dependa del resto del
     # servidor cuando solo se generan los datos.
-    from servidor.api.conversor_json import ConversorJson
     from servidor.datos.repositorio_simulado import RepositorioSimulado
     from servidor.logica.configuracion import Configuracion
 
@@ -716,40 +864,40 @@ def vecindario_de_pruebas(datos: dict[str, Any]) -> str:
     configuracion.cargar_archivo(CARPETA_DATOS.parent / "configuracion.json")
     configuracion.comprobar()
     repositorio = RepositorioSimulado(datos, 0, configuracion)
-    id_central = configuracion.get_entidad_inicial()
     tipos = asyncio.run(repositorio.obtener_tipos())
-    vecindario = asyncio.run(repositorio.obtener_vecindario(id_central, 0, 2000))
-    diccionario = ConversorJson.vecindario_a_diccionario(id_central, 0, vecindario)
+    jerarquia = asyncio.run(repositorio.obtener_jerarquia())
+    ids: list[str] = []
+    for nombre in asyncio.run(repositorio.obtener_nombres()):
+        ids.append(nombre["id"])
+    todo = asyncio.run(repositorio.obtener_relaciones(ids))
     lineas = ["{"]
-    lineas.append('  "_comentario": "Generado por servidor/datos/generar_datos_ejemplo.py: tipos y vecindario '
-                  'completo (umbral 0) de la entidad inicial, tal como los envía el servidor.",')
+    lineas.append('  "_comentario": "Generado por servidor/datos/generar_datos_ejemplo.py: tipos, jerarquía y todas '
+                  'las entidades y relaciones derivadas, tal como las envía el servidor.",')
+    lineas.append('  "idInicial": ' + json.dumps(configuracion.get_entidad_inicial()) + ",")
     lineas.append('  "tipos": ' + json.dumps(tipos, ensure_ascii=False) + ",")
-    lineas.append('  "vecindario": {')
-    for clave in ["idCentral", "umbral", "recortado", "relevanciasAsignadas", "relevanciasReutilizadas"]:
-        lineas.append('    "' + clave + '": ' + json.dumps(diccionario[clave]) + ",")
-    lineas.append('    "entidades": [')
-    lineas.append(",\n".join(lineas_json(diccionario["entidades"])))
-    lineas.append("    ],")
-    lineas.append('    "relaciones": [')
-    lineas.append(",\n".join(lineas_json(diccionario["relaciones"])))
-    lineas.append("    ]")
-    lineas.append("  }")
+    lineas.append('  "jerarquia": ' + json.dumps(jerarquia, ensure_ascii=False) + ",")
+    lineas.append('  "entidades": [')
+    lineas.append(",\n".join(lineas_json(todo["entidades"])))
+    lineas.append("  ],")
+    lineas.append('  "relaciones": [')
+    lineas.append(",\n".join(lineas_json(todo["relaciones"])))
+    lineas.append("  ]")
     lineas.append("}")
     return "\n".join(lineas) + "\n"
 
 
 def principal() -> None:
     """Genera los datos y los guarda en servidor/datos/datos_ejemplo.json;
-    además, el vecindario de pruebas del navegador (tests/vecindarioEjemplo.json).
+    además, las relaciones de pruebas del navegador (tests/relacionesEjemplo.json).
     """
     datos = GeneradorDatosEjemplo().generar()
     with open(ARCHIVO_DATOS, "w", encoding="utf-8", newline="\n") as archivo:
         archivo.write(convertir_a_texto(datos))
     print("Escrito " + str(ARCHIVO_DATOS) + ": " + str(len(datos["nodos"])) + " nodos y "
           + str(len(datos["relaciones"])) + " relaciones.")
-    with open(ARCHIVO_VECINDARIO_PRUEBAS, "w", encoding="utf-8", newline="\n") as archivo:
-        archivo.write(vecindario_de_pruebas(datos))
-    print("Escrito " + str(ARCHIVO_VECINDARIO_PRUEBAS) + ".")
+    with open(ARCHIVO_RELACIONES_PRUEBAS, "w", encoding="utf-8", newline="\n") as archivo:
+        archivo.write(relaciones_de_pruebas(datos))
+    print("Escrito " + str(ARCHIVO_RELACIONES_PRUEBAS) + ".")
 
 
 if __name__ == "__main__":

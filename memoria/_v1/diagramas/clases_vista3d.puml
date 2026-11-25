@@ -1,0 +1,137 @@
+@startuml clases_vista3d
+' Paquete vista3d (cliente). #campo → -, _campo → #.
+!include estilo.iuml
+skinparam nodesep 30
+skinparam ranksep 50
+
+class EscenaGrafo {
+  + {static} PASOS_POR_FOTOGRAMA : number = 3
+  + {static} MIEMBROS_MINIMOS_MANCHA : number = 5
+  - escena : THREE.Scene
+  - camara : THREE.PerspectiveCamera
+  - renderizador : THREE.WebGLRenderer
+  - renderizadorEtiquetas : CSS2DRenderer
+  - controles : OrbitControls
+  - idCentral : string
+  - modo : ModoDisposicion
+  + inicializar(contenedor : HTMLElement, controlador)
+  + mostrarSubgrafo(subgrafo : Subgrafo)
+  + setModoDisposicion(modo : ModoDisposicion)
+  + resaltarNodo(id : string)
+  + resaltarRelacion(id : string)
+  + aplicarFiltro(filtro : FiltroVisualizacion)
+  + restablecerCamara()
+  + getObjetosSeleccionables() : THREE.Object3D[]
+  + getRelacionesVisiblesPorTipo() : Map
+  - crearNodos(subgrafo, posicionesIniciales)
+  - crearEnlaces(subgrafo)
+  - animar()
+  - avanzarSimulacion()
+  - copiarPosicionesDeLaSimulacion()
+  - aplicarModo()
+}
+
+class SimulacionFuerzas {
+  + {static} PARAMETROS_POR_DEFECTO : Object
+  + {static} ALFA_MINIMO : number = 0.001
+  - alfa : number
+  - pasos : number
+  - direccionesObjetivo : Map
+  + iniciar(subgrafo, posicionesIniciales)
+  + paso() : boolean
+  + estaActiva() : boolean
+  + getPosicion(id : string) : Object
+  + distanciaSegunRelevancia(relevancia : number) : number
+  + setDireccionesObjetivo(direcciones : Map)
+  + reactivar(alfa : number)
+  - aplicarRepulsion()
+  - aplicarMuelles()
+  - aplicarAtraccionObjetivo()
+  - mover()
+  - recolocarEnSuRadio(nodo, indice)
+}
+
+class CalculadorDisposicion {
+  + calcular(subgrafo : Subgrafo) : Map<string, Vector3>
+  + direccionesObjetivo(subgrafo, modo, grupos) : Map
+  - distribuirEnEsfera(nodos, radio)
+  - {static} puntosEnEsfera(cantidad : number) : Vector3[]
+}
+
+enum ModoDisposicion <<enumeration>> {
+  LIBRE
+  POR_GRUPOS
+}
+
+class FabricaNodosVisuales {
+  - tamanoMinimo : number
+  - tamanoMaximo : number
+  + crear(nodo : NodoRelevante) : NodoVisual
+  - calcularTamano(centralidad : number) : number
+}
+
+abstract class NodoVisual {
+  # _malla : THREE.Mesh
+  # _etiqueta : CSS2DObject
+  # _tamano : number
+  - nodo : NodoRelevante
+  + getNodo() : NodoRelevante
+  + setPosicion(posicion)
+  + setVisible(visible : boolean)
+  + resaltar(activo : boolean)
+  + liberar()
+  # {abstract} _crearGeometria() : THREE.BufferGeometry
+  # {abstract} _getColor() : string
+}
+class NodoPersona {
+  # _crearGeometria()
+  # _getColor()
+}
+class NodoOrganizacion {
+  # _crearGeometria()
+  # _getColor()
+}
+class NodoObra {
+  # _crearGeometria()
+  # _getColor()
+}
+
+class EnlaceVisual {
+  + {static} SEPARACION_ENTRE_CURVAS : number = 1.6
+  - relacion : Relacion
+  - desplazamiento : number
+  - opacidadBase : number
+  + getRelacion() : Relacion
+  + actualizar()
+  + setVisible(visible : boolean)
+  + resaltar(activo : boolean)
+  - calcularOpacidad(relevancia : number) : number
+}
+
+class SelectorInteraccion {
+  + {static} PIXELES_MAXIMOS_CLIC : number = 5
+  - raycaster : THREE.Raycaster
+  - etiqueta : HTMLElement
+  + onClic(evento)
+  + onDobleClic(evento)
+  + onMovimiento(evento)
+  + ocultarEtiqueta()
+  - detectarObjeto(evento) : NodoVisual | EnlaceVisual
+}
+
+EscenaGrafo *-- "1" SimulacionFuerzas
+EscenaGrafo *-- "1" CalculadorDisposicion
+EscenaGrafo *-- "1" FabricaNodosVisuales
+EscenaGrafo *-- "1" SelectorInteraccion
+EscenaGrafo *-- "0..*" NodoVisual
+EscenaGrafo *-- "0..*" EnlaceVisual
+EscenaGrafo ..> ModoDisposicion
+EscenaGrafo ..> "DetectorComunidades\n(logica)" : usa >
+FabricaNodosVisuales ..> NodoVisual : crea >
+NodoVisual <|-- NodoPersona
+NodoVisual <|-- NodoOrganizacion
+NodoVisual <|-- NodoObra
+EnlaceVisual --> "2" NodoVisual : origen, destino
+SelectorInteraccion --> "1" EscenaGrafo
+SelectorInteraccion --> "1" "ControladorExploracion\n(logica)" : avisa >
+@enduml

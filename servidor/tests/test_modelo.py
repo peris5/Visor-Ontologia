@@ -64,7 +64,7 @@ def test_get_clave_par_igual_en_los_dos_sentidos() -> None:
 
 
 def test_tipo_relacion_solo_guarda_el_id() -> None:
-    # El nombre legible y el color los pone el navegador (incremento 3).
+    # El nombre legible y el color los pone el navegador.
     tipo = TipoRelacion("maestro_de")
     assert tipo.get_id() == "maestro_de"
     with pytest.raises(ValueError):

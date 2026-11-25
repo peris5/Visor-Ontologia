@@ -1,0 +1,33 @@
+@startuml clases_logica_control
+' Paquete logica (cliente), parte 2: control de la exploración.
+!include estilo.iuml
+
+class ControladorExploracion {
+  - subgrafoActual, estado, umbral
+  + iniciar(id)
+  + seleccionarEntidad(id)
+  + navegarA(id)
+  + volver()
+  + cambiarUmbral(valor)
+  + seleccionarNodo(nodo)
+  + alternarFiltroNodo(tipo)
+  + cambiarDisposicion(modo)
+  - cargarSubgrafo(id, ajustar)
+}
+class FiltroVisualizacion {
+  + esVisibleNodo(nodo)
+  + esVisibleRelacion(relacion)
+}
+class HistorialNavegacion {
+  + registrar(id)
+  + volver()
+}
+enum EstadoCarga <<enumeration>> {
+  CARGANDO
+  LISTO
+  ERROR
+}
+ControladorExploracion *-- FiltroVisualizacion
+ControladorExploracion *-- HistorialNavegacion
+ControladorExploracion ..> EstadoCarga
+@enduml

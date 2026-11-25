@@ -24,7 +24,6 @@ function crearNombresDePrueba() {
 }
 
 /**
- * @param {Object[]} resultados
  * @returns {string[]} ids de los resultados, en orden.
  */
 function ids(resultados) {
